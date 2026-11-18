@@ -5,6 +5,11 @@ namespace Lumyte.UI.Collections;
 internal sealed class CollectionItemElement(CollectionItem widget) : UiElement<CollectionItem>(widget)
 {
     private readonly UiActivationRecognizer _activation = new();
+    private bool _glyphPress;
+
+    protected override UiTreeItemState? AutomationTreeItem => Widget.TreeItem;
+
+    protected override bool? AutomationExpanded => Widget.Expanded?.Invoke();
 
     protected override bool IsTabStop => Widget.TabStop(this);
 
@@ -14,7 +19,7 @@ internal sealed class CollectionItemElement(CollectionItem widget) : UiElement<C
 
     protected override string? AutomationOptionKey => Widget.Key;
 
-    protected override UiAutomationActions AutomationActions => UiAutomationActions.Click | UiAutomationActions.Focus;
+    protected override UiAutomationActions AutomationActions => UiAutomationActions.Click | UiAutomationActions.Focus | (Widget.Expand is null ? UiAutomationActions.None : UiAutomationActions.ExpandCollapse);
 
     protected override bool IsAutomationPressed => _activation.IsPressed;
 
@@ -24,13 +29,63 @@ internal sealed class CollectionItemElement(CollectionItem widget) : UiElement<C
 
     protected override UiInputResult OnInput(in UiInputContext context)
     {
-        UiInputResult navigation = Widget.Navigate(this, in context);
+        if (context.Input is UiExpandInput expansion && Widget.Expand is { } expand)
+        {
+            expand(expansion.IsExpanded);
+            return UiInputResult.Handled;
+        }
+
+        if (context.Input is UiPointerInput { Phase: UiPointerPhase.Down } && context.PointerPosition is { } down)
+        {
+            _glyphPress = Widget.Expand is not null && down.X >= Widget.GlyphStart && down.X < Widget.GlyphStart + 16;
+        }
+
+        UiInputResult navigation = Widget.HierarchyNavigate?.Invoke(this, in context) ?? UiInputResult.Unhandled;
+        if (navigation == UiInputResult.Unhandled)
+        {
+            navigation = Widget.Navigate(this, in context);
+        }
+
         if (navigation != UiInputResult.Unhandled)
         {
             return navigation;
         }
 
-        return _activation.HandleInput(in context, context.Input is UiPointerInput { Phase: UiPointerPhase.Down } && context.PointerPosition is { } point ? OnProbePointerDown(point) : UiInputResult.Unhandled, () => Widget.Activate(this));
+        bool pointerActivation = context.Input is UiPointerInput;
+        bool? glyphInside = _glyphPress && context.PointerPosition is { } glyphPoint
+            ? context.IsInside && glyphPoint.X >= Widget.GlyphStart && glyphPoint.X < Widget.GlyphStart + 16 : null;
+        return _activation.HandleInput(
+            in context,
+            context.Input is UiPointerInput { Phase: UiPointerPhase.Down } && context.PointerPosition is { } point ? OnProbePointerDown(point) : UiInputResult.Unhandled,
+            () =>
+            {
+                if (_glyphPress && pointerActivation)
+                {
+                    Widget.Expand?.Invoke(!(Widget.Expanded?.Invoke() ?? false));
+                }
+                else
+                {
+                    Widget.Activate(this);
+                }
+            },
+            glyphInside);
+    }
+
+    protected override void OnRecord(Lumyte.Graphics.Drawing2D.DrawingCanvas2D canvas)
+    {
+        if (Widget.Expanded is not { } expanded)
+        {
+            return;
+        }
+
+        float x = Widget.GlyphStart + 4;
+        float y = Math.Max(0, (ContentSize.Y - 2) / 2);
+        var color = new Lumyte.Mathematics.Colors.SRgba<float>(0.6f, 0.6f, 0.6f, 1);
+        canvas.FillRect(new(x, y, 8, 2), color);
+        if (!expanded())
+        {
+            canvas.FillRect(new(x + 3, Math.Max(0, y - 3), 2, 8), color);
+        }
     }
 
     protected override void OnPointerCaptureChanged(UiPointerCaptureState state) => _activation.PointerCaptureChanged(state);

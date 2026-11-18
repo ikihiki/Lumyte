@@ -161,6 +161,22 @@ public class ListBoxElement<T> : ItemsRepeaterElement<T>, IUiItemViewport
         _rangePreparation = PreparationSurface?.PreparedViewportContent(this)?.PreparationState as RangePreparation;
         var list = (Compose.Definitions.ListBox<T>)PreparationWidget;
         UiElement? expectedPin = _rangePreparation is { } prepared ? prepared.PinnedFocus : _pinnedFocus;
+        if (list.Virtualization is null && list.DeferredHierarchy && list.RequestedRevealKey is { } nonvirtualKey
+            && PreparationChildren.FirstOrDefault() is ScrollViewElement hierarchyScroll
+            && hierarchyScroll.Controller.PositionRequestVersion == list.RevealPositionVersion)
+        {
+            UiElement? target = hierarchyScroll.PreparationChildren.FirstOrDefault()?.PreparationChildren.FirstOrDefault(item => item.Widget.Key == nonvirtualKey);
+            if (target is not null)
+            {
+                float start = target.PreparedBounds.Y;
+                float offset = hierarchyScroll.Controller.ProposedOffset;
+                float viewport = hierarchyScroll.Controller.ProposedViewport;
+                float desired = start < offset ? start : start + target.PreparedSize.Y > offset + viewport ? start + target.PreparedSize.Y - viewport : offset;
+                hierarchyScroll.Controller.ClearStagedItemAnchor();
+                hierarchyScroll.Controller.StagePositionRequest(desired);
+            }
+        }
+
         if (list.Virtualization is not { } options || PreparationChildren.FirstOrDefault() is not ScrollViewElement scroll)
         {
             _rangePreparation = null;
@@ -170,6 +186,25 @@ public class ListBoxElement<T> : ItemsRepeaterElement<T>, IUiItemViewport
         bool needsFocusPin = _rangePreparation is { Adopt: not null, RestoreKey: { } restoreKey, PinKey: null }
             && !PreparationChildren.SelectMany(child => child.PreparationChildren).SelectMany(child => child.PreparationChildren).Any(item => item.Widget.Key == restoreKey);
         bool moved = false;
+        if (list.RequestedRevealKey is { } requested && _rangePreparation is { } proposal
+            && list.RevealPositionVersion == scroll.Controller.PositionRequestVersion
+            && scroll.Controller.ProposedViewport > 0)
+        {
+            int index = Array.IndexOf(proposal.Keys, requested);
+            if (index >= 0)
+            {
+                float start = (float)((double)index * options.ItemExtent);
+                float offset = scroll.Controller.ProposedOffset;
+                float viewport = scroll.Controller.ProposedViewport;
+                float target = start < offset ? start : (double)start + options.ItemExtent > (double)offset + viewport
+                    ? (float)Math.Min(start, (double)start + options.ItemExtent - viewport) : offset;
+                Action geometry = () => scroll.Controller.StagePositionRequest(target);
+                _rangePreparation = proposal with { PrepareGeometry = geometry };
+                scroll.Controller.ClearStagedItemAnchor();
+                moved = scroll.Controller.StagePositionRequest(target);
+            }
+        }
+
         if (_bringKey is { } key && _bringGeneration == _itemsGeneration && _rangePreparation?.Adopt is null)
         {
             if (_bringRequest != scroll.Controller.PositionRequestVersion)
@@ -227,7 +262,7 @@ public class ListBoxElement<T> : ItemsRepeaterElement<T>, IUiItemViewport
     /// <inheritdoc/>
     protected override Widget WrapContent(Compose.Definitions.ItemsRepeater<T> declaration, Widget content)
     {
-        var scroll = new Lumyte.UI.Compose.Definitions.ScrollView { Orientation = declaration.Orientation, DeferredPosition = ((Compose.Definitions.ListBox<T>)declaration).Virtualization is not null };
+        var scroll = new Lumyte.UI.Compose.Definitions.ScrollView { Orientation = declaration.Orientation, DeferredPosition = ((Compose.Definitions.ListBox<T>)declaration).Virtualization is not null || ((Compose.Definitions.ListBox<T>)declaration).DeferredHierarchy };
         scroll.Children.Initialize(content);
         return scroll;
     }
@@ -248,6 +283,7 @@ public class ListBoxElement<T> : ItemsRepeaterElement<T>, IUiItemViewport
             Activate = Activate,
             Navigate = Navigate,
         };
+        list.ConfigureItem?.Invoke(item, option);
         option.Content.Initialize(content);
         return option;
     }
@@ -378,7 +414,7 @@ public class ListBoxElement<T> : ItemsRepeaterElement<T>, IUiItemViewport
             indices.Add(index);
         }
 
-        string? restoreFocusKey = _preparingRange ? _rangePreparation?.RestoreKey : FocusItemKey(Surface?.FocusedElement ?? Surface?.DeferredViewportFocus);
+        string? restoreFocusKey = _preparingRange ? _rangePreparation?.RestoreKey : list.RestoreHierarchyFocusKey ?? FocusItemKey(Surface?.FocusedElement ?? Surface?.DeferredViewportFocus);
         int restoreIndex = restoreFocusKey is null ? -1 : Array.IndexOf(keys, restoreFocusKey);
         if (restoreIndex < 0 || !list.IsVisible || !list.IsPresent || !IsContentActive
             || (list.ItemVisible?.Invoke(items[restoreIndex]) == false) || (list.ItemEnabled?.Invoke(items[restoreIndex]) == false))

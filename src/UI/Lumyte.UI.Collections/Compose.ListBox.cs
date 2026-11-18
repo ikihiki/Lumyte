@@ -43,6 +43,16 @@ public static partial class Compose
 
             internal override bool RequiresViewportPreparation => Virtualization is not null;
 
+            internal string? RestoreHierarchyFocusKey { get; set; }
+
+            internal bool DeferredHierarchy { get; set; }
+
+            internal string? RequestedRevealKey { get; set; }
+
+            internal long RevealPositionVersion { get; set; }
+
+            internal Action<T, CollectionItem>? ConfigureItem { get; set; }
+
             internal Action<string>? ItemInvoked { get; set; }
 
             internal Func<string?>? SelectionValue { get; set; }

@@ -24,6 +24,8 @@ public partial class UiElement
 
     internal Vector2 PreparedSize => _preparedLayout?.Size ?? _size;
 
+    internal Rect2D PreparedBounds => _preparedLayout?.Bounds ?? _bounds;
+
     internal bool IsLayoutDirty => _layoutDirty;
 
     internal long LayoutPassId { get; set; }

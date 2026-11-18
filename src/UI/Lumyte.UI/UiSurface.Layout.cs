@@ -98,7 +98,7 @@ public sealed partial class UiSurface
             return;
         }
 
-        if (CollectElements(_rootElement).OfType<ScrollViewElement>().Any(scroll => scroll.Widget.DeferredPosition))
+        if (CollectElements(_rootElement).Any(element => element.Widget.RequiresViewportPreparation) || CollectElements(_rootElement).OfType<ScrollViewElement>().Any(scroll => scroll.Widget.DeferredPosition))
         {
             UpdateVirtualLayout();
             return;

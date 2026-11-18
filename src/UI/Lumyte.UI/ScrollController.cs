@@ -220,6 +220,8 @@ public sealed class ScrollController : IDisposable
 
     internal void StageItemAnchor(float offset) => _stagedAnchorOffset = offset;
 
+    internal void ClearStagedItemAnchor() => _stagedAnchorOffset = null;
+
     internal void DiscardProposedGeometry()
     {
         _proposedGeometry = null;

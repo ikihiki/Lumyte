@@ -15,11 +15,21 @@ internal sealed class CollectionItem : Widget
 
     internal WidgetChildren Content { get; }
 
+    internal Func<bool>? Expanded { get; set; }
+
+    internal Action<bool>? Expand { get; set; }
+
+    internal UiTreeItemState? TreeItem { get; set; }
+
+    internal float GlyphStart { get; set; }
+
+    internal ItemNavigation? HierarchyNavigate { get; set; }
+
     internal UiOrientation Orientation { get; init; }
 
     internal required Func<bool> Selected { get; init; }
 
-    internal required Func<UiAutomationId> SelectionOwner { get; init; }
+    internal required Func<UiAutomationId> SelectionOwner { get; set; }
 
     internal required Func<CollectionItemElement, bool> TabStop { get; init; }
 
