@@ -44,9 +44,17 @@ Standard pinned Actions upload/download-artifact transports a standard tar.
 The small stdlib helper validates the entire payload before extraction, retaining
 executable modes and safe relative symlinks. It binds actual checkout HEAD
 (including PR synthetic merge SHA), tracked source contents/modes, OS/architecture,
-RID, configuration, SDK, publication kind, run ID/attempt, absolute workspace and
+RID, configuration, SDK, publication kind, run ID, absolute workspace and
 NuGet root. Hashes protect integrity, not against replacement by an untrusted
 publisher; normal Actions same-run/ref trust remains essential.
+
+Consumer-only retries may reuse the matching producer artifact from an earlier
+attempt of the same run: producer attempt is informational, not consumer identity.
+Run ID/source/RID/configuration/SDK/path/ABI checks remain mandatory. Uploads use
+standard overwrite=true, so a rerun producer replaces its fixed-name artifact
+rather than conflicting or accumulating attempt-suffixed native assets. The final
+native asset pattern sees only the current artifact for each producer; it never
+merges multiple attempts for a RID.
 
 Strict matching absolute paths are intentional: project.assets.json and NuGet
 imports contain producer paths. The complete exact package/version directories
@@ -55,6 +63,10 @@ No speculative text relocation is applied. Consumers install the pinned SDK and
 check its actual version. Git source paths cannot be extracted or overwritten;
 unknown paths, traversal, hardlinks, escaping symlinks, missing members, corrupt
 files and mismatched identity fail closed without fallback build/restore.
+Archive integrity/internal library closure is verified before extraction. External
+system ICD libraries need not exist at extraction time: a separate check-runtime
+verification after tools-only OS/runtime provisioning requires them to resolve.
+This does not assume packages installed by the producer exist on a fresh VM.
 
 Payload includes project and runner bin/obj, generators/MSBuild metadata, exact
 NuGet imports/adapters, final native binaries/provenance/staged licenses, runtime
@@ -109,7 +121,7 @@ Old-head CI cannot validate this graph. No old run was cancelled or restarted.
   producer-to-two-AOT-consumers executable fixture and all no-publish contracts.
 - Relevant Integration orchestration: 227 passed with no-build/no-restore and
   the consumer guard enabled. Node contracts: 235 passed, one optional skip.
-- Transport: 18 Python security/closure tests; graph/shell contracts: four tests.
+- Transport: 21 Python security/closure tests; graph/shell contracts: six tests.
   Seven YAML files and XML/Python syntax parse. Managed/build format and all
   370 Markdown files pass.
 - Real clean-output product proof: Lumyte.Memory plus its DI library and test
@@ -119,6 +131,8 @@ Old-head CI cannot validate this graph. No old run was cancelled or restarted.
   forbidden CoreCompile was rejected. Evidence was retained under the owned
   lumyte-prebuilt-smoke-YqLWKb cache directory. The simpler SDK/adapter fixture
   likewise passed after removing every producer output and dependency cache.
+  The product smoke additionally passed with producer attempt 1 and consumer
+  attempt 2 (27 tests); retry evidence is under lumyte-prebuilt-smoke-Bxefti.
 
 ## Historical investigations (superseded topology)
 

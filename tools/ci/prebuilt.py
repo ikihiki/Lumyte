@@ -6,6 +6,8 @@ Usage: prebuilt.py {create,verify,extract} FILE --rid linux-x64
 SDK is the caller's resolved setup-dotnet identity. Use trusted same-run artifact
 storage: hashes detect corruption, not malicious replacement. Exclusive workspace
 required. Existing files must be identical; no existing file is overwritten.
+Run identity excludes consumer attempt; producer_attempt is informational.
+Use verify --check-runtime after OS/runtime installation to resolve external ICDs.
 """
 import argparse
 import hashlib
@@ -98,8 +100,8 @@ def identity(root, nuget, rid, configuration, sdk):
         closure.append([name, 'link' if p.is_symlink() else 'file',
                         digest(os.readlink(p).encode() if p.is_symlink() else p.read_bytes()),
                         bool(p.lstat().st_mode & 0o111)])
-    run = [os.environ.get(k, '') for k in ('GITHUB_RUN_ID', 'GITHUB_RUN_ATTEMPT')]
-    require(all(run), 'GITHUB_RUN_ID and GITHUB_RUN_ATTEMPT are required')
+    run = os.environ.get('GITHUB_RUN_ID', '')
+    require(run, 'GITHUB_RUN_ID is required')
     require(all((rid, configuration, sdk)), 'RID/configuration/SDK required')
     return dict(head=git(root, 'rev-parse', 'HEAD').decode().strip(),
                 source_sha256=digest(canonical(closure)), workspace=str(root),
@@ -205,7 +207,8 @@ def create(archive, root, nuget, expected):
         require(not (name.startswith('workspace/') and name[10:] in tracked), 'tracked payload')
         entries[name] = describe(p, name)
     validate_links(entries)
-    manifest = dict(version=1, identity=expected, entries=entries)
+    manifest = dict(version=1, identity=expected, entries=entries,
+                    producer_attempt=os.environ.get('GITHUB_RUN_ATTEMPT', ''))
     with archive.open('xb') as output, tarfile.open(fileobj=output, mode='w', format=tarfile.PAX_FORMAT) as tf:
         data = canonical(manifest)
         info = tarfile.TarInfo('manifest.json')
@@ -224,7 +227,7 @@ def create(archive, root, nuget, expected):
     verify(archive, root, nuget, expected)
 
 
-def verify(archive, root, nuget, expected, extract=False):
+def verify(archive, root, nuget, expected, extract=False, check_runtime=False):
     tracked = set(git(root, 'ls-files', '-z').decode().split(chr(0)))
     with tarfile.open(archive, 'r:') as tf:
         members = tf.getmembers()
@@ -286,7 +289,7 @@ def verify(archive, root, nuget, expected, extract=False):
                     if root in path.parents:
                         require('workspace/' + path.relative_to(root).as_posix() in entries,
                                 'missing absolute lavapipe library closure')
-                    else:
+                    elif check_runtime:
                         require(path.is_file(), 'missing system lavapipe library')
         actual_packages = {'/'.join(clean(n)[1:3]) for n in entries if n.startswith('nuget/')}
         require(actual_packages == required_packages, 'NuGet package closure mismatch')
@@ -323,6 +326,8 @@ def main():
     parser.add_argument('--workspace', type=Path, default=Path.cwd())
     parser.add_argument('--nuget-root', type=Path,
                         default=Path(os.environ.get('NUGET_PACKAGES', str(Path.home() / '.nuget/packages'))))
+    parser.add_argument('--check-runtime', action='store_true',
+                        help='After runtime provisioning, require external ICD libraries to exist')
     parser.add_argument('--kind', choices=('native', 'browser', 'aot'), default='native')
     for option in ('rid', 'configuration', 'sdk'):
         parser.add_argument('--' + option, required=True)
@@ -340,7 +345,7 @@ def main():
         if args.command == 'create':
             create(args.archive, root, nuget, expected)
         else:
-            verify(args.archive, root, nuget, expected, args.command == 'extract')
+            verify(args.archive, root, nuget, expected, args.command == 'extract', args.check_runtime)
         print('prebuilt ' + args.command + ': verified')
     except (Invalid, OSError, ValueError, KeyError, TypeError, tarfile.TarError,
             subprocess.CalledProcessError) as error:

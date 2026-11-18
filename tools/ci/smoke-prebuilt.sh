@@ -38,6 +38,8 @@ python3 "$repo/tools/ci/prebuilt.py" create "$root/prebuilt.tar" --rid linux-x64
 # Remove only this harness's producer outputs and private package cache.
 find "$root/src" "$root/tests" -type d \( -name bin -o -name obj \) -prune -exec rm -rf {} +
 rm -rf "$NUGET_PACKAGES"
+# Simulate rerun-failed-jobs: producer attempt 1, consumer attempt 2.
+export GITHUB_RUN_ATTEMPT=2
 python3 "$repo/tools/ci/prebuilt.py" extract "$root/prebuilt.tar" --rid linux-x64 --configuration Release --sdk "$sdk"
 export LUMYTE_PREBUILT_CONSUMER=1
 dotnet test "$project" -c Release --no-build --no-restore --logger 'trx;LogFileName=smoke.trx' --results-directory "$root/results"

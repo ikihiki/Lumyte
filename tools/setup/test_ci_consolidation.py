@@ -75,6 +75,23 @@ class ConsolidationTests(unittest.TestCase):
         self.assertLess(names.index("Native / cold-cache maximum drawing program"), names.index("Cache ordinary GPU compiled shaders"))
         self.assertIn("--pipeline-validation", str(gpu))
 
+    def test_retry_uploads_replace_instead_of_merging_attempts(self):
+        for job in self.jobs.values():
+            for step in job['steps']:
+                if 'actions/upload-artifact@' in step.get('uses', ''):
+                    self.assertIs(step['with']['overwrite'], True)
+        self.assertEqual(self.jobs['package']['steps'][2]['with']['pattern'], 'parley-native-*')
+
+    def test_runtime_validation_follows_tools_only_provisioning(self):
+        for key, job in self.jobs.items():
+            if 'needs' not in job or key == 'package':
+                continue
+            commands = '\n'.join(step.get('run', '') for step in job['steps'])
+            self.assertIn('--check-runtime', commands)
+            self.assertLess(commands.index('LUMYTE_SETUP_TOOLS_ONLY'), commands.index('--check-runtime'))
+            extract = next(step['run'] for step in job['steps'] if 'prebuilt.py extract' in step.get('run', ''))
+            self.assertNotIn('--check-runtime', extract)
+
     def test_bash_syntax(self):
         for job in self.jobs.values():
             for step in job["steps"]:

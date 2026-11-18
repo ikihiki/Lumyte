@@ -139,8 +139,44 @@ class TransportTests(unittest.TestCase):
         self.git('commit', '-qm', 'changed')
         self.assertNotEqual(before['head'], self.identity()['head'])
 
+    def test_consumer_retry_accepts_same_run_original_producer(self):
+        with patch.dict(os.environ, GITHUB_RUN_ATTEMPT='1'):
+            self.create()
+        self.fresh()
+        with patch.dict(os.environ, GITHUB_RUN_ATTEMPT='2'):
+            manifest = self.verify(self.identity(), extract=True)
+        self.assertEqual(manifest['producer_attempt'], '1')
+        self.assertEqual((self.root / 'src/P/bin/Release/app').read_text(), 'binary')
+
+    def test_rerun_producer_replaces_same_named_transport(self):
+        self.create()
+        # upload-artifact overwrite replaces the old named artifact, never merges it.
+        self.archive.unlink()
+        self.put('src/P/bin/Release/app', 'rerun binary', 0o755)
+        with patch.dict(os.environ, GITHUB_RUN_ATTEMPT='2'):
+            self.create()
+        self.fresh()
+        with patch.dict(os.environ, GITHUB_RUN_ATTEMPT='3'):
+            manifest = self.verify(self.identity(), extract=True)
+        self.assertEqual(manifest['producer_attempt'], '2')
+        self.assertEqual((self.root / 'src/P/bin/Release/app').read_text(), 'rerun binary')
+
+    def test_external_icd_dependency_checked_after_runtime_provisioning(self):
+        driver = self.base / 'fresh-system/usr/lib/libvulkan_lvp.so'
+        self.put('artifacts/dev-env/lavapipe.json',
+                 json.dumps({'ICD': {'library_path': str(driver)}}))
+        self.create()
+        self.fresh()
+        # Archive integrity and extraction do not assume producer OS packages.
+        self.verify(extract=True)
+        with self.assertRaisesRegex(p.Invalid, 'missing system lavapipe'):
+            p.verify(self.archive, self.root, self.nuget, self.expected, check_runtime=True)
+        driver.parent.mkdir(parents=True)
+        driver.write_text('runtime installed by package manager')
+        p.verify(self.archive, self.root, self.nuget, self.expected, check_runtime=True)
+
     def test_missing_run_identity(self):
-        with patch.dict(os.environ, GITHUB_RUN_ATTEMPT=''):
+        with patch.dict(os.environ, GITHUB_RUN_ID=''):
             with self.assertRaises(p.Invalid):
                 self.identity()
 
