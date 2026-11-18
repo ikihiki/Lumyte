@@ -30,6 +30,121 @@
       ]]></Code>
     </Task>
   </UsingTask>
+  <!-- Resolve filesystem inputs only; never change the command executed below. -->
+  <UsingTask TaskName="ResolveSlangCompilerInput" TaskFactory="RoslynCodeTaskFactory"
+             AssemblyFile="$(MSBuildToolsPath)/Microsoft.Build.Tasks.Core.dll">
+    <Task>
+      <Code Type="Class" Language="cs"><![CDATA[
+public sealed class ResolveSlangCompilerInput : Microsoft.Build.Utilities.Task {
+  [Microsoft.Build.Framework.Required] public string Compiler { get; set; }
+  [Microsoft.Build.Framework.Required] public string IntermediateDirectory { get; set; }
+  [Microsoft.Build.Framework.Required] public string DotnetHost { get; set; }
+  [Microsoft.Build.Framework.Required] public string ShaderTool { get; set; }
+  [Microsoft.Build.Framework.Required] public string WorkingDirectory { get; set; }
+  public bool CompilerHasBackslash { get; set; }
+  public bool HostHasBackslash { get; set; }
+  public bool DeclaredHostHasBackslash { get; set; }
+  [Microsoft.Build.Framework.Output] public string CompilerInput { get; set; }
+  [Microsoft.Build.Framework.Output] public string Identity { get; set; }
+  [System.Runtime.InteropServices.DllImport("libc", EntryPoint = "faccessat", SetLastError = true)]
+  private static extern int ExecutableAccess(int directory, string path, int mode, int flags);
+  private string FullPath(string path) { return System.IO.Path.GetFullPath(System.IO.Path.IsPathRooted(path) ? path : System.IO.Path.Combine(WorkingDirectory, path)); }
+  private bool CanExecute(string path) { return System.IO.File.Exists(path) && ExecutableAccess(-100, path, 1, 0x200) == 0; }
+  private string ShellHost() {
+    if (System.IO.Path.IsPathRooted(DotnetHost) || DotnetHost.IndexOf('/') >= 0) return FullPath(DotnetHost);
+    string path = System.Environment.GetEnvironmentVariable("PATH");
+    if (path == null) return null;
+    foreach (string entry in path.Split(':')) {
+      string candidate = FullPath(System.IO.Path.Combine(entry, DotnetHost));
+      if (CanExecute(candidate)) return candidate;
+    }
+    return null;
+  }
+  private string KnownChildExecutableDirectory() {
+    // Do not confuse the task DLL base with the child host executable directory.
+    // Wrappers/different hosts/runtime policies are unqualified: always rebuild.
+    if (System.Environment.Version != new System.Version(10, 0, 14)) return null;
+    if (!string.IsNullOrEmpty(System.Environment.GetEnvironmentVariable("DOTNET_STARTUP_HOOKS")) ||
+        !string.IsNullOrEmpty(System.Environment.GetEnvironmentVariable("DOTNET_ADDITIONAL_DEPS"))) return null;
+    if (!string.IsNullOrEmpty(System.Environment.GetEnvironmentVariable("DOTNET_ROLL_FORWARD")) ||
+        !string.IsNullOrEmpty(System.Environment.GetEnvironmentVariable("DOTNET_ROLL_FORWARD_TO_PRERELEASE"))) return null;
+    string host = ShellHost();
+    if (host == null || !CanExecute(host)) return null;
+    // RoslynCodeTaskFactory references netstandard: access newer PUBLIC BCL
+    // metadata APIs compatibly, never private runtime/MSBuild resolvers.
+    string runningHost = typeof(System.Environment).GetProperty("ProcessPath")?.GetValue(null) as string;
+    if (!string.Equals(host, runningHost, System.StringComparison.Ordinal)) return null;
+    string directory = System.IO.Path.GetDirectoryName(host);
+    string framework = System.IO.Path.Combine(directory, "shared", "Microsoft.NETCore.App");
+    string[] versions = System.IO.Directory.GetDirectories(framework, "10.*");
+    if (versions.Length != 1 || System.IO.Path.GetFileName(versions[0]) != "10.0.14") return null;
+    // Only the SDK-generated, unchanged tool runtime configuration is qualified.
+    // Alternate policies/formatting are conservative rebuilds, not guessed JSON.
+    string config = System.IO.File.ReadAllText(System.IO.Path.ChangeExtension(ShaderTool, ".runtimeconfig.json")).Replace("\r\n", "\n");
+    if (!string.Equals(config, "{\n  \"runtimeOptions\": {\n    \"tfm\": \"net10.0\",\n    \"framework\": {\n      \"name\": \"Microsoft.NETCore.App\",\n      \"version\": \"10.0.0\"\n    },\n    \"configProperties\": {\n      \"System.Reflection.Metadata.MetadataUpdater.IsSupported\": false,\n      \"System.Runtime.Serialization.EnableUnsafeBinaryFormatterSerialization\": false\n    }\n  }\n}", System.StringComparison.Ordinal)) return null;
+    return directory;
+  }
+  public override bool Execute() {
+    string selected = null;
+    bool windows = System.Runtime.InteropServices.RuntimeInformation.IsOSPlatform(System.Runtime.InteropServices.OSPlatform.Windows);
+    bool linux = System.Runtime.InteropServices.RuntimeInformation.IsOSPlatform(System.Runtime.InteropServices.OSPlatform.Linux);
+    try {
+      // Linux task strings and the existing shell command need not preserve
+      // backslashes identically. Decline caching, never rewrite accepted argv.
+      if (linux && (CompilerHasBackslash || HostHasBackslash || DeclaredHostHasBackslash || Compiler.IndexOf((char)92) >= 0 || DotnetHost.IndexOf((char)92) >= 0)) throw new System.InvalidOperationException();
+      if (Compiler.IndexOfAny(new char[] { '$', (char)96, '"', ';', '\r', '\n' }) >= 0 ||
+          DotnetHost.IndexOfAny(new char[] { '$', (char)96, '"', '\r', '\n' }) >= 0) throw new System.InvalidOperationException();
+      if (System.IO.Path.IsPathRooted(Compiler)) {
+        string candidate = FullPath(Compiler);
+        if (System.IO.File.Exists(candidate) && (windows || (linux && CanExecute(candidate)))) selected = candidate;
+      } else if (linux) {
+        string executableDirectory = KnownChildExecutableDirectory();
+        if (executableDirectory == null) throw new System.InvalidOperationException();
+        // Process.Unix.ResolvePath v10.0.14: exe directory, actual child CWD,
+        // then nonempty PATH entries. First two branches select by File.Exists.
+        foreach (string directory in new string[] { executableDirectory, WorkingDirectory }) {
+          string candidate = System.IO.Path.Combine(directory, Compiler);
+          if (System.IO.File.Exists(candidate)) {
+            if (!CanExecute(candidate)) throw new System.InvalidOperationException();
+            selected = candidate;
+            break;
+          }
+        }
+        if (selected == null) {
+          string path = System.Environment.GetEnvironmentVariable("PATH");
+          if (path != null) foreach (string entry in path.Split(':')) {
+            if (entry.Length == 0) continue;
+            string candidate = FullPath(System.IO.Path.Combine(entry, Compiler));
+            if (!System.IO.File.Exists(candidate)) continue;
+            var mode = typeof(System.IO.File).GetMethod("GetUnixFileMode", new System.Type[] { typeof(string) });
+            int execute = System.Convert.ToInt32(mode.Invoke(null, new object[] { candidate })) & 73;
+            if (execute == 0) continue;
+            // Do not guess partial permission/ACL ownership semantics for PATH.
+            if (execute != 73 || !CanExecute(candidate)) throw new System.InvalidOperationException();
+            selected = candidate;
+            break;
+          }
+        }
+      }
+      // Do not emulate Windows CreateProcess/PATHEXT or an unsupported platform.
+      // Unresolved commands keep their original execution and safely rebuild.
+      if (selected != null) {
+        var file = new System.IO.FileInfo(selected);
+        CompilerInput = selected;
+        Identity = Compiler + "|" + selected + "|" + file.LastWriteTimeUtc.Ticks + "|" + file.Length;
+        return true;
+      }
+    } catch (System.Exception) {
+      // Resolution is advisory: unavailable metadata must not imply cache success.
+    }
+    CompilerInput = System.IO.Path.Combine(System.IO.Path.GetFullPath(IntermediateDirectory), "unresolved-compiler-" + System.Guid.NewGuid().ToString("N"));
+    Identity = Compiler + "|unresolved";
+    return true;
+  }
+}
+      ]]></Code>
+    </Task>
+  </UsingTask>
   <ItemGroup Condition="'@(SlangShader)' != ''">
     <ProjectReference Include="$(_LumyteShaderToolProject)" ReferenceOutputAssembly="false" PrivateAssets="all"
                       GlobalPropertiesToRemove="TargetFramework;RuntimeIdentifier;SelfContained;PublishAot;PublishTrimmed">
@@ -52,12 +167,20 @@
       <_LumyteShaderTool>@(_LumyteShaderToolTarget->'%(FullPath)')</_LumyteShaderTool>
       <_LumyteShaderToolDirectory>$([System.IO.Path]::GetDirectoryName('$(_LumyteShaderTool)'))</_LumyteShaderToolDirectory>
     </PropertyGroup>
+    <ResolveSlangCompilerInput Compiler="$(SlangCompilerPath)" IntermediateDirectory="$(IntermediateOutputPath)Slang" DotnetHost="$(_LumyteShaderDotnet)" ShaderTool="$(_LumyteShaderTool)" WorkingDirectory="$(MSBuildProjectDirectory)" CompilerHasBackslash="$(SlangCompilerPath.Contains('\'))" HostHasBackslash="$(_LumyteShaderDotnet.Contains('\'))" DeclaredHostHasBackslash="$(DotNetHostPath.Contains('\'))" Condition="'$(NoBuild)' != 'true'">
+      <Output TaskParameter="CompilerInput" PropertyName="_LumyteSlangCompilerInput" />
+      <Output TaskParameter="Identity" PropertyName="_LumyteSlangCompilerIdentity" />
+    </ResolveSlangCompilerInput>
+    <PropertyGroup><_LumyteSlangCompilerIdentityFile>$(IntermediateOutputPath)Slang/compiler.identity</_LumyteSlangCompilerIdentityFile></PropertyGroup>
+    <MakeDir Directories="$(IntermediateOutputPath)Slang" Condition="'$(NoBuild)' != 'true'" />
+    <!-- Also invalidate when PATH selects an older executable at a new identity. -->
+    <WriteLinesToFile File="$(_LumyteSlangCompilerIdentityFile)" Lines="$(_LumyteSlangCompilerIdentity)" Overwrite="true" WriteOnlyWhenDifferent="true" Condition="'$(NoBuild)' != 'true'" />
     <ItemGroup>
       <_LumyteShaderToolInputs Include="$(_LumyteShaderTool);$(_LumyteShaderToolDirectory)/Lumyte.Graphics.Shaders.dll;$(_LumyteShaderToolDirectory)/Lumyte.Graphics.Abstractions.dll" />
     </ItemGroup>
   </Target>
   <Target Name="CompileSlangShaders" DependsOnTargets="PrepareLumyteShaderCompiler"
-          Inputs="%(SlangShader.AdditionalInputs);%(SlangShader.FullPath);$(MSBuildThisFileDirectory)include/lumyte.slang;$(MSBuildThisFileFullPath);$(MSBuildAllProjects);$(SlangCompilerPath);@(_LumyteShaderToolInputs)"
+          Inputs="%(SlangShader.AdditionalInputs);%(SlangShader.FullPath);$(MSBuildThisFileDirectory)include/lumyte.slang;$(MSBuildThisFileFullPath);$(MSBuildAllProjects);$(_LumyteSlangCompilerInput);$(_LumyteSlangCompilerIdentityFile);@(_LumyteShaderToolInputs)"
           Outputs="$(IntermediateOutputPath)Slang/%(SlangShader.ResourceName).lshader"
           Condition="'@(SlangShader)' != '' and '$(NoBuild)' != 'true'">
     <Error Condition="'%(SlangShader.ResourceName)' == ''" Text="SlangShader requires a unique ResourceName." />
@@ -77,7 +200,7 @@
         <LogicalName>%(_SlangBinaries.Filename)%(_SlangBinaries.Extension)</LogicalName>
         <WithCulture>false</WithCulture>
       </EmbeddedResource>
-      <FileWrites Include="@(_SlangBinaries);@(SlangShader->'$(IntermediateOutputPath)Slang/%(ResourceName).wgsl');@(SlangShader->'$(IntermediateOutputPath)Slang/%(ResourceName).wgsl.reflection.json');@(SlangShader->'$(IntermediateOutputPath)Slang/%(ResourceName).spv');@(SlangShader->'$(IntermediateOutputPath)Slang/%(ResourceName).spv.reflection.json');@(SlangShader->'$(IntermediateOutputPath)Slang/%(ResourceName).dxil');@(SlangShader->'$(IntermediateOutputPath)Slang/%(ResourceName).dxil.reflection.json')" />
+      <FileWrites Include="$(_LumyteSlangCompilerIdentityFile);@(_SlangBinaries);@(SlangShader->'$(IntermediateOutputPath)Slang/%(ResourceName).wgsl');@(SlangShader->'$(IntermediateOutputPath)Slang/%(ResourceName).wgsl.reflection.json');@(SlangShader->'$(IntermediateOutputPath)Slang/%(ResourceName).spv');@(SlangShader->'$(IntermediateOutputPath)Slang/%(ResourceName).spv.reflection.json');@(SlangShader->'$(IntermediateOutputPath)Slang/%(ResourceName).dxil');@(SlangShader->'$(IntermediateOutputPath)Slang/%(ResourceName).dxil.reflection.json')" />
     </ItemGroup>
   </Target>
 </Project>
