@@ -22,6 +22,13 @@
     <None Update="README.md" Pack="true" PackagePath="/" />
   </ItemGroup>
   <ItemGroup>
+    <SlangShader Include="Shaders/draw-records-mesh.slang" ResourceName="Lumyte.Drawing2D.draw-records-mesh" Stage="mesh" Defines="" />
+    <SlangShader Include="Shaders/draw-records-mesh.slang" ResourceName="Lumyte.Drawing2D.draw-records-basic-mesh" Stage="mesh" Defines="-DLUMYTE_RECORD_MASKS=0 -DLUMYTE_RECORD_IMAGES=0" />
+    <SlangShader Include="Shaders/draw-records-mesh.slang" ResourceName="Lumyte.Drawing2D.draw-records-mask-mesh" Stage="mesh" Defines="-DLUMYTE_RECORD_MASKS=1 -DLUMYTE_RECORD_IMAGES=0" />
+    <SlangShader Include="Shaders/draw-records-mesh.slang" ResourceName="Lumyte.Drawing2D.draw-records-image-mesh" Stage="mesh" Defines="-DLUMYTE_RECORD_MASKS=0 -DLUMYTE_RECORD_IMAGES=1" />
+    <SlangShader Include="Shaders/draw-records-mesh.slang" ResourceName="Lumyte.Drawing2D.draw-records-image-small-mesh" Stage="mesh" Defines="-DLUMYTE_RECORD_MASKS=0 -DLUMYTE_RECORD_IMAGES=1" />
+    <SlangShader Include="Shaders/draw-records-mesh.slang" ResourceName="Lumyte.Drawing2D.draw-records-image-medium-mesh" Stage="mesh" Defines="-DLUMYTE_RECORD_MASKS=0 -DLUMYTE_RECORD_IMAGES=1" />
+    <SlangShader Include="Shaders/draw-records-mesh.slang" ResourceName="Lumyte.Drawing2D.draw-records-solid-mesh" Stage="mesh" Defines="-DLUMYTE_SIMPLE_RECORDS=1 -DLUMYTE_RECORD_MASKS=0 -DLUMYTE_RECORD_IMAGES=0" />
     <SlangShader Include="Shaders/draw-records-vertex.slang" ResourceName="Lumyte.Drawing2D.draw-records-vertex" Stage="vertex" />
     <SlangShader Include="Shaders/draw-records-fragment.slang" ResourceName="Lumyte.Drawing2D.draw-records-fragment" Stage="fragment" />
     <SlangShader Include="Shaders/draw-records-vertex.slang" ResourceName="Lumyte.Drawing2D.draw-records-basic-vertex" Stage="vertex" Defines="-DLUMYTE_RECORD_MASKS=0 -DLUMYTE_RECORD_IMAGES=0" />

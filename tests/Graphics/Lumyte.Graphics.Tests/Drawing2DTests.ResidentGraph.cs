@@ -31,10 +31,10 @@ public sealed partial class Drawing2DTests
         await CheckResidentGraphAsync(device);
     }
 
-    private static async Task CheckResidentGraphAsync(IGraphicDevice device)
+    private static async Task CheckResidentGraphAsync(IGraphicDevice device, bool meshCoverage = false)
     {
         {
-            using Renderer2D renderer = CreateResidentRenderer(device);
+            using Renderer2D renderer = meshCoverage ? CreateMeshResidentRenderer(device) : CreateResidentRenderer(device);
             using var scene = new DrawingScene2D();
             scene.Insert(scene.Root, 0, ResidentPrimitive(false));
             scene.Insert(scene.Root, 1, ResidentCorrelatedPath());

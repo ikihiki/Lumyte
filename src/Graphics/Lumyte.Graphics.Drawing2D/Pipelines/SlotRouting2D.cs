@@ -93,6 +93,8 @@ internal static class SlotRouting2D
         /// <inheritdoc/>
         IReadOnlyList<Type> ICommandChoice2D.CandidateTypes => Array.AsReadOnly(_candidates.Select(candidate => candidate.Backend.GetType()).ToArray());
 
+        IReadOnlyList<object> ICommandChoice2D.CandidateProcessors => Array.AsReadOnly(_candidates.Select(candidate => (object)candidate.Backend).ToArray());
+
         public ValueTask<IPreparedCommandBatch2D> PrepareAsync(RenderPreparationContext2D context, ReadOnlyMemory<FillRectCommand2D> commands, CancellationToken cancellationToken = default)
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -106,6 +108,8 @@ internal static class SlotRouting2D
 
         /// <inheritdoc/>
         IReadOnlyList<Type> ICommandChoice2D.CandidateTypes => Array.AsReadOnly(_candidates.Select(candidate => candidate.Backend.GetType()).ToArray());
+
+        IReadOnlyList<object> ICommandChoice2D.CandidateProcessors => Array.AsReadOnly(_candidates.Select(candidate => (object)candidate.Backend).ToArray());
 
         public ValueTask<IPreparedCommandBatch2D> PrepareAsync(RenderPreparationContext2D context, ReadOnlyMemory<FillRoundedRectCommand2D> commands, CancellationToken cancellationToken = default)
         {
@@ -121,6 +125,8 @@ internal static class SlotRouting2D
         /// <inheritdoc/>
         IReadOnlyList<Type> ICommandChoice2D.CandidateTypes => Array.AsReadOnly(_candidates.Select(candidate => candidate.Backend.GetType()).ToArray());
 
+        IReadOnlyList<object> ICommandChoice2D.CandidateProcessors => Array.AsReadOnly(_candidates.Select(candidate => (object)candidate.Backend).ToArray());
+
         public ValueTask<IPreparedCommandBatch2D> PrepareAsync(RenderPreparationContext2D context, ReadOnlyMemory<FillCircleCommand2D> commands, CancellationToken cancellationToken = default)
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -134,6 +140,8 @@ internal static class SlotRouting2D
 
         /// <inheritdoc/>
         IReadOnlyList<Type> ICommandChoice2D.CandidateTypes => Array.AsReadOnly(_candidates.Select(candidate => candidate.Backend.GetType()).ToArray());
+
+        IReadOnlyList<object> ICommandChoice2D.CandidateProcessors => Array.AsReadOnly(_candidates.Select(candidate => (object)candidate.Backend).ToArray());
 
         public ValueTask<IPreparedCommandBatch2D> PrepareAsync(RenderPreparationContext2D context, ReadOnlyMemory<DrawLineCommand2D> commands, CancellationToken cancellationToken = default)
         {
@@ -149,6 +157,8 @@ internal static class SlotRouting2D
         /// <inheritdoc/>
         IReadOnlyList<Type> ICommandChoice2D.CandidateTypes => Array.AsReadOnly(_candidates.Select(candidate => candidate.Backend.GetType()).ToArray());
 
+        IReadOnlyList<object> ICommandChoice2D.CandidateProcessors => Array.AsReadOnly(_candidates.Select(candidate => (object)candidate.Backend).ToArray());
+
         public ValueTask<IPreparedCommandBatch2D> PrepareAsync(RenderPreparationContext2D context, ReadOnlyMemory<FillPathCommand2D> commands, CancellationToken cancellationToken = default)
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -162,6 +172,8 @@ internal static class SlotRouting2D
 
         /// <inheritdoc/>
         IReadOnlyList<Type> ICommandChoice2D.CandidateTypes => Array.AsReadOnly(_candidates.Select(candidate => candidate.Backend.GetType()).ToArray());
+
+        IReadOnlyList<object> ICommandChoice2D.CandidateProcessors => Array.AsReadOnly(_candidates.Select(candidate => (object)candidate.Backend).ToArray());
 
         public ValueTask<IPreparedCommandBatch2D> PrepareAsync(RenderPreparationContext2D context, ReadOnlyMemory<StrokePathCommand2D> commands, CancellationToken cancellationToken = default)
         {
@@ -177,6 +189,8 @@ internal static class SlotRouting2D
         /// <inheritdoc/>
         IReadOnlyList<Type> ICommandChoice2D.CandidateTypes => Array.AsReadOnly(_candidates.Select(candidate => candidate.Backend.GetType()).ToArray());
 
+        IReadOnlyList<object> ICommandChoice2D.CandidateProcessors => Array.AsReadOnly(_candidates.Select(candidate => (object)candidate.Backend).ToArray());
+
         public ValueTask<IPreparedCommandBatch2D> PrepareAsync(RenderPreparationContext2D context, ReadOnlyMemory<DrawImageCommand2D> commands, CancellationToken cancellationToken = default)
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -190,6 +204,8 @@ internal static class SlotRouting2D
 
         /// <inheritdoc/>
         IReadOnlyList<Type> ICommandChoice2D.CandidateTypes => Array.AsReadOnly(_candidates.Select(candidate => candidate.Backend.GetType()).ToArray());
+
+        IReadOnlyList<object> ICommandChoice2D.CandidateProcessors => Array.AsReadOnly(_candidates.Select(candidate => (object)candidate.Backend).ToArray());
 
         public ValueTask<IPreparedCommandBatch2D> PrepareAsync(RenderPreparationContext2D context, ReadOnlyMemory<DrawCoverageMaskCommand2D> commands, CancellationToken cancellationToken = default)
         {
@@ -205,6 +221,8 @@ internal static class SlotRouting2D
         /// <inheritdoc/>
         IReadOnlyList<Type> ICommandChoice2D.CandidateTypes => Array.AsReadOnly(_candidates.Select(candidate => candidate.Backend.GetType()).ToArray());
 
+        IReadOnlyList<object> ICommandChoice2D.CandidateProcessors => Array.AsReadOnly(_candidates.Select(candidate => (object)candidate.Backend).ToArray());
+
         public ValueTask<IPreparedCommandBatch2D> PrepareAsync(RenderPreparationContext2D context, ReadOnlyMemory<DrawDistanceFieldCommand2D> commands, CancellationToken cancellationToken = default)
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -219,6 +237,8 @@ internal static class SlotRouting2D
         /// <inheritdoc/>
         IReadOnlyList<Type> ICommandChoice2D.CandidateTypes => Array.AsReadOnly(_candidates.Select(candidate => candidate.Backend.GetType()).ToArray());
 
+        IReadOnlyList<object> ICommandChoice2D.CandidateProcessors => Array.AsReadOnly(_candidates.Select(candidate => (object)candidate.Backend).ToArray());
+
         public ValueTask<IPreparedCommandBatch2D> PrepareAsync(RenderPreparationContext2D context, ReadOnlyMemory<DrawMeshCommand2D> commands, CancellationToken cancellationToken = default)
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -232,6 +252,8 @@ internal static class SlotRouting2D
 
         /// <inheritdoc/>
         IReadOnlyList<Type> ICommandChoice2D.CandidateTypes => Array.AsReadOnly(_candidates.Select(candidate => candidate.Backend.GetType()).ToArray());
+
+        IReadOnlyList<object> ICommandChoice2D.CandidateProcessors => Array.AsReadOnly(_candidates.Select(candidate => (object)candidate.Backend).ToArray());
 
         public ValueTask<IPreparedCommandBatch2D> PrepareAsync(RenderPreparationContext2D context, ReadOnlyMemory<DrawPaintGraphCommand2D> commands, CancellationToken cancellationToken = default)
         {

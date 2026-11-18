@@ -32,9 +32,9 @@ public sealed partial class Drawing2DTests
         await CheckResidentColdSharingAsync(device);
     }
 
-    private static async Task CheckResidentVersionsAsync(IGraphicDevice device)
+    private static async Task CheckResidentVersionsAsync(IGraphicDevice device, bool meshCoverage = false)
     {
-        using Renderer2D renderer = CreateResidentRenderer(device);
+        using Renderer2D renderer = meshCoverage ? CreateMeshResidentRenderer(device) : CreateResidentRenderer(device);
         using var scene = new DrawingScene2D();
         DrawingNodeId2D leaf = scene.Insert(scene.Root, 0, ResidentPrimitive(false));
         scene.Insert(scene.Root, 1, ResidentCorrelatedPath());
@@ -124,7 +124,7 @@ public sealed partial class Drawing2DTests
         }
     }
 
-    private static async Task CheckResidentColdSharingAsync(IGraphicDevice device)
+    private static async Task CheckResidentColdSharingAsync(IGraphicDevice device, bool meshCoverage = false)
     {
         DrawList2D content = ResidentPrimitive(false);
         using var scene = new DrawingScene2D();
@@ -132,7 +132,7 @@ public sealed partial class Drawing2DTests
         DrawingNodeId2D second = scene.Insert(scene.Root, 1, content);
         scene.SetTransform(second, Matrix3x2.CreateTranslation(1, 0));
         using DrawingSnapshot2D snapshot = scene.CaptureSnapshot();
-        using Renderer2D renderer = CreateResidentRenderer(device);
+        using Renderer2D renderer = meshCoverage ? CreateMeshResidentRenderer(device) : CreateResidentRenderer(device);
         using var slot = new SharedArgumentFrame(device);
         slot.Frame = await renderer.PrepareAsync(snapshot, new() { View = slot.View, LoadOp = AttachmentLoadOp.Clear });
         Assert.Equal(1, renderer.RetentionStatistics.CompiledRuns);

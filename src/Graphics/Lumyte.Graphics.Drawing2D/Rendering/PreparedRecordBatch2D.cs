@@ -7,7 +7,7 @@ namespace Lumyte.Graphics.Drawing2D;
 
 internal sealed class PreparedRecordBatch2D : IRetainedCommandBatch2D, IRetainedMemory2D, IPreparedWorkingBudget2D
 {
-    private static readonly BarrierScope _read = new(PipelineStage.VertexShader | PipelineStage.FragmentShader, ResourceAccess.ShaderRead);
+    private readonly BarrierScope _read;
     private readonly RenderPreparationContext2D _context;
     private readonly DrawRecordResources2D _resources;
     private readonly List<IDisposable> _owned = [];
@@ -22,6 +22,7 @@ internal sealed class PreparedRecordBatch2D : IRetainedCommandBatch2D, IRetained
     {
         _context = context;
         _resources = resources;
+        _read = new((resources.IsMesh ? PipelineStage.MeshShader : PipelineStage.VertexShader) | PipelineStage.FragmentShader, ResourceAccess.ShaderRead);
         Own(context.RetainResources());
         Own(context.ArgumentPlan.Retain());
     }
@@ -47,6 +48,8 @@ internal sealed class PreparedRecordBatch2D : IRetainedCommandBatch2D, IRetained
     public long EstimatedBytes => checked(_bytes + _context.ArgumentPlan.EstimatedBytes);
 
     public bool EnforcesWorkingBudget => _context.EnforceWorkingBudget;
+
+    internal bool IsMeshPayload => _resources.IsMesh;
 
     internal IEnumerable<(IPreparedCommandBatch2D Batch, IReadOnlyList<ShaderResources> Reservations)> GraphPages
     {
@@ -111,7 +114,7 @@ internal sealed class PreparedRecordBatch2D : IRetainedCommandBatch2D, IRetained
         }
     }
 
-    internal static ValueTask<IPreparedCommandBatch2D> PrepareAsync<T>(RenderPreparationContext2D context, ReadOnlyMemory<T> commands, CancellationToken cancellationToken)
+    internal static ValueTask<IPreparedCommandBatch2D> PrepareAsync<T>(RenderPreparationContext2D context, ReadOnlyMemory<T> commands, CancellationToken cancellationToken, DrawRecordResources2D? explicitResources = null)
         where T : DrawingCommand2D
     {
         if (!context.EnforceWorkingBudget && context.ArgumentPlan.WorkingReferencesEnabled)
@@ -126,7 +129,7 @@ internal sealed class PreparedRecordBatch2D : IRetainedCommandBatch2D, IRetained
             DrawingWorkingBudget2D.Validate(commands, context.Target, context.MaxWorkingBytes - context.OtherWorkingBytes - context.ArgumentPlan.EstimatedBytes);
         }
 
-        DrawRecordResources2D? resources = context.RecordResources();
+        DrawRecordResources2D? resources = explicitResources ?? context.RecordResources();
         if (resources is null)
         {
             return PreparedGpuBatch2D.PrepareAsync(context, commands, cancellationToken);
@@ -302,7 +305,9 @@ internal sealed class PreparedRecordBatch2D : IRetainedCommandBatch2D, IRetained
         private Stream<DrawBasicMetadata2D>? _basicMetadata;
         private Stream<DrawMaskMetadata2D>? _maskMetadata;
         private Stream<DrawImageMetadata2D>? _imageMetadata;
-        private IGraphicsPipeline _pipeline = null!;
+        private IGraphicsPipeline? _pipeline;
+        private IMeshPipeline? _meshPipeline;
+        private ShaderArtifact _artifact = null!;
         private int _mode;
         private ulong _numericCount;
         private IGraphicsBuffer<Vector4>? _numericUpload;
@@ -332,7 +337,7 @@ internal sealed class PreparedRecordBatch2D : IRetainedCommandBatch2D, IRetained
         {
             foreach (IGraphicsTextureView view in _views)
             {
-                resources.UseTextureView(view, _read);
+                resources.UseTextureView(view, _batch._read);
             }
 
             foreach (IGraphicsSampler sampler in _samplers)
@@ -408,7 +413,17 @@ internal sealed class PreparedRecordBatch2D : IRetainedCommandBatch2D, IRetained
             // This changes only private evaluator capacity, never storage, draw ranges or accepted work.
             _mode = DrawRecordResources2D.SelectPipelineMode(_mode, _mode == 2 ? Cpu.PaintClosureBound : Cpu.Paints.Count);
 
-            _pipeline = _batch._resources.GetPipeline(_mode);
+            if (_batch._resources.IsMesh)
+            {
+                _meshPipeline = _batch._resources.GetMeshPipeline(_mode);
+                _artifact = _meshPipeline.Desc.FragmentShader!.Artifact;
+            }
+            else
+            {
+                _pipeline = _batch._resources.GetPipeline(_mode);
+                _artifact = _pipeline.Desc.FragmentShader!.Artifact;
+            }
+
             _records = Create<DrawRecord2D>(Cpu.Records.Count, 96);
             if (_mode != 4)
             {
@@ -449,7 +464,7 @@ internal sealed class PreparedRecordBatch2D : IRetainedCommandBatch2D, IRetained
             _numericUpload = numeric.Upload;
             _numeric = numeric.Data;
             Reservation.RegisterBuffer(_numeric.SliceElements(0, count), reference => _numericRef = reference);
-            _batch._context.ArgumentPlan.MarkPreparedBuffer(Reservation, _numeric.SliceElements(0, count), new(PipelineStage.Copy | PipelineStage.VertexShader | PipelineStage.FragmentShader, ResourceAccess.CopyWrite | ResourceAccess.ShaderRead));
+            _batch._context.ArgumentPlan.MarkPreparedBuffer(Reservation, _numeric.SliceElements(0, count), new(PipelineStage.Copy | (_batch._resources.IsMesh ? PipelineStage.MeshShader : PipelineStage.VertexShader) | PipelineStage.FragmentShader, ResourceAccess.CopyWrite | ResourceAccess.ShaderRead));
             _batch._bytes = checked(_batch._bytes + (long)(_numeric.SizeInBytes + _numericUpload.SizeInBytes));
             ValidateCompleteWorkingCharge();
             _batch._context.ArgumentPlan.DeferUpload(Reservation, UploadAsync, MapAsync, Fill, workingReferenceBytes);
@@ -465,7 +480,15 @@ internal sealed class PreparedRecordBatch2D : IRetainedCommandBatch2D, IRetained
 
             DrawingTargetInfo2D info = _batch._context.Target;
             IRenderEncoder render = commands.BeginRenderPass(new() { ColorAttachments = [new() { View = target, LoadOp = AttachmentLoadOp.Load, StoreOp = AttachmentStoreOp.Store }] });
-            render.SetPipeline(_pipeline);
+            if (_meshPipeline is not null)
+            {
+                render.SetPipeline(_meshPipeline);
+            }
+            else
+            {
+                render.SetPipeline(_pipeline!);
+            }
+
             render.SetRenderState(new()
             {
                 Rasterization = new() { Cull = CullMode.None },
@@ -507,7 +530,7 @@ internal sealed class PreparedRecordBatch2D : IRetainedCommandBatch2D, IRetained
 
             commands.Barrier(new BufferBarrierDesc<Vector4> { Buffer = _numericUpload!.SliceElements(0, _numericCount), Before = new(PipelineStage.Host, ResourceAccess.HostWrite), After = new(PipelineStage.Copy, ResourceAccess.CopyRead) });
             commands.CopyBuffer(_numericUpload.SliceElements(0, _numericCount), _numeric!.SliceElements(0, _numericCount));
-            commands.Barrier(new BufferBarrierDesc<Vector4> { Buffer = _numeric.SliceElements(0, _numericCount), Before = new(PipelineStage.Copy, ResourceAccess.CopyWrite), After = _read });
+            commands.Barrier(new BufferBarrierDesc<Vector4> { Buffer = _numeric.SliceElements(0, _numericCount), Before = new(PipelineStage.Copy, ResourceAccess.CopyWrite), After = _batch._read });
         }
 
         internal void Unmap()
@@ -527,7 +550,15 @@ internal sealed class PreparedRecordBatch2D : IRetainedCommandBatch2D, IRetained
             where TMetadata : struct, IShaderArguments
         {
             var args = new DrawRangeArguments2D<TMetadata>(_records.Reference!, metadata, first, count, new(info.Description.Width, info.Description.Height), info.PixelOrigin, BitConverter.SingleToUInt32Bits(translation.X), BitConverter.SingleToUInt32Bits(translation.Y));
-            if (_batch._context.Device.Caps.ShaderTarget == ShaderTarget.SpirV)
+            if (_meshPipeline is not null)
+            {
+                for (uint i = 0; i < count; i++)
+                {
+                    DrawRangeArguments2D<TMetadata> selected = args with { FirstRecord = first + i, RecordCount = 1 };
+                    _group.Mesh(render, in selected);
+                }
+            }
+            else if (_batch._context.Device.Caps.ShaderTarget == ShaderTarget.SpirV)
             {
                 Reservation.Draw(render, in args, 6, count, 0, 0);
             }
@@ -544,7 +575,15 @@ internal sealed class PreparedRecordBatch2D : IRetainedCommandBatch2D, IRetained
         private void DrawSimple(IRenderEncoder render, DrawingTargetInfo2D info, uint first, uint count, Vector2 translation)
         {
             var args = new SimpleDrawRangeArguments2D(_records.Reference!, _numericRef!, first, count, new(info.Description.Width, info.Description.Height), info.PixelOrigin, BitConverter.SingleToUInt32Bits(translation.X), BitConverter.SingleToUInt32Bits(translation.Y));
-            if (_batch._context.Device.Caps.ShaderTarget == ShaderTarget.SpirV)
+            if (_meshPipeline is not null)
+            {
+                for (uint i = 0; i < count; i++)
+                {
+                    SimpleDrawRangeArguments2D selected = args with { FirstRecord = first + i, RecordCount = 1 };
+                    _group.Mesh(render, in selected);
+                }
+            }
+            else if (_batch._context.Device.Caps.ShaderTarget == ShaderTarget.SpirV)
             {
                 Reservation.Draw(render, in args, 6, count, 0, 0);
             }
@@ -561,7 +600,7 @@ internal sealed class PreparedRecordBatch2D : IRetainedCommandBatch2D, IRetained
         private Stream<T> Create<T>(int count, ulong stride)
             where T : struct, IShaderArguments
         {
-            var result = new Stream<T>(_batch, Reservation, count, stride, _pipeline.Desc.FragmentShader!.Artifact);
+            var result = new Stream<T>(_batch, Reservation, count, stride, _artifact);
             _streams.Add(result);
             return result;
         }
@@ -587,6 +626,7 @@ internal sealed class PreparedRecordBatch2D : IRetainedCommandBatch2D, IRetained
 
         private async ValueTask UploadAsync(CancellationToken token)
         {
+            ValidateCompleteWorkingCharge();
             await MapAsync(token).ConfigureAwait(false);
             Fill();
         }
@@ -597,6 +637,7 @@ internal sealed class PreparedRecordBatch2D : IRetainedCommandBatch2D, IRetained
             long copied = 0;
             try
             {
+                // Materialization can finalize shared table-generation charges after allocation.
                 ValidateCompleteWorkingCharge();
                 Cpu.Resolve(null!, _sampler!);
                 copied += _records.Fill(CollectionsMarshal.AsSpan(Cpu.Records));
@@ -682,17 +723,27 @@ internal sealed class PreparedRecordBatch2D : IRetainedCommandBatch2D, IRetained
     private sealed class PageResources(ShaderResources resources) : ShaderResources(resources)
     {
         internal void Join(ShaderResources command) => JoinOperation(command);
+
+        internal void Mesh<T>(IRenderEncoder render, in T args)
+            where T : struct, IShaderArguments
+        {
+            Bind(render);
+            render.SetArguments(in args);
+            render.DrawMeshTasks(1);
+        }
     }
 
     private sealed class Stream<T> : IStream
         where T : struct, IShaderArguments
     {
+        private readonly PreparedRecordBatch2D _batch;
         private readonly ulong _count;
         private readonly IGraphicsShaderDataBuffer<T> _upload;
         private readonly IGraphicsShaderDataBuffer<T> _data;
 
         internal Stream(PreparedRecordBatch2D owner, ShaderResources reservation, int count, ulong stride, ShaderArtifact artifact)
         {
+            _batch = owner;
             _count = checked((ulong)count);
             ulong capacity = _count;
             _upload = owner.Own(owner._context.Device.CreateShaderDataBuffer<T>(artifact, capacity, MemoryPreference.Upload));
@@ -703,7 +754,7 @@ internal sealed class PreparedRecordBatch2D : IRetainedCommandBatch2D, IRetained
             }
 
             reservation.RegisterBuffer(_data.SliceElements(0, _count), reference => Reference = reference);
-            owner._context.ArgumentPlan.MarkPreparedShaderData(reservation, _data.SliceElements(0, _count), new(PipelineStage.Copy | PipelineStage.VertexShader | PipelineStage.FragmentShader, ResourceAccess.CopyWrite | ResourceAccess.ShaderRead));
+            owner._context.ArgumentPlan.MarkPreparedShaderData(reservation, _data.SliceElements(0, _count), new(PipelineStage.Copy | (owner._resources.IsMesh ? PipelineStage.MeshShader : PipelineStage.VertexShader) | PipelineStage.FragmentShader, ResourceAccess.CopyWrite | ResourceAccess.ShaderRead));
             owner._bytes = checked(owner._bytes + (long)(_data.SizeInBytes + _upload.SizeInBytes) + ((long)capacity * 16) + ((long)count * 2048));
         }
 
@@ -723,7 +774,7 @@ internal sealed class PreparedRecordBatch2D : IRetainedCommandBatch2D, IRetained
         {
             commands.Barrier(new ShaderDataBufferBarrierDesc<T> { Buffer = _upload.SliceElements(0, _count), Before = new(PipelineStage.Host, ResourceAccess.HostWrite), After = new(PipelineStage.Copy, ResourceAccess.CopyRead) });
             commands.CopyBuffer(_upload.SliceElements(0, _count), _data.SliceElements(0, _count));
-            commands.Barrier(new ShaderDataBufferBarrierDesc<T> { Buffer = _data.SliceElements(0, _count), Before = new(PipelineStage.Copy, ResourceAccess.CopyWrite), After = _read });
+            commands.Barrier(new ShaderDataBufferBarrierDesc<T> { Buffer = _data.SliceElements(0, _count), Before = new(PipelineStage.Copy, ResourceAccess.CopyWrite), After = _batch._read });
         }
 
         internal long Fill(ReadOnlySpan<T> values)

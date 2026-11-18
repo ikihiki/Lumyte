@@ -4,7 +4,7 @@ using Lumyte.Graphics.Abstractions;
 
 namespace Lumyte.Graphics.Drawing2D;
 
-internal sealed class RetainedBatchRun2D(IReadOnlyList<IPreparedCommandBatch2D> batches, bool selectedBuiltins, IDisposable? compositionUse = null) : IRetainedCommandBatch2D, IRetainedMemory2D, IPreparedWorkingBudget2D
+internal sealed class RetainedBatchRun2D(IReadOnlyList<IPreparedCommandBatch2D> batches, bool selectedInternalRecords, IDisposable? compositionUse = null) : IRetainedCommandBatch2D, IRetainedMemory2D, IPreparedWorkingBudget2D
 {
     private int _remaining = batches.Count;
     private List<IPreparedCommandBatch2D>? _failedCleanup;
@@ -16,9 +16,13 @@ internal sealed class RetainedBatchRun2D(IReadOnlyList<IPreparedCommandBatch2D> 
 
     public bool EnforcesWorkingBudget => batches.OfType<IPreparedWorkingBudget2D>().Any(batch => batch.EnforcesWorkingBudget);
 
-    internal bool Shareable => selectedBuiltins && batches.All(batch => batch is PreparedRecordBatch2D);
+    internal bool Shareable => ImmutableRecords;
 
-    internal bool Reusable => selectedBuiltins && batches.All(batch => batch is IRetainedCommandBatch2D);
+    internal bool Reusable => (selectedInternalRecords || ImmutableRecords) && batches.All(batch => batch is IRetainedCommandBatch2D);
+
+    // Only this assembly's immutable Mesh record owner can extend builtin reuse.
+    // Custom callbacks cannot opt in by returning an arbitrary retained interface.
+    private bool ImmutableRecords => batches.All(batch => batch is PreparedRecordBatch2D records && (selectedInternalRecords || records.IsMeshPayload));
 
     public void AccountMemory(Dictionary<object, long> owners)
     {
@@ -103,7 +107,7 @@ internal sealed class RetainedBatchRun2D(IReadOnlyList<IPreparedCommandBatch2D> 
                 commands.Barrier(new TextureBarrierDesc { Texture = target.Texture, Range = new(0, 1, 0, 1), BeforeState = TextureState.ColorAttachment, AfterState = TextureState.ColorAttachment, Before = attachment, After = attachment });
             }
 
-            if (selectedBuiltins && batches[i] is IRetainedCommandBatch2D retained)
+            if ((selectedInternalRecords || ImmutableRecords) && batches[i] is IRetainedCommandBatch2D retained)
             {
                 if (retained is PreparedRecordBatch2D records)
                 {

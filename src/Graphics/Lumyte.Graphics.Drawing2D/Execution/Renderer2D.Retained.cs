@@ -184,7 +184,7 @@ public sealed partial class Renderer2D
                             int commandCount = pages.Sum(page => page.Commands.Count);
                             Vector2 translation = default;
                             Matrix3x2 payloadTransform = entry.Transform;
-                            if (_retained.ResidentInstancesEnabled && pages.All(page => page.Commands.All(IsBuiltinRenderer)) && CanTranslateResident(entry, info, pages) && context.RecordResources() is not null)
+                            if (_retained.ResidentInstancesEnabled && pages.All(page => page.Commands.All(IsImmutableTranslationRenderer)) && CanTranslateResident(entry, info, pages) && context.RecordResources() is not null)
                             {
                                 translation = entry.Transform.Translation;
                                 payloadTransform = Matrix3x2.Identity;
@@ -261,6 +261,17 @@ public sealed partial class Renderer2D
                                                 context.SetWorkingBytesSource(() => checked(captureBytes + DrawingWorkingBudget2D.OwnedBytes(assets.Select(asset => asset.Batch).Concat(batches), context.ArgumentPlan)));
                                             }
 
+                                            if (MeshRecordProcessor(transformed.Commands[index]) is { } mesh)
+                                            {
+                                                ReadOnlyMemory<DrawingCommand2D> records = TakeMeshRecordBatch(batchContext, transformed, ref index, mesh);
+                                                if (!records.IsEmpty)
+                                                {
+                                                    batches.Add(await mesh.PrepareRecordsAsync(batchContext, records, cancellationToken).ConfigureAwait(false));
+                                                    plan.EnableWorkingReferenceBudget();
+                                                    continue;
+                                                }
+                                            }
+
                                             if (IsBuiltinRenderer(transformed.Commands[index]) && context.RecordResources() is not null)
                                             {
                                                 batches.Add(await PreparedRecordBatch2D.PrepareAsync(batchContext, TakeBuiltinBatch(transformed, ref index, transformed.Commands.Count), cancellationToken).ConfigureAwait(false));
@@ -296,7 +307,7 @@ public sealed partial class Renderer2D
 
                                 _retained.CountCompilation();
                                 compiled++;
-                                var run = new RetainedBatchRun2D(batches, transformed.Commands.All(IsBuiltinRenderer), compositionUse);
+                                var run = new RetainedBatchRun2D(batches, transformed.Commands.All(IsImmutableTranslationRenderer), compositionUse);
                                 compositionUse = null;
                                 unpublishedPayload = _retained.ResidentInstancesEnabled && run.Shareable ? new ResidentBatchLease2D(run) : run;
                                 var asset = new RetainedDrawingCache2D.Asset(key, unpublishedPayload);
@@ -404,6 +415,84 @@ public sealed partial class Renderer2D
             DrawPaintGraphCommand2D => await _renderers.DrawPaintGraph.PrepareAsync(context, TakeBatch<DrawPaintGraphCommand2D>(list, ref index, list.Commands.Count), cancellationToken).ConfigureAwait(false),
             _ => throw new NotSupportedException("Layer and effect commands require RenderGraphCanvas2D."),
         };
+
+    private Pipelines.MeshCoverageProcessor2D? MeshRecordProcessor(DrawingCommand2D command)
+    {
+        object? renderer = command switch
+        {
+            FillRectCommand2D => _renderers.FillRect,
+            FillRoundedRectCommand2D => _renderers.FillRoundedRect,
+            FillCircleCommand2D => _renderers.FillCircle,
+            DrawLineCommand2D => _renderers.DrawLine,
+            FillPathCommand2D => _renderers.FillPath,
+            StrokePathCommand2D => _renderers.StrokePath,
+            DrawImageCommand2D => _renderers.DrawImage,
+            DrawCoverageMaskCommand2D => _renderers.DrawCoverageMask,
+            DrawDistanceFieldCommand2D => _renderers.DrawDistanceField,
+            DrawPaintGraphCommand2D => _renderers.DrawPaintGraph,
+            _ => null,
+        };
+        return renderer is Pipelines.ICommandChoice2D choice && choice.CandidateProcessors.Count == 1
+            ? choice.CandidateProcessors[0] as Pipelines.MeshCoverageProcessor2D : null;
+    }
+
+    private ReadOnlyMemory<DrawingCommand2D> TakeMeshRecordBatch(RenderPreparationContext2D context, DrawList2D list, ref int index, Pipelines.MeshCoverageProcessor2D processor)
+    {
+        int end = index;
+        while (end < list.Commands.Count && MeshRecordProcessor(list.Commands[end]) is { } next && ReferenceEquals(processor.Service, next.Service))
+        {
+            end++;
+            if (end - index > processor.Service.Options.MaxCommands)
+            {
+                return default;
+            }
+        }
+
+        int count = end - index;
+        if (count <= 1 || !processor.CanPrepareRecords(context, count))
+        {
+            return default;
+        }
+
+        // Only closed singleton Mesh placements with the exact same build service
+        // share records. Mixed candidates/custom/Standard routes keep normal routing.
+        var selected = new DrawingCommand2D[count];
+        for (int i = 0; i < count; i++)
+        {
+            selected[i] = list.Commands[index + i];
+        }
+
+        index = end;
+        return selected;
+    }
+
+    private bool IsImmutableTranslationRenderer(DrawingCommand2D command)
+    {
+        if (IsBuiltinRenderer(command))
+        {
+            return true;
+        }
+
+        object? renderer = command switch
+        {
+            FillRectCommand2D => _renderers.FillRect,
+            FillRoundedRectCommand2D => _renderers.FillRoundedRect,
+            FillCircleCommand2D => _renderers.FillCircle,
+            DrawLineCommand2D => _renderers.DrawLine,
+            FillPathCommand2D => _renderers.FillPath,
+            StrokePathCommand2D => _renderers.StrokePath,
+            DrawImageCommand2D => _renderers.DrawImage,
+            DrawCoverageMaskCommand2D => _renderers.DrawCoverageMask,
+            DrawDistanceFieldCommand2D => _renderers.DrawDistanceField,
+            DrawPaintGraphCommand2D => _renderers.DrawPaintGraph,
+            _ => null,
+        };
+
+        // A mixed custom/legacy alternative is not proven to consume translation.
+        // Restrict optimization to a closed set of our own Mesh record processors.
+        return renderer is Pipelines.ICommandChoice2D choice && choice.CandidateProcessors.Count != 0
+            && choice.CandidateProcessors.All(candidate => candidate is Pipelines.MeshCoverageProcessor2D);
+    }
 
     private bool IsBuiltinRenderer(DrawingCommand2D command) => command switch
     {

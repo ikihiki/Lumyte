@@ -46,7 +46,7 @@ public sealed partial class Drawing2DTests
         await CheckSingularFoldedClipPaintAsync(device);
     }
 
-    private static async Task CheckSingularFoldedClipPaintAsync(IGraphicDevice device)
+    private static async Task CheckSingularFoldedClipPaintAsync(IGraphicDevice device, bool meshCoverage = false)
     {
         var path = new PathBuilder2D();
         path.MoveTo(Vector2.Zero);
@@ -64,14 +64,14 @@ public sealed partial class Drawing2DTests
             PaintGraph2D paint = backdrop
                 ? PaintGraph2D.Composite(clipped, PaintGraph2D.Solid(_blue), CompositeMode2D.SrcOver)
                 : clipped;
-            Vector4[] pixels = await RenderAsync(device, 4, 4, canvas => canvas.FillRect(new(0, 0, 4, 4), paint));
+            Vector4[] pixels = await RenderAsync(device, 4, 4, canvas => canvas.FillRect(new(0, 0, 4, 4), paint), meshCoverage: meshCoverage);
 
             // Analytic expectation, independent of the CPU compiler and clip rasterizer.
             Assert.All(pixels, pixel => Assert.Equal(backdrop ? new Vector4(0, 0, 1, 1) : Vector4.Zero, pixel));
         }
     }
 
-    private static async Task CheckNormalizedClipSamplesAsync(IGraphicDevice device)
+    private static async Task CheckNormalizedClipSamplesAsync(IGraphicDevice device, bool meshCoverage = false)
     {
         static Path2D Triangle(float size)
         {
@@ -85,11 +85,16 @@ public sealed partial class Drawing2DTests
 
         foreach (float edge in new[] { 0.125f, MathF.BitIncrement(0.125f) })
         {
-            Vector4[] boundary = await RenderAsync(device, 1, 1, canvas =>
+            Vector4[] boundary = await RenderAsync(
+                device,
+                1,
+                1,
+                canvas =>
             {
                 canvas.ClipRect(new(edge, 0, 1, 1));
                 canvas.FillCircle(new(0.5f), 2, _white);
-            });
+            },
+                meshCoverage: meshCoverage);
             Assert.Equal(new Vector4(edge == 0.125f ? 1 : 0.75f), Assert.Single(boundary));
         }
 
@@ -115,7 +120,8 @@ public sealed partial class Drawing2DTests
                             }
                         }
                     },
-                        useDefaultResources: instanced);
+                        useDefaultResources: instanced,
+                        meshCoverage: meshCoverage);
                     for (int row = 0; row < 4; row++)
                     {
                         for (int column = 0; column < 4; column++)
@@ -130,18 +136,23 @@ public sealed partial class Drawing2DTests
         }
 
         var gradient = PaintGraph2D.LinearGradient(Vector2.Zero, Vector2.UnitX, [new(0, new(0, 0, 0, 1)), new(1, new(1, 0, 0, 1))]);
-        Vector4[] correlated = await RenderAsync(device, 1, 1, canvas =>
+        Vector4[] correlated = await RenderAsync(
+            device,
+            1,
+            1,
+            canvas =>
         {
             canvas.ClipPath(Triangle(1));
             canvas.FillRect(new(0, 0, 0.5f, 1), gradient);
-        });
+        },
+            meshCoverage: meshCoverage);
 
         // Five correlated samples survive: three at x=1/8 and two at x=3/8.
         Assert.Equal(new Vector4(0.0703125f, 0, 0, 0.3125f), Assert.Single(correlated));
 
         var clipped = PaintGraph2D.Opacity(0.5f, PaintGraph2D.Clip(Triangle(1), PaintGraph2D.Solid(_red)));
         var composite = PaintGraph2D.Composite(clipped, PaintGraph2D.Solid(_blue), CompositeMode2D.SrcOver);
-        Vector4[] scoped = await RenderAsync(device, 2, 1, canvas => canvas.FillRect(new(0, 0, 2, 1), composite));
+        Vector4[] scoped = await RenderAsync(device, 2, 1, canvas => canvas.FillRect(new(0, 0, 2, 1), composite), meshCoverage: meshCoverage);
         Assert.Equal(new Vector4(0.1875f, 0, 0.8125f, 1), scoped[0]);
         Assert.Equal(new Vector4(0, 0, 1, 1), scoped[1]);
     }
