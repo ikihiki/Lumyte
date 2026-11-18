@@ -13,6 +13,7 @@ public sealed class ResourceWatchSharingTests
 
     /// <summary>A source shared by multiple outputs remains watched until its last published user leaves.</summary>
     /// <returns>Completion of acquisition and independent reclamation.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task SharedSourceRemainsWatchedUntilLastPublicationIsTrimmedAsync()
     {
@@ -37,6 +38,7 @@ public sealed class ResourceWatchSharingTests
 
     /// <summary>A failed concurrent build cannot remove a watch needed by a pending build.</summary>
     /// <returns>Completion of failed and successful candidates.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task FailedBuildPreservesPendingBuildSourceAsync()
     {
@@ -81,6 +83,7 @@ public sealed class ResourceWatchSharingTests
 
     /// <summary>Reload changes watched provenance while an old output lease and old target snapshot remain valid.</summary>
     /// <returns>Completion of source replacement and old-epoch reclamation.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task ReloadReplacesWatchWithoutMutatingCapturedTargetsAsync()
     {

@@ -15,19 +15,21 @@ case "$(uname -m)" in
     *) echo 'Unsupported CPU architecture.' >&2; exit 1 ;;
 esac
 
+source "$script_dir/ci-apt.sh"
+
 packages=(build-essential pkg-config curl ca-certificates git
     unzip zip tar python3 fontconfig fonts-noto-cjk libicu-dev libssl-dev zlib1g-dev libvulkan-dev
     mesa-vulkan-drivers vulkan-tools)
 
 if [[ "${LUMYTE_SETUP_ROOTLESS:-0}" != 1 ]] && [[ "$EUID" == 0 ]]; then
-    apt-get update -o APT::Update::Error-Mode=any
-    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends "${packages[@]}"
+    apt-get "${lumyte_apt_options[@]}" update -o APT::Update::Error-Mode=any
+    DEBIAN_FRONTEND=noninteractive apt-get "${lumyte_apt_options[@]}" install -y --no-install-recommends "${packages[@]}"
 elif [[ "${LUMYTE_SETUP_ROOTLESS:-0}" != 1 ]] && command -v sudo >/dev/null && sudo -n true 2>/dev/null; then
     # Preserve only proxy routing settings; sudo normally drops these, breaking
     # package retrieval in managed remote environments.
     sudo_proxy=(sudo -n --preserve-env=HTTP_PROXY,HTTPS_PROXY,NO_PROXY,http_proxy,https_proxy,no_proxy)
-    "${sudo_proxy[@]}" apt-get update -o APT::Update::Error-Mode=any
-    "${sudo_proxy[@]}" env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends "${packages[@]}"
+    "${sudo_proxy[@]}" apt-get "${lumyte_apt_options[@]}" update -o APT::Update::Error-Mode=any
+    "${sudo_proxy[@]}" env DEBIAN_FRONTEND=noninteractive apt-get "${lumyte_apt_options[@]}" install -y --no-install-recommends "${packages[@]}"
 else
     # Bootstrap requirements are normally present in cloud images. Fail clearly
     # rather than replacing signature or TLS verification with an unsafe route.

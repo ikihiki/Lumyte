@@ -7,18 +7,24 @@ internal static class Program
 {
     private static readonly string[] _observedVariables =
     [
-        "PATH", "PARLEY_TEST_INHERITED", "CARGO_ENCODED_RUSTFLAGS", "RUSTFLAGS",
+        "PATH", "ALSOFT_DRIVERS", "PARLEY_TEST_INHERITED", "CARGO_ENCODED_RUSTFLAGS", "RUSTFLAGS",
         "CARGO_PROFILE_RELEASE_LTO", "DOTNET_EMSCRIPTEN_LLVM_ROOT", "DOTNET_EMSCRIPTEN_BINARYEN_ROOT",
         "DOTNET_EMSCRIPTEN_NODE_JS", "EM_CONFIG", "EM_CACHE", "EM_FROZEN_CACHE", "EMSDK_PYTHON",
         "PYTHON", "PYTHON3", "PYTHONHOME", "PYTHONPATH", "PYTHONNOUSERSITE", "CC_wasm32_unknown_emscripten",
         "AR_wasm32_unknown_emscripten", "CARGO_TARGET_WASM32_UNKNOWN_EMSCRIPTEN_LINKER",
-        "LUMYTE_BUILD_ASSEMBLY", "LUMYTE_BENCHMARK_PROJECT", "Configuration",
+        "LUMYTE_BUILD_ASSEMBLY", "LUMYTE_BENCHMARK_PROJECT", "Configuration", "ShouldUnsetParentConfigurationAndPlatform",
         "LUMYTE_LANE_CATALOG", "LUMYTE_LANE_INVENTORY", "LUMYTE_TEST_SERIAL", "LUMYTE_CPU_METHOD_PARALLELISM", "LUMYTE_GRAPHICS_GPU_TESTS", "LUMYTE_OPENAL_TESTS", "LUMYTE_UI_BENCHMARK_GPU",
     ];
 
     private static int Main(string[] args)
     {
         string tool = Path.GetFileNameWithoutExtension(Environment.ProcessPath ?? string.Empty).Split(' ')[0];
+        string identity = Path.Combine(AppContext.BaseDirectory, "aot-executable.txt");
+        if (Environment.GetEnvironmentVariable("LUMYTE_TEST_STAGE_AOT") == "1" && File.Exists(identity))
+        {
+            tool = File.ReadAllText(identity);
+        }
+
         string log = Environment.GetEnvironmentVariable("PARLEY_TEST_LOG") ?? throw new InvalidOperationException("Missing test log directory.");
         Dictionary<string, string?> observed = _observedVariables.ToDictionary(name => name, Environment.GetEnvironmentVariable);
         Directory.CreateDirectory(log);
@@ -44,11 +50,24 @@ internal static class Program
                 Directory.CreateDirectory(inventoryDirectory);
                 using var catalog = JsonDocument.Parse(File.ReadAllText(Environment.GetEnvironmentVariable("LUMYTE_LANE_CATALOG")!));
                 string root = Path.GetDirectoryName(Path.GetDirectoryName(Environment.GetEnvironmentVariable("LUMYTE_LANE_CATALOG")))!;
+                int resultsIndex = Array.IndexOf(args, "--results-directory");
+                string results = args[resultsIndex + 1];
+                Directory.CreateDirectory(results);
                 foreach (JsonElement entry in catalog.RootElement.EnumerateArray())
                 {
                     string project = Path.GetFullPath(entry.GetProperty("Project").GetString()!, root);
+                    if (Environment.GetEnvironmentVariable("LUMYTE_TEST_EMPTY_TRX") != "1")
+                    {
+                        File.WriteAllText(Path.Combine(results, Path.GetFileNameWithoutExtension(project) + ".trx"), "<TestRun><ResultSummary><Counters total=\"1\" /></ResultSummary></TestRun>");
+                    }
+
                     File.WriteAllText(Path.Combine(inventoryDirectory, Path.GetFileName(project) + ".json"), JsonSerializer.Serialize(new { Project = project, Error = (string?)null }));
                 }
+            }
+
+            if (args.FirstOrDefault() == "format" && Environment.GetEnvironmentVariable("LUMYTE_TEST_FORMAT_WORKSPACE_FAILURE") == "1")
+            {
+                Console.Error.WriteLine("Msbuild failed when processing the file fixture.csproj with message: simulated load failure");
             }
 
             if (args.FirstOrDefault() == "msbuild" && args.Contains("-getProperty:IsPackable", StringComparer.Ordinal))
@@ -57,7 +76,39 @@ internal static class Program
                 Console.WriteLine(project.Descendants("IsPackable").LastOrDefault()?.Value ?? "true");
             }
 
+            if (args.FirstOrDefault() == "publish" && args.Contains("-o", StringComparer.Ordinal) && args.Any(argument => argument.Contains("Browser.Sample", StringComparison.Ordinal)))
+            {
+                string output = args[Array.IndexOf(args, "-o") + 1];
+                Directory.CreateDirectory(Path.Combine(output, "wwwroot", "_framework"));
+                File.WriteAllText(Path.Combine(output, "wwwroot", "index.html"), "browser fixture");
+                File.WriteAllText(Path.Combine(output, "wwwroot", "_framework", "fixture.wasm"), "wasm fixture");
+            }
+
+            if (args.FirstOrDefault() == "publish" && args.Contains("-p:PublishAot=true", StringComparer.Ordinal)
+                && Environment.GetEnvironmentVariable("LUMYTE_TEST_STAGE_AOT") == "1")
+            {
+                string output = args[Array.IndexOf(args, "-o") + 1];
+                Directory.CreateDirectory(output);
+                foreach (string file in Directory.GetFiles(AppContext.BaseDirectory))
+                {
+                    File.Copy(file, Path.Combine(output, Path.GetFileName(file)), overwrite: true);
+                }
+
+                string executable = Path.Combine(output, Path.GetFileName(args[1]) + (OperatingSystem.IsWindows() ? ".exe" : string.Empty));
+                File.Copy(Environment.ProcessPath!, executable, overwrite: true);
+                File.WriteAllText(Path.Combine(output, "aot-executable.txt"), Path.GetFileName(args[1]));
+                if (!OperatingSystem.IsWindows())
+                {
+                    File.SetUnixFileMode(executable, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+                }
+            }
+
             return 0;
+        }
+
+        if (Environment.GetEnvironmentVariable("LUMYTE_TEST_STAGE_AOT") == "1" && tool.StartsWith("Lumyte.", StringComparison.Ordinal))
+        {
+            return Environment.GetEnvironmentVariable("LUMYTE_TEST_AOT_FAIL_EXECUTABLE") == tool ? 29 : 0;
         }
 
         if (Environment.GetEnvironmentVariable("LUMYTE_TEST_QUALITY_TOOLS") == "1")

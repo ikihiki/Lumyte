@@ -14,6 +14,7 @@ public sealed class NumericTests
     /// <summary>All old readers keep exact field counts and never see new numeric roles or capabilities.</summary>
     /// <param name="version">The old requested version.</param>
     /// <returns>The asynchronous check.</returns>
+    [Trait("Execution", "Integration")]
     [Theory]
     [InlineData(1)]
     [InlineData(2)]
@@ -55,6 +56,7 @@ public sealed class NumericTests
 
     /// <summary>Actual closed commands preserve atomic endpoints, input authority and exact numeric semantics.</summary>
     /// <returns>The asynchronous check.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task RemoteNumericCommandsUseRealControlsAndExactMetadataAsync()
     {

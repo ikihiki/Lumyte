@@ -205,6 +205,7 @@ public sealed class IntermediateTexturePoolTests
 
     /// <summary>Checks late completion races cannot repopulate or double-release a retired pool.</summary>
     /// <returns>The verification.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task ConcurrentFrameReturnsAndRetirementReleaseEveryTargetOnceAsync()
     {

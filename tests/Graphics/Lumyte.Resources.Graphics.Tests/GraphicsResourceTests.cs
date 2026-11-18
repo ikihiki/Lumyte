@@ -15,6 +15,7 @@ public sealed class GraphicsResourceTests
 
     /// <summary>Recovery rebuilds the GPU generation while preserving its cached CPU input.</summary>
     /// <returns>Completion of the scenario.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task LossInvalidatesGpuAndRecoveryReusesCpuAsync()
     {
@@ -57,6 +58,7 @@ public sealed class GraphicsResourceTests
 
     /// <summary>A device used only while building does not invalidate independent CPU results.</summary>
     /// <returns>Completion of the scenario.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task BuildOnlyGraphicsDependencyDoesNotRetainTheDeviceAsync()
     {
@@ -76,6 +78,7 @@ public sealed class GraphicsResourceTests
 
     /// <summary>Different stages select independent named device environments while CPU work uses the shared default.</summary>
     /// <returns>Completion of the scenario.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task StageBindingsSelectNamedGraphicsEnvironmentsAsync()
     {
@@ -104,6 +107,7 @@ public sealed class GraphicsResourceTests
     /// <summary>An explicitly named default device cannot replace or invalidate the unnamed environment.</summary>
     /// <param name="namedFirst">Whether the named resource environment is registered first.</param>
     /// <returns>Completion of the scenario.</returns>
+    [Trait("Execution", "Integration")]
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
@@ -154,6 +158,7 @@ public sealed class GraphicsResourceTests
 
     /// <summary>A device lost while a stage runs prevents publication and preserves cleanup ownership.</summary>
     /// <returns>Completion of the scenario.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task LossDuringBuildRejectsTheCandidateAsync()
     {
@@ -184,6 +189,7 @@ public sealed class GraphicsResourceTests
     /// <summary>Failed retirement or native release retains the old epoch lease until a subsequent trim succeeds.</summary>
     /// <param name="failRetirement">Whether failure occurs during retirement confirmation instead of child release.</param>
     /// <returns>Completion of the scenario.</returns>
+    [Trait("Execution", "Integration")]
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
@@ -212,6 +218,7 @@ public sealed class GraphicsResourceTests
 
     /// <summary>Matching names and versions from another DI root cannot identify the registered device.</summary>
     /// <returns>Completion of the scenario.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task ForeignServiceWithTheSameVersionIsRejectedWithoutLeakingItsLeaseAsync()
     {
@@ -235,6 +242,7 @@ public sealed class GraphicsResourceTests
 
     /// <summary>Scopes share the manager, graphics environment and device without owning their lifetime.</summary>
     /// <returns>Completion of the scenario.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task ScopesShareTheApplicationGraphicsEnvironmentAsync()
     {

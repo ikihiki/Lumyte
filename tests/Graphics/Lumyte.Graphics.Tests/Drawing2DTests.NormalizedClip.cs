@@ -77,6 +77,7 @@ public sealed partial class Drawing2DTests
 
     private static async Task CheckNormalizedClipSamplesAsync(IGraphicDevice device)
     {
+        using var reuse = new SerialDrawingResources(device);
         static Path2D Triangle(float size)
         {
             var path = new PathBuilder2D();

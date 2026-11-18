@@ -17,6 +17,7 @@ public sealed class ResourceImageEffectTests
 {
     /// <summary>Embedded shaders need no source entries and are shared until every compiled effect finishes.</summary>
     /// <returns>Completion of shared-module and submitted-plan lifetime checks.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task EmbeddedEffectsShareShadersAndRetainThemUntilGpuCompletionAsync()
     {
@@ -67,6 +68,7 @@ public sealed class ResourceImageEffectTests
 
     /// <summary>Nested layer callbacks and direct effects resolve the same resource and effects extensions.</summary>
     /// <returns>Completion of shared state and parent-plan ownership checks.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task LayerAndEffectsExtensionsShareStateAndPlanOwnershipAsync()
     {
@@ -115,6 +117,7 @@ public sealed class ResourceImageEffectTests
     /// <summary>A managed effects registration never silently falls back when resources or the device mismatch.</summary>
     /// <param name="missingResources">Whether to omit the resource extension instead of supplying a foreign device.</param>
     /// <returns>Completion of configuration rejection and retained lease cleanup.</returns>
+    [Trait("Execution", "Integration")]
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
@@ -150,6 +153,7 @@ public sealed class ResourceImageEffectTests
     /// <summary>One package publication replaces both custom shader inputs while snapshots retain the old pair.</summary>
     /// <param name="changeDuringValidation">Whether another edit invalidates the first replacement after its GPU modules were created.</param>
     /// <returns>Completion of automatic reload and old-frame publication checks.</returns>
+    [Trait("Execution", "Integration")]
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
@@ -236,6 +240,7 @@ public sealed class ResourceImageEffectTests
 
     /// <summary>Device recovery replaces native modules while preserving the CPU shader pair.</summary>
     /// <returns>Completion of invalidation, recreation and old-epoch release checks.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task DeviceRecoveryReusesArtifactsAndRecreatesBothModulesAsync()
     {
@@ -281,6 +286,7 @@ public sealed class ResourceImageEffectTests
 
     /// <summary>Failed fixed-resource cleanup retains both shader modules until the same plan succeeds on retry.</summary>
     /// <returns>Completion of grouped lifetime cleanup retry checks.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task FailedEffectCleanupKeepsShaderLeaseUntilRetryAsync()
     {
@@ -311,6 +317,7 @@ public sealed class ResourceImageEffectTests
     /// <summary>Failed preparation preserves cleanup ownership and rejects compilation until the graph is discarded.</summary>
     /// <param name="useGraph">Whether to append a composed effect graph instead of one effect.</param>
     /// <returns>Completion of preparation failure and subsequent cleanup retry checks.</returns>
+    [Trait("Execution", "Integration")]
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
@@ -358,6 +365,7 @@ public sealed class ResourceImageEffectTests
 
     /// <summary>Failure creating the second shader returns the first module and its device ownership.</summary>
     /// <returns>Completion of partially-created package cleanup.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task PartialShaderCreationReleasesTheFirstModuleAsync()
     {
@@ -383,6 +391,7 @@ public sealed class ResourceImageEffectTests
 
     /// <summary>Duplicate registration and an already cancelled build do not load shader resources.</summary>
     /// <returns>Completion of deferred registration and subsequent successful build checks.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task RegistrationAndCancelledBuildDoNotPreloadShadersAsync()
     {
@@ -409,6 +418,7 @@ public sealed class ResourceImageEffectTests
     /// <summary>A later extension failure or cancellation releases the successfully preloaded shader reference.</summary>
     /// <param name="cancel">Whether the later extension cancels instead of failing.</param>
     /// <returns>Completion of shader ownership rollback checks.</returns>
+    [Trait("Execution", "Integration")]
     [Theory]
     [InlineData(false)]
     [InlineData(true)]

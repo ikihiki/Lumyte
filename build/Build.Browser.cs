@@ -4,31 +4,31 @@ internal sealed partial class Build
 {
     private async Task TestWasmAsync()
     {
-        string graphics = Path.Combine(ArtifactRoot, "browser", "graphics");
-        string text = Path.Combine(ArtifactRoot, "browser", "text");
-        string application = Path.Combine(ArtifactRoot, "browser", "ui-application");
-        string navigation = Path.Combine(ArtifactRoot, "browser", "ui-navigation");
-        string pages = Path.Combine(ArtifactRoot, "browser", "ui-pages");
-        string transitions = Path.Combine(ArtifactRoot, "browser", "ui-transitions");
-        await DotNetAsync("publish", "samples/Lumyte.Graphics.Browser.Sample", "-c", Configuration, "-o", graphics).ConfigureAwait(false);
-        await CaptureValidationLogAsync("browser-webgpu.log", () => NodeAsync("tools/graphics/verify-browser.mjs", Path.Combine(graphics, "wwwroot"))).ConfigureAwait(false);
-        await DotNetAsync("publish", "samples/Lumyte.Graphics.Text.Parley.Browser.Sample", "-c", Configuration, "-o", text).ConfigureAwait(false);
-        await DotNetAsync("publish", "samples/Lumyte.UI.Application.Browser.Sample", "-c", Configuration, "-o", application).ConfigureAwait(false);
-        await CaptureValidationLogAsync("browser-ui-application.log", () => NodeAsync("samples/Lumyte.UI.Application.Browser.Sample/verify-browser.mjs", Path.Combine(application, "wwwroot"))).ConfigureAwait(false);
-        await DotNetAsync("publish", "samples/Lumyte.UI.Navigation.Browser.Sample", "-c", Configuration, "-o", navigation).ConfigureAwait(false);
-        await CaptureValidationLogAsync("browser-ui-navigation.log", () => NodeAsync("samples/Lumyte.UI.Navigation.Browser.Sample/verify-browser.mjs", Path.Combine(navigation, "wwwroot"))).ConfigureAwait(false);
-        await DotNetAsync("publish", "samples/Lumyte.UI.Pages.Browser.Sample", "-c", Configuration, "-o", pages).ConfigureAwait(false);
-        await CaptureValidationLogAsync("browser-ui-pages.log", () => NodeAsync("samples/Lumyte.UI.Pages.Browser.Sample/verify-browser.mjs", Path.Combine(pages, "wwwroot"))).ConfigureAwait(false);
-        await DotNetAsync("publish", "samples/Lumyte.UI.Transitions.Browser.Sample", "-c", Configuration, "-o", transitions).ConfigureAwait(false);
-        await CaptureValidationLogAsync("browser-ui-transitions.log", () => NodeAsync("samples/Lumyte.UI.Transitions.Browser.Sample/verify-browser.mjs", Path.Combine(transitions, "wwwroot"))).ConfigureAwait(false);
-        await CaptureValidationLogAsync("browser-ui-transitions-sequential.log", () => NodeAsync("samples/Lumyte.UI.Transitions.Browser.Sample/verify-browser.mjs", Path.Combine(transitions, "wwwroot"), "--sequential")).ConfigureAwait(false);
-        await CaptureValidationLogAsync("browser-ui-transitions-live.log", () => NodeAsync("samples/Lumyte.UI.Transitions.Browser.Sample/verify-browser.mjs", Path.Combine(transitions, "wwwroot"), "--same-content")).ConfigureAwait(false);
-        await CaptureValidationLogAsync("browser-text-webgpu.log", () => NodeAsync("samples/Lumyte.Graphics.Text.Parley.Browser.Sample/verify-browser.mjs", Path.Combine(text, "wwwroot"))).ConfigureAwait(false);
+        foreach (string browserCase in _browserCases.Where(value => (Platform == "browser" || Suite == "browser" || value != "audio") && (BrowserCase is null || BrowserCase == value)))
+        {
+            if (browserCase == "audio")
+            {
+                await TestBrowserAudioAsync().ConfigureAwait(false);
+                continue;
+            }
+
+            BrowserPublication publication = _browserPublications.Single(value => value.Case == browserCase);
+            string verifier = publication.Verifier;
+            string log = publication.Log;
+            string root = await PrepareBrowserPublicationAsync(publication).ConfigureAwait(false);
+            await CaptureValidationLogAsync(log, () => NodeAsync(verifier, root)).ConfigureAwait(false);
+            if (browserCase == "ui-transitions")
+            {
+                await CaptureValidationLogAsync("browser-ui-transitions-sequential.log", () => NodeAsync(verifier, root, "--sequential")).ConfigureAwait(false);
+                await CaptureValidationLogAsync("browser-ui-transitions-live.log", () => NodeAsync(verifier, root, "--same-content")).ConfigureAwait(false);
+            }
+        }
     }
 
     private async Task TestBrowserContractsAsync()
     {
-        await NodeAsync("--test", "tools/graphics/browser-gpu.test.mjs", "tools/graphics/browser-gpu-trace.test.mjs", "tools/graphics/browser-capture-trace.test.mjs", "tools/graphics/browser-flight-recorder.test.mjs", "tools/graphics/browser-process-recorder.test.mjs", "tools/graphics/browser-known-timeout.test.mjs", "tools/graphics/browser-timeout-quarantine.test.mjs").ConfigureAwait(false);
+        string[] setupContracts = OperatingSystem.IsLinux() ? ["tools/setup/ci-apt.test.mjs", "tools/setup/install-ci-runtime.test.mjs"] : [];
+        await NodeAsync(["--test", .. setupContracts, "tools/diagnostics/browser-startup.test.mjs", "tools/graphics/browser-gpu.test.mjs", "tools/graphics/browser-gpu-trace.test.mjs", "tools/graphics/browser-capture-trace.test.mjs", "tools/graphics/browser-flight-recorder.test.mjs", "tools/graphics/browser-process-recorder.test.mjs", "tools/graphics/browser-known-timeout.test.mjs", "tools/graphics/browser-timeout-quarantine.test.mjs"]).ConfigureAwait(false);
         await NodeAsync("--test", "tests/Graphics/Lumyte.Graphics.Hosting.Tests/browser-device-loss.test.mjs").ConfigureAwait(false);
         await NodeAsync("--test", "tests/Audio/browser-audio.test.mjs").ConfigureAwait(false);
         await NodeAsync("--test", "tests/Platform/browser-windowing.test.mjs").ConfigureAwait(false);
@@ -36,6 +36,14 @@ internal sealed partial class Build
 
     private async Task TestBrowserAudioAsync()
     {
+        if (NoBuild)
+        {
+            foreach (BrowserPublication publication in _browserPublications.Where(value => value.Case == "audio"))
+            {
+                RequireBrowserPublication(publication);
+            }
+        }
+
         string environment = Path.Combine(ArtifactRoot, "build-tools", "audio-playwright");
         string python = OperatingSystem.IsWindows() ? Path.Combine(environment, "Scripts", "python.exe") : Path.Combine(environment, "bin", "python");
         if (!File.Exists(python))
@@ -44,15 +52,11 @@ internal sealed partial class Build
         }
 
         await ToolWithEnvironmentAsync(python, _isolatedPythonEnvironment, "-m", "pip", "install", "--disable-pip-version-check", "playwright==1.58.0").ConfigureAwait(false);
-        foreach ((string project, string directory, string log) in new[]
+        foreach (BrowserPublication publication in _browserPublications.Where(value => value.Case == "audio"))
         {
-            ("samples/Lumyte.Audio.Execution.Browser.Sample", "audio-execution-browser", "browser-audio-execution.log"),
-            ("samples/Lumyte.Audio.Browser.Sample", "audio-browser", "browser-audio.log"),
-        })
-        {
-            string output = Path.Combine(ArtifactRoot, directory);
-            await DotNetAsync("publish", project, "-c", Configuration, "-o", output).ConfigureAwait(false);
-            var arguments = new List<string> { "tools/audio/verify_browser.py", Path.Combine(output, "wwwroot") };
+            string root = await PrepareBrowserPublicationAsync(publication).ConfigureAwait(false);
+            string log = publication.Log;
+            var arguments = new List<string> { "tools/audio/verify_browser.py", root };
             if (Environment.GetEnvironmentVariable("CHROME") is string chrome && !string.IsNullOrWhiteSpace(chrome))
             {
                 arguments.AddRange(["--chromium", chrome]);

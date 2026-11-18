@@ -150,7 +150,7 @@ Append replacements after dotnet run --project build -c Release -- --target.
 | BenchmarkInput | Benchmark --benchmark-area input |
 | BenchmarkUI | Benchmark --benchmark-area ui |
 | BenchmarkUIIntegration | Benchmark --benchmark-area ui --benchmark-integrated |
-| CiBrowser | Test --suite browser |
+| CiBrowser | Test --lane integration --platform browser |
 | CiCpu | Test --lane cpu |
 | CiDistribution | Distribution |
 | CiGpu | Test --lane gpu |

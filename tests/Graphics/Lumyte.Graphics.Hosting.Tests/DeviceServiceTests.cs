@@ -75,6 +75,7 @@ public sealed class DeviceServiceTests
 
     /// <summary>Concurrent returns of one lease cannot release another lease's ownership.</summary>
     /// <returns>Completion of the scenario.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task ConcurrentDisposalReturnsAnEpochLeaseOnlyOnceAsync()
     {

@@ -16,6 +16,7 @@ public sealed class DiagnosticsTests
     /// <summary>Checks Click completes before commit, target replacement fits a full budget and old job results remain readable.</summary>
     /// <param name="withMetadata">Whether optional navigation observation is registered.</param>
     /// <returns>The verification.</returns>
+    [Trait("Execution", "Integration")]
     [Theory]
     [InlineData(false)]
     [InlineData(true)]

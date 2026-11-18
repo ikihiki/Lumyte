@@ -22,6 +22,13 @@ ORIGINAL_SHA = "4e50104dab8686ea0ebae0c11bb6eccfe1a676f1aa9bf57cb802c4988a52865f
 PATCHED_SHA = "007fc7021336b8854f450c2ea9c90a16d1db58e1aaaebec7a228d1d6be2ef467"
 
 
+def write_if_changed(path, data):
+    # Cargo tracks this generated header by mtime. Identical rewrites force
+    # bindgen and an expensive native release link on every invocation.
+    if not path.exists() or path.read_bytes() != data:
+        path.write_bytes(data)
+
+
 def fetch(url, path, expected):
     if not path.exists():
         with urllib.request.urlopen(url, timeout=120) as response:
@@ -65,6 +72,8 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", type=Path)
     parser.add_argument("--verify", action="store_true")
+    parser.add_argument("--prepare-only", action="store_true",
+                        help="Verify source, toolchain and C SDK, then resolve dependency sources before a standard Cargo target-cache restore; never stages a binary")
     parser.add_argument("--binary", type=Path)
     parser.add_argument("--provenance", type=Path)
     parser.add_argument("--rid")
@@ -89,7 +98,7 @@ def main():
             package.extractall(output, filter="data")
     header = fetch("https://raw.githubusercontent.com/webgpu-native/webgpu-headers/" + HEADER_COMMIT + "/webgpu.h",
                    output / "webgpu.h", HEADER_SHA)
-    (source / "ffi/webgpu-headers/webgpu.h").write_bytes(header)
+    write_if_changed(source / "ffi/webgpu-headers/webgpu.h", header)
     if hashlib.sha256((source / "Cargo.lock").read_bytes()).hexdigest() != source_info["cargoLockSha256"]:
         raise RuntimeError("Upstream Cargo.lock SHA-256 mismatch")
     lib = source / "src/lib.rs"
@@ -111,6 +120,11 @@ def main():
     if not cargo_version.startswith("cargo 1.99.1 ") or not rust_version.startswith("rustc 1.99.1 "):
         raise RuntimeError("Use the existing pinned Rust/Cargo 1.99.1 toolchain; this build never installs SDKs")
     clang_runtime.prepare(output, host_rid(), source, environment)
+    if args.prepare_only:
+        subprocess.run([args.cargo, "fetch", "--locked", "--manifest-path", str(source / "Cargo.toml")],
+                       check=True, env=environment)
+        print("Prepared verified native inputs; execute the normal build after cache restore")
+        return
     subprocess.run([args.cargo, "build", "--locked", "--release", "--manifest-path", str(source / "Cargo.toml"),
                     "--target-dir", str(output / "target")], check=True, env=environment)
     if os.name == "nt":

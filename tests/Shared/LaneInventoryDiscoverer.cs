@@ -35,6 +35,7 @@ internal sealed class LaneInventoryDiscoverer(ITestFrameworkDiscoverer inner, IA
     private sealed class InventorySink(IMessageSink sink, IAssemblyInfo assembly, string catalog) : LongLivedMarshalByRefObject, IMessageSink
     {
         private readonly HashSet<string> _lanes = new(StringComparer.Ordinal);
+        private readonly List<object> _cases = [];
         private readonly JsonDocument _document = JsonDocument.Parse(File.ReadAllText(catalog));
 
         private JsonElement Entry => _document.RootElement.EnumerateArray().Single(entry => Path.GetFullPath(entry.GetProperty("Project").GetString()!, Path.GetDirectoryName(Path.GetDirectoryName(catalog))!) == Project);
@@ -50,9 +51,11 @@ internal sealed class LaneInventoryDiscoverer(ITestFrameworkDiscoverer inner, IA
                 string[] traits = discovered.TestCase.Traits.Where(pair => pair.Key.Equals("Execution", StringComparison.OrdinalIgnoreCase)).SelectMany(pair => pair.Value).ToArray();
                 string name = discovered.TestCase.TestMethod.TestClass.Class.Name.Split('.').Last();
                 bool external = Entry.GetProperty("IntegrationClasses").EnumerateArray().Any(value => value.GetString() == name);
-                _lanes.Add(traits.Contains("Gpu", StringComparer.Ordinal) ? "Gpu"
+                string lane = traits.Contains("Gpu", StringComparer.Ordinal) ? "Gpu"
                     : traits.Contains("Integration", StringComparer.Ordinal) || external ? "Integration"
-                    : Entry.GetProperty("Default").GetString()!);
+                    : Entry.GetProperty("Default").GetString()!;
+                _lanes.Add(lane);
+                _cases.Add(new { Id = discovered.TestCase.UniqueID, Name = discovered.TestCase.DisplayName, Lane = lane });
             }
 
             if (message is IDiscoveryCompleteMessage)
@@ -60,7 +63,7 @@ internal sealed class LaneInventoryDiscoverer(ITestFrameworkDiscoverer inner, IA
                 string? error = Validate();
                 string directory = Environment.GetEnvironmentVariable("LUMYTE_LANE_INVENTORY")!;
                 Directory.CreateDirectory(directory);
-                File.WriteAllText(Path.Combine(directory, Path.GetFileName(Project) + ".json"), JsonSerializer.Serialize(new { Project, Lanes = _lanes.Order().ToArray(), Error = error }));
+                File.WriteAllText(Path.Combine(directory, Path.GetFileName(Project) + ".json"), JsonSerializer.Serialize(new { Project, Lanes = _lanes.Order().ToArray(), Cases = _cases, Error = error }));
                 _document.Dispose();
                 if (error is not null)
                 {

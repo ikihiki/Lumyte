@@ -10,6 +10,7 @@ public sealed class ResourceValueTypeTests
 {
     /// <summary>Value source and transform stages share builds, handles and retained content revisions.</summary>
     /// <returns>Completion of construction and ordered release.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task StructOutputsRetainTheirInputAcrossReferencesAndSnapshotsAsync()
     {
@@ -83,6 +84,7 @@ public sealed class ResourceValueTypeTests
 
     /// <summary>Retrying wrapper release reaches the same owner and does not release its dependency early.</summary>
     /// <returns>Completion of failed and successful release attempts.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task StructReleaseFailureRetainsOwnerAndInputUntilRetryAsync()
     {

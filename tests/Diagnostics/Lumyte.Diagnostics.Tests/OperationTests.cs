@@ -77,6 +77,7 @@ public sealed class OperationTests
     }
 
     /// <summary>Checks owner-thread execution and contributor lifetime validation.</summary>
+    [Trait("Execution", "Integration")]
     [Fact]
     public void OwnershipAndLifetimeAreExplicit()
     {
