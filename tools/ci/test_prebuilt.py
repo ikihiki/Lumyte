@@ -273,12 +273,31 @@ class TransportTests(unittest.TestCase):
         for path in ('artifacts/build/tools/cargo/credentials.toml',
                      'artifacts/dev-env/dotnet-home/.nuget/NuGet.Config',
                      'artifacts/wgpu-native/target/debug/cache',
-                     'artifacts/wgpu-native/source.tar.gz'):
+                     'artifacts/wgpu-native/source.tar.gz',
+                     'artifacts/dev-env/mise/cache/http:dotnet/state',
+                     'artifacts/dev-env/mise/cache/http:dotnet/toolchain:metadata',
+                     'artifacts/dev-env/nuget-packages/unused/1.0/private:state'):
             self.put(path, 'secret')
         self.create()
         entries = self.verify()['entries']
         self.assertFalse(any('secret' in n or 'credentials' in n or 'target/debug' in n
                              or 'dotnet-home' in n or 'source.tar' in n for n in entries))
+
+    def test_mise_private_cache_is_not_a_transport_candidate(self):
+        # The previous broad artifacts/dev-env traversal passed this private
+        # backend state path through portable payload validation and failed.
+        self.put('artifacts/dev-env/mise/cache/http:dotnet/backend:state', 'private cache')
+        paths = p.collect(self.root, self.nuget)
+        self.assertFalse(any('/mise/' in name for name in paths))
+        self.assertTrue(any(name.startswith('nuget/example/1.0/') for name in paths))
+
+    def test_unsafe_real_output_fails_with_escaped_filename(self):
+        bad = 'src/P/bin/Release/invalid:name' + chr(10)
+        self.put(bad, 'payload')
+        with self.assertRaises(p.Invalid) as caught:
+            p.collect(self.root, self.nuget)
+        self.assertIn(repr('workspace/' + bad), str(caught.exception))
+        self.assertNotIn(chr(10), str(caught.exception))
 
     def test_wrong_nuget_root_in_assets(self):
         self.put('src/P/obj/project.assets.json', json.dumps({'packageFolders': {'/wrong/': {}}}))

@@ -111,6 +111,34 @@ runtime has been exercised locally. Full hosted terminal CI, artifact size and
 actual remote product-build counts remain required after parent review/push.
 Old-head CI cannot validate this graph. No old run was cancelled or restarted.
 
+### Producer traversal boundary
+
+The first hosted fanout run exposed an overbroad artifact collector: the
+artifacts/dev-env container was treated as a recursive payload tree. Private
+mise/SDK/package cache paths consequently reached portable payload validation,
+even though they were not transferable outputs. The collector now traverses only
+explicit final-output trees and their necessary parents; NuGet dependencies still
+travel separately from the exact project.assets.json package closure. Unsafe
+selected payloads and unsafe incoming archive paths still fail closed. Diagnostics
+now include the escaped offending filename rather than a generic unsafe-path line.
+The original remote filename was not retained by that earlier diagnostic.
+
+A fresh full-host producer with its own NuGet root reproduced the old failure
+when a backend-private mise cache path contained a colon. The fixed helper sealed
+and verified the complete producer (not merely a Memory subset), including the
+same excluded private state. Its local uncompressed tar is approximately 6.6 GiB;
+hosted compressed upload size and timing are separate measurements. The bundle
+contains 36,042 files, including 4,433 NuGet dependency files and 255 restore asset
+files. After deleting every isolated producer bin/obj and its entire private
+NuGet root, extraction restored the complete CPU consumer: 49 projects and 3,836
+tests passed without build/restore, with the product compilation guard enabled.
+Evidence: lumyte-full-producer-k5MwqD; logs are retained as
+/tmp/lumyte-full-producer-cleanbuild.log, /tmp/lumyte-full-producer-fixed-seal.log,
+/tmp/lumyte-full-producer-fresh-extract.log and
+/tmp/lumyte-full-producer-fresh-cpu.log. Native dependencies for this local build
+used the existing explicitly supplied development paths; this is not new hosted
+ARM/Windows/GPU proof.
+
 ### Local evidence for this graph
 
 - Full-host Compile: SDK 10.0.403, zero warnings/errors; local incremental
@@ -121,7 +149,7 @@ Old-head CI cannot validate this graph. No old run was cancelled or restarted.
   producer-to-two-AOT-consumers executable fixture and all no-publish contracts.
 - Relevant Integration orchestration: 227 passed with no-build/no-restore and
   the consumer guard enabled. Node contracts: 235 passed, one optional skip.
-- Transport: 21 Python security/closure tests; graph/shell contracts: six tests.
+- Transport: 23 Python security/closure tests; graph/shell contracts: six tests.
   Seven YAML files and XML/Python syntax parse. Managed/build format and all
   370 Markdown files pass.
 - Real clean-output product proof: Lumyte.Memory plus its DI library and test

@@ -42,7 +42,7 @@ def canonical(value):
 def clean(name):
     require(isinstance(name, str) and name and chr(92) not in name and ':' not in name
             and all(ord(c) >= 32 for c in name),
-            'unsafe path')
+            'unsafe path: ' + repr(name))
     p = PurePosixPath(name)
     require(not p.is_absolute() and all(x not in ('', '.', '..') for x in name.split('/')),
             'unsafe path: ' + name)
@@ -159,13 +159,27 @@ def collect(root, nuget):
         for directory, dirs, files in os.walk(root / base, followlinks=False):
             rel = Path(directory).relative_to(root).as_posix()
             if base == 'artifacts':
-                candidates = (*TREES, *(p.relative_to(root).as_posix() for p in (root / 'artifacts').glob('*-aot')), *(p.relative_to(root).as_posix() for p in (root / 'artifacts/dev-env').glob('mesa-*') if p.is_dir()), 'artifacts/build', 'artifacts/wgpu-native', 'artifacts/direct3d12', 'artifacts/dev-env')
-                dirs[:] = [d for d in dirs if any(
-                    (rel + '/' + d).startswith(t + '/') or t.startswith(rel + '/' + d + '/')
-                    or rel + '/' + d == t for t in candidates)
-                    and d not in ('tools', 'invocations', 'target', 'cargo', 'dotnet-home')]
-                if rel.startswith('artifacts/build/') and len(Path(rel).parts) == 3:
-                    dirs[:] = [d for d in dirs if d in ('bin', 'obj')]
+                trees = (*TREES,
+                         *(p.relative_to(root).as_posix() for p in (root / 'artifacts').glob('*-aot') if p.is_dir()),
+                         *(p.relative_to(root).as_posix() for p in (root / 'artifacts/dev-env').glob('mesa-*') if p.is_dir()),
+                         'artifacts/direct3d12')
+
+                def descend(child):
+                    parts = PurePosixPath(child).parts
+                    if any(bit in ('tools', 'invocations', 'target', 'cargo', 'dotnet-home') for bit in parts):
+                        return False
+                    if child == 'artifacts/build':
+                        return True
+                    if child.startswith('artifacts/build/'):
+                        return len(parts) == 3 or (len(parts) >= 4 and parts[3] in ('bin', 'obj'))
+                    # Container parents permit visiting their files, not arbitrary
+                    # children such as mise/cache, SDKs or NuGet download state.
+                    if child in ('artifacts/dev-env', 'artifacts/wgpu-native'):
+                        return True
+                    return any(child == tree or child.startswith(tree + '/')
+                               or tree.startswith(child + '/') for tree in trees)
+
+                dirs[:] = [d for d in dirs if descend(rel + '/' + d)]
             for name in files + [d for d in dirs if (Path(directory) / d).is_symlink()]:
                 p = Path(directory) / name
                 archive = 'workspace/' + p.relative_to(root).as_posix()
