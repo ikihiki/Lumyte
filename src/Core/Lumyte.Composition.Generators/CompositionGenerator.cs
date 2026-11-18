@@ -272,10 +272,11 @@ public sealed partial class CompositionGenerator : IIncrementalGenerator
             if (!method.IsStatic || !method.ReturnsVoid || method.IsAsync || method.Arity != 0
                 || method.MethodKind != MethodKind.Ordinary || method.Parameters.Length != 2
                 || !SymbolEqualityComparer.Default.Equals(method.Parameters[0].Type, component)
-                || ContentItem(method.Parameters[1].Type) is null || ManagedContentItem(method.Parameters[1].Type) is not null
+                || (TemplateType(method.Parameters[1].Type, compilation) is null
+                    && (ContentItem(method.Parameters[1].Type) is null || ManagedContentItem(method.Parameters[1].Type) is not null))
                 || method.Parameters.Any(parameter => parameter.RefKind != RefKind.None || parameter.IsOptional || parameter.IsParams || !PublicType(parameter.Type)))
             {
-                return "ComposeSlot requires a synchronous non-generic static void method accepting its component and a supported child collection.";
+                return "ComposeSlot requires a synchronous non-generic static void method accepting its component and a supported child collection or CompositionTemplate.";
             }
 
             if (HasAttribute(method, "ComposeAction") || !actionNames.Add(method.Name)
@@ -484,12 +485,14 @@ public sealed partial class CompositionGenerator : IIncrementalGenerator
 
         if (slots.Length != 0)
         {
-            RenderSlotIndexer(builder, type, content, InheritsCompositionChild(component, compilation));
+            RenderSlotIndexer(builder, type, content, InheritsCompositionChild(component, compilation), slots.Any(slot => slot.Name == "Item"));
             foreach (IMethodSymbol slot in slots)
             {
-                builder.Append("internal static global::Lumyte.Composition.CompositionSlot<").Append(type).Append(", ")
-                    .Append(TypeName(ContentItem(slot.Parameters[1].Type)!)).Append("> ").Append(Escape("__LumyteSlot" + slot.Name))
-                    .Append("() => new((target, children) => ").Append(Escape(slot.Name)).AppendLine("(target, children));");
+                builder.Append(InheritsSlotBridge(component, slot.Name, compilation) ? "internal new static " : "internal static ")
+                    .Append(SlotType(slot, compilation)).Append(" ").Append(Escape("__LumyteSlot" + slot.Name))
+                    .Append(TemplateType(slot.Parameters[1].Type, compilation) is not null
+                        ? "() => new(static (target, children) => " : "() => new((target, children) => ")
+                    .Append(Escape(slot.Name)).AppendLine("(target, children));");
             }
         }
 
@@ -528,9 +531,8 @@ public sealed partial class CompositionGenerator : IIncrementalGenerator
 
             foreach (IMethodSymbol slot in slots)
             {
-                builder.AppendLine("/// <summary>Creates a deferred named child slot.</summary>");
-                builder.Append("public static global::Lumyte.Composition.CompositionSlot<").Append(type).Append(", ")
-                    .Append(TypeName(ContentItem(slot.Parameters[1].Type)!)).Append("> ").Append(Escape(slot.Name)).Append(generics)
+                builder.AppendLine("/// <summary>Creates a deferred named slot.</summary>");
+                builder.Append("public static ").Append(SlotType(slot, compilation)).Append(" ").Append(Escape(slot.Name)).Append(generics)
                     .Append("(this ").Append(TypeName(outer)).Append(".Definitions.").Append(Escape(component.Name + "Factory"))
                     .Append(generics).Append(" __factory)").Append(constraints).Append(" => ").Append(type).Append('.')
                     .Append(Escape("__LumyteSlot" + slot.Name)).AppendLine("();");
@@ -557,12 +559,17 @@ public sealed partial class CompositionGenerator : IIncrementalGenerator
         return false;
     }
 
-    private static void RenderSlotIndexer(StringBuilder builder, string type, ISymbol? content, bool hidesInheritedChild)
+    private static void RenderSlotIndexer(StringBuilder builder, string type, ISymbol? content, bool hidesInheritedChild, bool hasItemSlot)
     {
         string assignment = "global::Lumyte.Composition.CompositionSlotAssignment<" + type + ">";
         if (content is null)
         {
             builder.AppendLine("/// <summary>Applies named slots in order and returns this instance.</summary>");
+            if (hasItemSlot)
+            {
+                builder.AppendLine("[global::System.Runtime.CompilerServices.IndexerName(\"__LumyteContent\")]");
+            }
+
             builder.Append("public ").Append(type).Append(" this[params ").Append(assignment).AppendLine("[] content]\n{\nget\n{");
             builder.AppendLine("global::System.ArgumentNullException.ThrowIfNull(content);\nforeach (var slot in content) slot.Apply(this);\nreturn this;\n}\n}");
             return;
@@ -581,6 +588,11 @@ public sealed partial class CompositionGenerator : IIncrementalGenerator
         builder.AppendLine("/// <summary>Wraps a named slot assignment.</summary>");
         builder.Append("public static implicit operator CompositionChild(").Append(assignment).AppendLine(" slot) => new(slot);\n}");
         builder.AppendLine("/// <summary>Applies ordinary content when present and named slots in order.</summary>");
+        if (hasItemSlot)
+        {
+            builder.AppendLine("[global::System.Runtime.CompilerServices.IndexerName(\"__LumyteContent\")]");
+        }
+
         builder.Append("public ").Append(type).AppendLine(" this[params CompositionChild[] content]\n{\nget\n{");
         builder.AppendLine("global::System.ArgumentNullException.ThrowIfNull(content);");
         builder.Append("var children = new global::System.Collections.Generic.List<").Append(child).AppendLine(">();");
