@@ -565,7 +565,7 @@ public sealed class RenderGraphRenderer2D(DrawingCommandRenderers2D renderers, R
             var shared = GraphDrawingArguments2D.Get(graph);
             if (shared.RequiresFallback(reservations))
             {
-                pass.UseTexture(shared.Fallback, TextureState.Sampled, new(PipelineStage.FragmentShader, ResourceAccess.ShaderRead));
+                pass.UseTexture(shared.Fallback, TextureState.Sampled, new(PipelineStage.VertexShader | PipelineStage.FragmentShader, ResourceAccess.ShaderRead));
             }
 
             foreach (ShaderResources resources in reservations)
@@ -629,6 +629,10 @@ public sealed class RenderGraphRenderer2D(DrawingCommandRenderers2D renderers, R
             }
 
             cancellationToken.ThrowIfCancellationRequested();
+
+            // Each page is a separate graph binding operation. Its page view records
+            // that page's copy, private compute producer and correlated raster consumer
+            // together, outside any active pass; the containing batch owns all pages once.
             if (batch is PreparedRecordBatch2D records)
             {
                 foreach ((IPreparedCommandBatch2D page, IReadOnlyList<ShaderResources> reservations) in records.GraphPages)

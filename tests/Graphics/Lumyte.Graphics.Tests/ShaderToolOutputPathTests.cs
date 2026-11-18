@@ -249,7 +249,15 @@ public sealed class ShaderToolOutputPathTests
     public async Task ShellBackslashIdentityConservativelyRebuildsAsync(bool hostArgument)
         => await VerifyCompilerLookupAsync(hostArgument, false, shellCompiler: !hostArgument, shellHost: hostArgument);
 
-    private static async Task VerifyCompilerLookupAsync(bool absoluteCompiler, bool currentShadow, bool shellOutsideProject = false, bool executableShadow = false, bool wrappedHost = false, bool partialPermissions = false, bool shellCompiler = false, bool shellHost = false)
+    /// <summary>Additional shared inputs invalidate the dependent shader artifact.</summary>
+    /// <param name="additionalInput">Enables the shared membership input.</param>
+    /// <returns>The isolated fake-compiler dependency verification.</returns>
+    [LinuxTheory]
+    [InlineData(true)]
+    public async Task AdditionalInputInvalidatesAsync(bool additionalInput)
+        => await VerifyCompilerLookupAsync(true, false, additionalInput: additionalInput);
+
+    private static async Task VerifyCompilerLookupAsync(bool absoluteCompiler, bool currentShadow, bool shellOutsideProject = false, bool executableShadow = false, bool wrappedHost = false, bool partialPermissions = false, bool shellCompiler = false, bool shellHost = false, bool additionalInput = false)
     {
         if (OperatingSystem.IsWindows())
         {
@@ -299,6 +307,12 @@ public sealed class ShaderToolOutputPathTests
                   <Target Name="DescribeCompiler"><WriteLinesToFile File="evaluated-compiler.txt" Lines="$(SlangCompilerPath)|$(_LumyteSlangCompilerInput)|$(IntermediateOutputPath)Slang/fixture.lshader" Overwrite="true" /></Target>
                 </Project>
                 """;
+            if (additionalInput)
+            {
+                defaultFixture = defaultFixture.Replace("ResourceName=\"fixture\"", "ResourceName=\"fixture\" AdditionalInputs=\"stroke-membership.slang\"", StringComparison.Ordinal);
+                await File.WriteAllTextAsync(Path.Combine(directory, "stroke-membership.slang"), "// shared membership input");
+            }
+
             await File.WriteAllTextAsync(Path.Combine(directory, "fixture.proj"), defaultFixture);
             string tools = Path.Combine(directory, "fake tools ü");
             Directory.CreateDirectory(tools);
@@ -477,6 +491,19 @@ public sealed class ShaderToolOutputPathTests
             }
 
             Assert.Equal(unknownHost || partialPermissions ? 2 : 1, (await File.ReadAllLinesAsync(log)).Length);
+            if (additionalInput)
+            {
+                string dependent = Path.Combine(directory, "stroke-membership.slang");
+                string dependentArtifact = Path.Combine(directory, "shader-output/Slang/fixture.lshader");
+                byte[] before = await File.ReadAllBytesAsync(dependentArtifact);
+                await File.AppendAllTextAsync(dependent, "\n// only shared input changes");
+                File.SetLastWriteTimeUtc(dependent, File.GetLastWriteTimeUtc(dependentArtifact).AddMinutes(1));
+                await RunWithEnvironmentAsync(buildDirectory, true, environment, build);
+                Assert.Equal(2, (await File.ReadAllLinesAsync(log)).Length);
+                Assert.Equal(before, await File.ReadAllBytesAsync(dependentArtifact));
+                return;
+            }
+
             if (partialPermissions)
             {
                 await File.AppendAllTextAsync(fake, "\n# changed uncertain compiler\n");

@@ -180,7 +180,7 @@ public sealed class ResolveSlangCompilerInput : Microsoft.Build.Utilities.Task {
     </ItemGroup>
   </Target>
   <Target Name="CompileSlangShaders" DependsOnTargets="PrepareLumyteShaderCompiler"
-          Inputs="%(SlangShader.FullPath);$(MSBuildThisFileDirectory)include/lumyte.slang;$(MSBuildThisFileFullPath);$(MSBuildAllProjects);$(_LumyteSlangCompilerInput);$(_LumyteSlangCompilerIdentityFile);@(_LumyteShaderToolInputs)"
+          Inputs="%(SlangShader.AdditionalInputs);%(SlangShader.FullPath);$(MSBuildThisFileDirectory)include/lumyte.slang;$(MSBuildThisFileFullPath);$(MSBuildAllProjects);$(_LumyteSlangCompilerInput);$(_LumyteSlangCompilerIdentityFile);@(_LumyteShaderToolInputs)"
           Outputs="$(IntermediateOutputPath)Slang/%(SlangShader.ResourceName).lshader"
           Condition="'@(SlangShader)' != '' and '$(NoBuild)' != 'true'">
     <Error Condition="'%(SlangShader.ResourceName)' == ''" Text="SlangShader requires a unique ResourceName." />

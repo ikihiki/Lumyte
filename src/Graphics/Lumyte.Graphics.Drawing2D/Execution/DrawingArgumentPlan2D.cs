@@ -511,7 +511,7 @@ public sealed class DrawingArgumentPlan2D : IDisposable
         }
 
         var write = new BarrierScope(PipelineStage.ColorOutput, ResourceAccess.ColorWrite);
-        var read = new BarrierScope(PipelineStage.FragmentShader, ResourceAccess.ShaderRead);
+        var read = new BarrierScope(PipelineStage.VertexShader | PipelineStage.FragmentShader, ResourceAccess.ShaderRead);
         commands.Barrier(new TextureBarrierDesc { Texture = _fallback, Range = new(0, 1, 0, 1), BeforeState = TextureState.Undefined, AfterState = TextureState.ColorAttachment, Before = default, After = write });
         IRenderEncoder clear = commands.BeginRenderPass(new() { ColorAttachments = [new() { View = _fallbackView!, LoadOp = AttachmentLoadOp.Clear, StoreOp = AttachmentStoreOp.Store }] });
         clear.End();

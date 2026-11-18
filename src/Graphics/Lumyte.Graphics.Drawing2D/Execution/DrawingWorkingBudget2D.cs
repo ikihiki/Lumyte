@@ -59,6 +59,13 @@ internal static class DrawingWorkingBudget2D
     internal static long Validate<T>(ReadOnlyMemory<T> commands, DrawingTargetInfo2D target, long maximum)
         where T : DrawingCommand2D => ValidateChecked(Enumerate(commands), commands.Length, target, maximum);
 
+    internal static bool TryValidate<T>(ReadOnlyMemory<T> commands, DrawingTargetInfo2D target, long maximum, out long bytes)
+        where T : DrawingCommand2D
+    {
+        bytes = ValidateChecked(Enumerate(commands), commands.Length, target, maximum, rejectOverBudget: false);
+        return bytes <= maximum;
+    }
+
     private static IEnumerable<DrawingCommand2D> Enumerate<T>(ReadOnlyMemory<T> commands)
         where T : DrawingCommand2D
     {
@@ -68,10 +75,16 @@ internal static class DrawingWorkingBudget2D
         }
     }
 
-    private static long ValidateChecked(IEnumerable<DrawingCommand2D> commands, int count, DrawingTargetInfo2D target, long maximum)
+    private static long ValidateChecked(IEnumerable<DrawingCommand2D> commands, int count, DrawingTargetInfo2D target, long maximum, bool rejectOverBudget = true)
     {
-        if (checked(4096L + (count * 512L)) > maximum)
+        long materializationBytes = checked(4096L + (count * 512L));
+        if (materializationBytes > maximum)
         {
+            if (!rejectOverBudget)
+            {
+                return materializationBytes;
+            }
+
             throw new NotSupportedException("Command materialization exceeds the preallocation working budget.");
         }
 
@@ -148,7 +161,7 @@ internal static class DrawingWorkingBudget2D
 
         void Check()
         {
-            if (bytes > maximum)
+            if (rejectOverBudget && bytes > maximum)
             {
                 throw new NotSupportedException("Input preparation exceeds its conservative preallocation working budget.");
             }

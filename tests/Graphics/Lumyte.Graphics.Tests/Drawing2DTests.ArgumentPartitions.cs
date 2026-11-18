@@ -310,14 +310,23 @@ public sealed partial class Drawing2DTests
     {
         private readonly IGraphicDevice _native;
 
-        internal PartitionDevice(IGraphicDevice native, uint textureSlots)
+        internal PartitionDevice(IGraphicDevice native, uint textureSlots, ulong storageRange = 0)
         {
             _native = native;
             Assert.InRange(textureSlots, 1u, native.Caps.ArgumentTableBindingLimits.TextureSlots);
             Caps = native.Caps with { ArgumentTableBindingLimits = native.Caps.ArgumentTableBindingLimits with { TextureSlots = textureSlots } };
+            if (storageRange != 0)
+            {
+                Assert.InRange(storageRange, 1UL, native.Caps.ArgumentTableBindingLimits.MaximumBufferRangeBytes);
+                ulong nativeRange = native.Caps.MaxStorageBufferBindingSize == 0 ? native.Caps.MaxBufferSize : native.Caps.MaxStorageBufferBindingSize;
+                Assert.InRange(storageRange, 1UL, nativeRange);
+                Caps = Caps with { MaxStorageBufferBindingSize = storageRange, ArgumentTableBindingLimits = Caps.ArgumentTableBindingLimits with { MaximumBufferRangeBytes = storageRange } };
+            }
         }
 
         public event EventHandler<GraphicsDeviceLostEventArgs>? DeviceLost { add => _native.DeviceLost += value; remove => _native.DeviceLost -= value; }
+
+        public bool ValidationEnabled => _native.ValidationEnabled;
 
         public GraphicsDeviceStatus Status => _native.Status;
 
@@ -372,7 +381,13 @@ public sealed partial class Drawing2DTests
 
         internal int ComputePasses { get; private set; }
 
+        internal int ComputeDispatches { get; private set; }
+
+        internal List<ShaderValueSnapshot> ComputeRoots { get; } = [];
+
         internal ulong PayloadCopyBytes { get; private set; }
+
+        internal List<string> WorkSequence { get; } = [];
 
         internal List<(IArgumentTable Table, ShaderValueSnapshot Snapshot)> Roots { get; } = [];
 
@@ -380,6 +395,7 @@ public sealed partial class Drawing2DTests
             where TSource : unmanaged
             where TDestination : unmanaged
         {
+            WorkSequence.Add("copy");
             PayloadCopyBytes = checked(PayloadCopyBytes + source.SizeInBytes);
             native.CopyBuffer(source, destination);
         }
@@ -397,12 +413,17 @@ public sealed partial class Drawing2DTests
 
         public void Barrier(TextureBarrierDesc barrier) => native.Barrier(barrier);
 
-        public IRenderEncoder BeginRenderPass(RenderPassDesc desc) => new PartitionRenderEncoder(native.BeginRenderPass(desc), Roots, selection);
+        public IRenderEncoder BeginRenderPass(RenderPassDesc desc)
+        {
+            WorkSequence.Add("raster");
+            return new PartitionRenderEncoder(native.BeginRenderPass(desc), Roots, selection);
+        }
 
         public IComputeEncoder BeginComputePass(ComputePassDesc desc)
         {
+            WorkSequence.Add("compute");
             ComputePasses++;
-            return native.BeginComputePass(desc);
+            return new MembershipCountingComputeEncoder(native.BeginComputePass(desc), () => ComputeDispatches++, ComputeRoots);
         }
 
         public void Finish() => native.Finish();
@@ -410,6 +431,7 @@ public sealed partial class Drawing2DTests
         public void CopyBuffer<T>(ShaderDataSlice<T> source, ShaderDataSlice<T> destination)
             where T : struct, IShaderArguments
         {
+            WorkSequence.Add("copy");
             PayloadCopyBytes = checked(PayloadCopyBytes + (source.Count * source.Buffer.ShaderElementStrideInBytes));
             native.CopyBuffer(source, destination);
         }

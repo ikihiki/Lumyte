@@ -46,7 +46,9 @@ internal sealed class PreparedRecordBatch2D : IRetainedCommandBatch2D, IRetained
 
     public long EstimatedBytes => checked(_bytes + _context.ArgumentPlan.EstimatedBytes);
 
-    public bool EnforcesWorkingBudget => _context.EnforceWorkingBudget;
+    public bool EnforcesWorkingBudget => _context.ComputeShapeMembership || _context.EnforceWorkingBudget;
+
+    internal bool HasShapeMembership => _pages.Any(page => page.HasShapeMembership);
 
     internal IEnumerable<(IPreparedCommandBatch2D Batch, IReadOnlyList<ShaderResources> Reservations)> GraphPages
     {
@@ -114,7 +116,7 @@ internal sealed class PreparedRecordBatch2D : IRetainedCommandBatch2D, IRetained
     internal static ValueTask<IPreparedCommandBatch2D> PrepareAsync<T>(RenderPreparationContext2D context, ReadOnlyMemory<T> commands, CancellationToken cancellationToken)
         where T : DrawingCommand2D
     {
-        if (!context.EnforceWorkingBudget && context.ArgumentPlan.WorkingReferencesEnabled)
+        if (!context.EnforceWorkingBudget && (context.ComputeShapeMembership || context.ArgumentPlan.WorkingReferencesEnabled))
         {
             context = context.WithWorkingLimit(context.MaxWorkingBytes);
         }
@@ -155,7 +157,11 @@ internal sealed class PreparedRecordBatch2D : IRetainedCommandBatch2D, IRetained
 
                     if (page is null || !page.CanAdmit(null, 0, clip, color))
                     {
-                        page?.Allocate();
+                        if (!context.ComputeShapeMembership)
+                        {
+                            page?.Allocate();
+                        }
+
                         page = new(batch);
                         batch._pages.Add(page);
                     }
@@ -192,14 +198,18 @@ internal sealed class PreparedRecordBatch2D : IRetainedCommandBatch2D, IRetained
                     continue;
                 }
 
-                if (page is null || !page.CanAdmit(program, root, clip))
+                if (page is null || !page.CanAdmit(program, root, clip, bounds: bounds))
                 {
-                    page?.Allocate();
+                    if (!context.ComputeShapeMembership)
+                    {
+                        page?.Allocate();
+                    }
+
                     page = new(batch);
                     batch._pages.Add(page);
                 }
 
-                if (!page.CanAdmit(program, root, clip))
+                if (!page.CanAdmit(program, root, clip, bounds: bounds))
                 {
                     throw new NotSupportedException("A single draw exceeds the fixed-record stream and resource budget.");
                 }
@@ -210,7 +220,18 @@ internal sealed class PreparedRecordBatch2D : IRetainedCommandBatch2D, IRetained
                 batch._samplers.UnionWith(program.Samplers);
             }
 
-            page?.Allocate();
+            if (context.ComputeShapeMembership)
+            {
+                foreach (Page preparedPage in batch._pages)
+                {
+                    preparedPage.Allocate();
+                }
+            }
+            else
+            {
+                page?.Allocate();
+            }
+
             compile?.Success();
             return ValueTask.FromResult<IPreparedCommandBatch2D>(batch);
         }
@@ -228,6 +249,11 @@ internal sealed class PreparedRecordBatch2D : IRetainedCommandBatch2D, IRetained
         ArgumentNullException.ThrowIfNull(target);
         ObjectDisposedException.ThrowIf(_disposed, this);
         _context.ValidateResources();
+        if (resident && HasShapeMembership)
+        {
+            throw new InvalidOperationException("Frame-private writable membership cannot be recorded as resident.");
+        }
+
         if (_views.Any(view => ReferenceEquals(view.Texture, target.Texture)))
         {
             throw new ArgumentException("A command cannot sample its active target.", nameof(target));
@@ -246,6 +272,11 @@ internal sealed class PreparedRecordBatch2D : IRetainedCommandBatch2D, IRetained
                 page.Copy(commands);
             }
 
+            if (!resident && !earlierProducer)
+            {
+                page.Compute(commands);
+            }
+
             page.Record(commands, target, 0, (uint)page.RecordCount, translation);
         }
     }
@@ -259,6 +290,11 @@ internal sealed class PreparedRecordBatch2D : IRetainedCommandBatch2D, IRetained
         ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual(pageIndex, _pages.Count);
         Page page = _pages[pageIndex];
         DrawRecordPage2D.ValidateRange(first, count, (uint)page.RecordCount);
+        if (resident && page.HasShapeMembership)
+        {
+            throw new InvalidOperationException("Writable shape membership cannot be recorded as retained residency.");
+        }
+
         if (count == 0)
         {
             return;
@@ -276,6 +312,7 @@ internal sealed class PreparedRecordBatch2D : IRetainedCommandBatch2D, IRetained
             page.Copy(commands);
         }
 
+        page.Compute(commands);
         page.Record(commands, target, first, count);
     }
 
@@ -293,11 +330,18 @@ internal sealed class PreparedRecordBatch2D : IRetainedCommandBatch2D, IRetained
         private readonly List<IStream> _streams = [];
         private readonly HashSet<IGraphicsTextureView> _views = new(ReferenceEqualityComparer.Instance);
         private readonly HashSet<IGraphicsSampler> _samplers = new(ReferenceEqualityComparer.Instance);
+        private readonly List<ShapeMembership2D.Dispatch> _shapeDispatches = [];
         private Stream<DrawRecord2D> _records = null!;
         private Stream<DrawDirectoryEntry2D> _paints = null!;
         private Stream<DrawDirectoryEntry2D> _clips = null!;
         private Stream<ImagePaintData2D> _images = null!;
         private Stream<MaskDescriptor2D> _masks = null!;
+        private Stream<ShapeMembershipMetadata2D>? _membershipMetadata;
+        private ShapeMembership2D? _membership;
+        private bool _membershipRecorded;
+        private IGraphicsBuffer<uint>? _shapeMembership;
+        private IGpuRef<uint>? _shapeMembershipRef;
+        private IGpuRef<IGraphicsTextureView>? _placeholderTexture;
         private Stream<DrawPageMetadata2D>? _metadata;
         private Stream<DrawBasicMetadata2D>? _basicMetadata;
         private Stream<DrawMaskMetadata2D>? _maskMetadata;
@@ -317,6 +361,8 @@ internal sealed class PreparedRecordBatch2D : IRetainedCommandBatch2D, IRetained
             Scopes.Add(Reservation);
             _group = new(Reservation);
         }
+
+        internal bool HasShapeMembership => _shapeDispatches.Count != 0;
 
         internal DrawRecordPage2D Cpu { get; } = new();
 
@@ -341,19 +387,52 @@ internal sealed class PreparedRecordBatch2D : IRetainedCommandBatch2D, IRetained
             }
         }
 
-        internal bool CanAdmit(DrawingProgram2D? program, uint root, NormalizedClip2D clip, SRgba<float> color = default)
+        internal bool CanAdmit(DrawingProgram2D? program, uint root, NormalizedClip2D clip, SRgba<float> color = default, ScissorRect? bounds = null)
         {
             ArgumentTableBindingLimits limits = _batch._context.Device.Caps.ArgumentTableBindingLimits;
             DeviceCaps caps = _batch._context.Device.Caps;
             ulong maximum = caps.MaxStorageBufferBindingSize == 0 ? caps.MaxBufferSize : Math.Min(caps.MaxBufferSize, caps.MaxStorageBufferBindingSize);
             maximum = Math.Min(Math.Min(maximum, limits.MaximumBufferRangeBytes), int.MaxValue);
-            if (!Cpu.FitsAddition(program, root, clip, color, maximum, out uint buffers, out bool needsSampler))
+            bool incomingMembership = false;
+            if (program is not null && _batch._context.ComputeShapeMembership)
+            {
+                DrawingInstruction terminal = program.Instructions[(int)root];
+                if (terminal.Kind is 16 or 17)
+                {
+                    terminal = program.Instructions[(int)terminal.First];
+                }
+
+                DrawingInstruction shape = program.Instructions[(int)terminal.First];
+                incomingMembership = shape.Kind == 4 || (shape.Kind == 5 && shape.Mode != 1);
+            }
+
+            bool membership = _batch._context.ComputeShapeMembership && (incomingMembership || Cpu.Records.Any(record => record.Kind is 4 or 5));
+            if (membership)
+            {
+                double pixels = Cpu.Records.Where(record => record.Kind is 4 or 5).Sum(record => (double)(record.DeviceBounds.Z - record.DeviceBounds.X) * (record.DeviceBounds.W - record.DeviceBounds.Y));
+                if (incomingMembership && bounds is ScissorRect incomingBounds)
+                {
+                    pixels += (double)incomingBounds.Width * incomingBounds.Height;
+                }
+
+                if (pixels > maximum / 4)
+                {
+                    return false;
+                }
+            }
+
+            if (!Cpu.FitsAddition(program, root, clip, color, maximum, out uint buffers, out bool needsSampler, combineDirectories: membership))
             {
                 return false;
             }
 
             uint views = checked((uint)(program is null ? _views.Count : _views.Union(program.Views, ReferenceEqualityComparer.Instance).Count()));
             uint samplers = checked((uint)(program is null ? _samplers.Count : _samplers.Union(program.Samplers, ReferenceEqualityComparer.Instance).Count()));
+            if (membership)
+            {
+                views = checked(views + 1);
+            }
+
             if (needsSampler)
             {
                 IGraphicsSampler nearest = _batch._context.ArgumentPlan.Sampler(_batch._context.Resources);
@@ -361,6 +440,12 @@ internal sealed class PreparedRecordBatch2D : IRetainedCommandBatch2D, IRetained
                 {
                     samplers++;
                 }
+            }
+
+            // A compute-enabled general page uses the full metadata ABI, two descriptor streams and one RO membership binding.
+            if (membership)
+            {
+                buffers = Math.Max(buffers, 7u);
             }
 
             uint textureBindings = Math.Max(views, limits.MinimumTextureBindings);
@@ -385,15 +470,60 @@ internal sealed class PreparedRecordBatch2D : IRetainedCommandBatch2D, IRetained
                 return;
             }
 
-            long workingReferenceBytes = checked(((long)Cpu.BufferCount + _views.Count + _samplers.Count + 2) * 256);
+            bool membershipReferences = _batch._context.ComputeShapeMembership && Cpu.Records.Any(record => record.Kind is 4 or 5);
+            uint workingBuffers = membershipReferences ? Math.Max(7u, Cpu.BufferCount) : Cpu.BufferCount;
+            int workingSamplers = checked(_samplers.Count + (membershipReferences ? 1 : 0));
+            int workingTextures = checked(_views.Count + (membershipReferences ? 1 : 0));
+            long workingReferenceBytes = checked(((long)workingBuffers + workingTextures + workingSamplers + 2) * 256);
             if (_batch._context.EnforceWorkingBudget)
             {
-                _batch._context.ArgumentPlan.ReserveWorkingReferences(Reservation, Cpu.BufferCount, _views.Count, _samplers.Count);
+                _batch._context.ArgumentPlan.ReserveWorkingReferences(Reservation, workingBuffers, workingTextures, workingSamplers);
                 long streamElements = checked(Cpu.Records.Count + Cpu.Paints.Count + Cpu.Clips.Count + Cpu.Masks.Count + Cpu.Images.Count + 1L);
                 long peak = checked(_batch._context.OtherWorkingBytes + _batch.EstimatedBytes + 32768 + (streamElements * 4096) + (Math.Max(1L, Cpu.Numeric.Count) * 96));
+                long complete = checked(_batch._context.OtherWorkingBytes + _batch.EstimatedBytes + EstimateAllocationBytes());
+                peak = Math.Max(peak, complete);
                 if (peak > _batch._context.MaxWorkingBytes)
                 {
-                    throw new NotSupportedException("Resident page resources exceed MaxWorkingBytes before allocation.");
+                    throw new NotSupportedException("Standard page resources exceed MaxWorkingBytes before allocation.");
+                }
+            }
+
+            if (_batch._context.ComputeShapeMembership)
+            {
+                uint offset = 0;
+                for (int i = 0; i < Cpu.Records.Count; i++)
+                {
+                    DrawRecord2D record = Cpu.Records[i];
+                    if (record.Kind is not (4 or 5))
+                    {
+                        continue;
+                    }
+
+                    ShapeMembership2D.Dispatch dispatch = ShapeMembership2D.Plan((uint)i, record.DeviceBounds, offset, _batch._context.Device.Caps);
+                    _shapeDispatches.Add(dispatch);
+                    Cpu.Records[i] = record with { Flags = record.Flags | 1u, ExtraBits = offset };
+                    offset = checked(offset + checked(dispatch.Width * dispatch.Height));
+                }
+
+                if (offset > 0)
+                {
+                    ulong bytes = checked((ulong)offset * 4);
+                    DeviceCaps caps = _batch._context.Device.Caps;
+                    ulong maximum = caps.MaxStorageBufferBindingSize == 0 ? caps.MaxBufferSize : Math.Min(caps.MaxBufferSize, caps.MaxStorageBufferBindingSize);
+                    maximum = Math.Min(maximum, caps.ArgumentTableBindingLimits.MaximumBufferRangeBytes);
+
+                    // Include streams, CPU packing capacity, upload/data pairs and table metadata before GPU allocation.
+                    long streamElements = checked((long)Cpu.Records.Count + Cpu.Paints.Count + Cpu.Clips.Count + Math.Max(1, Cpu.Images.Count) + Math.Max(1, Cpu.Masks.Count) + 1);
+                    long prospective = checked(_batch._context.OtherWorkingBytes + _batch.EstimatedBytes + (long)bytes + 16384 + (streamElements * 4096) + (Math.Max(1L, Cpu.Numeric.Count) * 96));
+                    if (bytes > maximum || prospective > _batch._context.MaxWorkingBytes)
+                    {
+                        throw new NotSupportedException("Shape membership exceeds the working-byte or buffer binding budget.");
+                    }
+
+                    _shapeMembership = _batch.Own(_batch._context.Device.CreateBuffer<uint>(new() { Count = offset, Usage = BufferUsage.ShaderRead | BufferUsage.ShaderWrite }));
+                    _batch._bytes = checked(_batch._bytes + (long)_shapeMembership.SizeInBytes + 1024);
+                    Reservation.RegisterBuffer(_shapeMembership.SliceElements(0, offset), value => _shapeMembershipRef = value);
+                    _batch._context.ArgumentPlan.MarkPreparedBuffer(Reservation, _shapeMembership.SliceElements(0, offset), new(PipelineStage.ComputeShader | PipelineStage.VertexShader | PipelineStage.FragmentShader, ResourceAccess.ShaderRead | ResourceAccess.ShaderWrite));
                 }
             }
 
@@ -406,34 +536,78 @@ internal sealed class PreparedRecordBatch2D : IRetainedCommandBatch2D, IRetained
             _mode = Cpu.IsSimple ? 4 : (Cpu.Masks.Count > 0 ? 1 : 0) | (Cpu.Images.Count > 0 ? 2 : 0);
 
             // This changes only private evaluator capacity, never storage, draw ranges or accepted work.
-            _mode = DrawRecordResources2D.SelectPipelineMode(_mode, _mode == 2 ? Cpu.PaintClosureBound : Cpu.Paints.Count);
+            _mode = DrawRecordResources2D.SelectPipelineMode(_mode, Cpu.PaintClosureBound);
 
-            _pipeline = _batch._resources.GetPipeline(_mode);
+            if (HasShapeMembership)
+            {
+                // Bound only private evaluator scratch; retain the full membership ABI and compute dispatch.
+                _mode = DrawRecordResources2D.SelectPipelineMode(8, Cpu.PaintClosureBound);
+            }
+
+            _pipeline = (_batch._context.MembershipService?.Resources ?? _batch._resources).GetPipeline(_mode);
             _records = Create<DrawRecord2D>(Cpu.Records.Count, 96);
             if (_mode != 4)
             {
-                _paints = Create<DrawDirectoryEntry2D>(Cpu.Paints.Count, 16);
-                if (Cpu.Clips.Count > 1)
+                // Membership pages share one typed directory stream so fractional clips
+                // stay within the seven buffer slots of a default WebGPU device.
+                if (HasShapeMembership && Cpu.Clips.Count > 1)
+                {
+                    uint clipOffset = checked((uint)Cpu.Paints.Count);
+                    foreach (DrawDirectoryEntry2D paint in Cpu.Paints)
+                    {
+                        if (paint.Kind == 8)
+                        {
+                            int index = checked((int)paint.PayloadOffset16);
+                            Vector4 payload = Cpu.Numeric[index];
+                            uint clipId = BitConverter.SingleToUInt32Bits(payload.Y);
+                            if (clipId != 0)
+                            {
+                                payload.Y = BitConverter.UInt32BitsToSingle(checked(clipId + clipOffset));
+                                Cpu.Numeric[index] = payload;
+                            }
+                        }
+                    }
+
+                    for (int i = 0; i < Cpu.Records.Count; i++)
+                    {
+                        DrawRecord2D record = Cpu.Records[i];
+                        if (record.ClipId != 0)
+                        {
+                            Cpu.Records[i] = record with { ClipId = checked(record.ClipId + clipOffset) };
+                        }
+                    }
+                }
+
+                _paints = Create<DrawDirectoryEntry2D>(Cpu.Paints.Count + (HasShapeMembership && Cpu.Clips.Count > 1 ? Cpu.Clips.Count : 0), 16);
+                if (Cpu.Clips.Count > 1 && !HasShapeMembership)
                 {
                     _clips = Create<DrawDirectoryEntry2D>(Cpu.Clips.Count, 16);
                 }
 
-                if (Cpu.Images.Count > 0)
+                if (Cpu.Images.Count > 0 || HasShapeMembership)
                 {
-                    _images = Create<ImagePaintData2D>(Cpu.Images.Count, 128);
+                    _images = Create<ImagePaintData2D>(Math.Max(1, Cpu.Images.Count), 128);
                     IGraphicsSampler sampler = _batch._context.ArgumentPlan.Sampler(_batch._context.Resources);
                     _batch._samplers.Add(sampler);
                     _samplers.Add(sampler);
                     Reservation.RegisterSampler(sampler, reference => _sampler = reference);
                 }
 
-                if (Cpu.Masks.Count > 0)
+                if (HasShapeMembership)
                 {
-                    _masks = Create<MaskDescriptor2D>(Cpu.Masks.Count, 80);
+                    _batch._context.ArgumentPlan.Fallback(Reservation, reference => _placeholderTexture = reference);
+                }
+
+                if (Cpu.Masks.Count > 0 || HasShapeMembership)
+                {
+                    _masks = Create<MaskDescriptor2D>(Math.Max(1, Cpu.Masks.Count), 80);
                 }
 
                 switch (_mode)
                 {
+                    case 9:
+                    case 10:
+                    case 8: _membershipMetadata = Create<ShapeMembershipMetadata2D>(1, 96); break;
                     case 0: _basicMetadata = Create<DrawBasicMetadata2D>(1, 48); break;
                     case 1: _maskMetadata = Create<DrawMaskMetadata2D>(1, 64); break;
                     case 2:
@@ -449,8 +623,13 @@ internal sealed class PreparedRecordBatch2D : IRetainedCommandBatch2D, IRetained
             _numericUpload = numeric.Upload;
             _numeric = numeric.Data;
             Reservation.RegisterBuffer(_numeric.SliceElements(0, count), reference => _numericRef = reference);
-            _batch._context.ArgumentPlan.MarkPreparedBuffer(Reservation, _numeric.SliceElements(0, count), new(PipelineStage.Copy | PipelineStage.VertexShader | PipelineStage.FragmentShader, ResourceAccess.CopyWrite | ResourceAccess.ShaderRead));
+            _batch._context.ArgumentPlan.MarkPreparedBuffer(Reservation, _numeric.SliceElements(0, count), new(PipelineStage.Copy | PipelineStage.VertexShader | PipelineStage.FragmentShader | (_batch._context.ComputeShapeMembership ? PipelineStage.ComputeShader : PipelineStage.None), ResourceAccess.CopyWrite | ResourceAccess.ShaderRead));
             _batch._bytes = checked(_batch._bytes + (long)(_numeric.SizeInBytes + _numericUpload.SizeInBytes));
+            if (HasShapeMembership)
+            {
+                _membership = _batch.Own(new ShapeMembership2D(_batch._context.Device, (_batch._context.MembershipService?.Resources ?? _batch._resources).GetMembershipPipeline(), _records.Data, _numeric, _shapeMembership!, _shapeDispatches));
+            }
+
             ValidateCompleteWorkingCharge();
             _batch._context.ArgumentPlan.DeferUpload(Reservation, UploadAsync, MapAsync, Fill, workingReferenceBytes);
         }
@@ -465,35 +644,44 @@ internal sealed class PreparedRecordBatch2D : IRetainedCommandBatch2D, IRetained
 
             DrawingTargetInfo2D info = _batch._context.Target;
             IRenderEncoder render = commands.BeginRenderPass(new() { ColorAttachments = [new() { View = target, LoadOp = AttachmentLoadOp.Load, StoreOp = AttachmentStoreOp.Store }] });
-            render.SetPipeline(_pipeline);
-            render.SetRenderState(new()
+            try
             {
-                Rasterization = new() { Cull = CullMode.None },
-                ColorTargets = [new() { BlendEnable = true, Color = new() { Source = BlendFactor.One, Destination = BlendFactor.OneMinusSourceAlpha }, Alpha = new() { Source = BlendFactor.One, Destination = BlendFactor.OneMinusSourceAlpha } }],
-            });
-            render.SetViewport(new(0, 0, info.Description.Width, info.Description.Height, 0, 1));
-            render.SetScissor(new(0, 0, info.Description.Width, info.Description.Height));
-            render.SetBlendConstant(default);
-            render.SetStencilReference(0);
-
-            if (_mode == 4)
-            {
-                DrawSimple(render, info, first, count, translation);
-            }
-            else
-            {
-                switch (_mode)
+                render.SetPipeline(_pipeline);
+                render.SetRenderState(new()
                 {
-                    case 0: Draw(render, info, _basicMetadata!.Reference!, first, count, translation); break;
-                    case 1: Draw(render, info, _maskMetadata!.Reference!, first, count, translation); break;
-                    case 2:
-                    case 6:
-                    case 7: Draw(render, info, _imageMetadata!.Reference!, first, count, translation); break;
-                    default: Draw(render, info, _metadata!.Reference!, first, count, translation); break;
+                    Rasterization = new() { Cull = CullMode.None },
+                    ColorTargets = [new() { BlendEnable = true, Color = new() { Source = BlendFactor.One, Destination = BlendFactor.OneMinusSourceAlpha }, Alpha = new() { Source = BlendFactor.One, Destination = BlendFactor.OneMinusSourceAlpha } }],
+                });
+                render.SetViewport(new(0, 0, info.Description.Width, info.Description.Height, 0, 1));
+                render.SetScissor(new(0, 0, info.Description.Width, info.Description.Height));
+                render.SetBlendConstant(default);
+                render.SetStencilReference(0);
+
+                if (_mode == 4)
+                {
+                    DrawSimple(render, info, first, count, translation);
+                }
+                else
+                {
+                    switch (_mode)
+                    {
+                        case 9:
+                        case 10:
+                        case 8: Draw(render, info, _membershipMetadata!.Reference!, first, count, translation); break;
+                        case 0: Draw(render, info, _basicMetadata!.Reference!, first, count, translation); break;
+                        case 1: Draw(render, info, _maskMetadata!.Reference!, first, count, translation); break;
+                        case 2:
+                        case 6:
+                        case 7: Draw(render, info, _imageMetadata!.Reference!, first, count, translation); break;
+                        default: Draw(render, info, _metadata!.Reference!, first, count, translation); break;
+                    }
                 }
             }
+            finally
+            {
+                render.End();
+            }
 
-            render.End();
             var attachment = new BarrierScope(PipelineStage.ColorOutput, ResourceAccess.ColorRead | ResourceAccess.ColorWrite);
             commands.Barrier(new TextureBarrierDesc { Texture = target.Texture, Range = new(0, 1, 0, 1), BeforeState = TextureState.ColorAttachment, AfterState = TextureState.ColorAttachment, Before = attachment, After = attachment });
         }
@@ -508,6 +696,22 @@ internal sealed class PreparedRecordBatch2D : IRetainedCommandBatch2D, IRetained
             commands.Barrier(new BufferBarrierDesc<Vector4> { Buffer = _numericUpload!.SliceElements(0, _numericCount), Before = new(PipelineStage.Host, ResourceAccess.HostWrite), After = new(PipelineStage.Copy, ResourceAccess.CopyRead) });
             commands.CopyBuffer(_numericUpload.SliceElements(0, _numericCount), _numeric!.SliceElements(0, _numericCount));
             commands.Barrier(new BufferBarrierDesc<Vector4> { Buffer = _numeric.SliceElements(0, _numericCount), Before = new(PipelineStage.Copy, ResourceAccess.CopyWrite), After = _read });
+        }
+
+        internal void Compute(IGraphicsCommandBuffer commands)
+        {
+            if (_membership is null)
+            {
+                return;
+            }
+
+            if (_membershipRecorded)
+            {
+                throw new InvalidOperationException("Writable shape membership belongs to one preparation/frame, not retained GPU residency.");
+            }
+
+            _membershipRecorded = true;
+            _membership.Record(commands, _records.Data, _numeric!, _shapeMembership!);
         }
 
         internal void Unmap()
@@ -558,6 +762,53 @@ internal sealed class PreparedRecordBatch2D : IRetainedCommandBatch2D, IRetained
             }
         }
 
+        private long EstimateAllocationBytes()
+        {
+            static long Stream(long count, long stride) => checked(count * ((2 * stride) + 16 + 2048));
+            bool membership = _batch._context.ComputeShapeMembership && Cpu.Records.Any(record => record.Kind is 4 or 5);
+            long bytes = Stream(Cpu.Records.Count, 96);
+            if (!Cpu.IsSimple)
+            {
+                bytes = checked(bytes + Stream(Cpu.Paints.Count + (membership && Cpu.Clips.Count > 1 ? Cpu.Clips.Count : 0), 16));
+                if (Cpu.Clips.Count > 1 && !membership)
+                {
+                    bytes = checked(bytes + Stream(Cpu.Clips.Count, 16));
+                }
+
+                if (Cpu.Images.Count > 0 || membership)
+                {
+                    bytes = checked(bytes + Stream(Math.Max(1, Cpu.Images.Count), 128));
+                }
+
+                if (Cpu.Masks.Count > 0 || membership)
+                {
+                    bytes = checked(bytes + Stream(Math.Max(1, Cpu.Masks.Count), 80));
+                }
+
+                long metadataStride = membership ? 96 : Cpu.Masks.Count == 0 && Cpu.Images.Count == 0 ? 48 : Cpu.Masks.Count > 0 && Cpu.Images.Count > 0 ? 80 : 64;
+                bytes = checked(bytes + Stream(1, metadataStride));
+            }
+
+            if (membership)
+            {
+                long pixels = 0;
+                foreach (DrawRecord2D record in Cpu.Records.Where(record => record.Kind is 4 or 5))
+                {
+                    pixels = checked(pixels + checked((long)(record.DeviceBounds.Z - record.DeviceBounds.X) * (long)(record.DeviceBounds.W - record.DeviceBounds.Y)));
+                }
+
+                bytes = checked(bytes + checked(pixels * 4) + 1024);
+            }
+
+            // Native data/upload may each rent 2x capacity (64 bytes per cell).
+            // Also reserve canonical and retained source CPU list capacity (64 more).
+            bytes = checked(bytes + (Math.Max(1L, Cpu.Numeric.Count) * 128));
+
+            // Reserve table/registration bookkeeping in addition to every typed
+            // stream, including combined paint/clip directories and placeholder descriptors.
+            return checked(bytes + 32768 + (256L * (_views.Count + _samplers.Count + Scopes.Count + 1)));
+        }
+
         private Stream<T> Create<T>(int count, ulong stride)
             where T : struct, IShaderArguments
         {
@@ -602,9 +853,11 @@ internal sealed class PreparedRecordBatch2D : IRetainedCommandBatch2D, IRetained
                 copied += _records.Fill(CollectionsMarshal.AsSpan(Cpu.Records));
                 if (_mode != 4)
                 {
-                    copied += _paints.Fill(CollectionsMarshal.AsSpan(Cpu.Paints));
+                    copied += HasShapeMembership && Cpu.Clips.Count > 1
+                        ? _paints.Fill(Cpu.Paints.Concat(Cpu.Clips).ToArray())
+                        : _paints.Fill(CollectionsMarshal.AsSpan(Cpu.Paints));
                     IGpuRef<DrawDirectoryEntry2D> clips = _paints.Reference!;
-                    if (Cpu.Clips.Count > 1)
+                    if (Cpu.Clips.Count > 1 && !HasShapeMembership)
                     {
                         copied += _clips.Fill(CollectionsMarshal.AsSpan(Cpu.Clips));
                         clips = _clips.Reference!;
@@ -614,14 +867,23 @@ internal sealed class PreparedRecordBatch2D : IRetainedCommandBatch2D, IRetained
                     {
                         copied += _images.Fill(CollectionsMarshal.AsSpan(Cpu.Images));
                     }
+                    else if (HasShapeMembership)
+                    {
+                        copied += _images.Fill([new(default, default, new(0, 0, 1, 1), new(1, 1, 0, 0), 0, 0, 0, 0, 0, 0, 0, 0, _placeholderTexture!, _sampler!)]);
+                    }
 
                     if (Cpu.Masks.Count > 0)
                     {
                         copied += _masks.Fill(CollectionsMarshal.AsSpan(Cpu.Masks));
                     }
+                    else if (HasShapeMembership)
+                    {
+                        copied += _masks.Fill([new(new(0, 0, 1, 1), new(1, 1, 0, 0), 0, 0, 0, 0, _placeholderTexture!, _sampler!)]);
+                    }
 
                     copied += _mode switch
                     {
+                        8 or 9 or 10 => _membershipMetadata!.Fill([new() { PaintDirectory = _paints.Reference!, ClipDirectory = clips, NumericPayload = _numericRef!, MaskDescriptors = _masks.Reference!, ImagePaintData = _images.Reference!, ShapeMembership = _shapeMembershipRef! }]),
                         0 => _basicMetadata!.Fill([new(_paints.Reference!, clips, _numericRef!)]),
                         1 => _maskMetadata!.Fill([new(_paints.Reference!, clips, _numericRef!, _masks.Reference!)]),
                         2 or 6 or 7 => _imageMetadata!.Fill([new(_paints.Reference!, clips, _numericRef!, _images.Reference!)]),
@@ -703,9 +965,11 @@ internal sealed class PreparedRecordBatch2D : IRetainedCommandBatch2D, IRetained
             }
 
             reservation.RegisterBuffer(_data.SliceElements(0, _count), reference => Reference = reference);
-            owner._context.ArgumentPlan.MarkPreparedShaderData(reservation, _data.SliceElements(0, _count), new(PipelineStage.Copy | PipelineStage.VertexShader | PipelineStage.FragmentShader, ResourceAccess.CopyWrite | ResourceAccess.ShaderRead));
+            owner._context.ArgumentPlan.MarkPreparedShaderData(reservation, _data.SliceElements(0, _count), new(PipelineStage.Copy | PipelineStage.VertexShader | PipelineStage.FragmentShader | (owner._context.ComputeShapeMembership ? PipelineStage.ComputeShader : PipelineStage.None), ResourceAccess.CopyWrite | ResourceAccess.ShaderRead));
             owner._bytes = checked(owner._bytes + (long)(_data.SizeInBytes + _upload.SizeInBytes) + ((long)capacity * 16) + ((long)count * 2048));
         }
+
+        internal IGraphicsShaderDataBuffer<T> Data => _data;
 
         internal IGpuRef<T>? Reference { get; private set; }
 

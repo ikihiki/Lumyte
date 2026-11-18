@@ -32,6 +32,8 @@ public sealed class RenderPreparationContext2D
         _allowReturnedResources = source._allowReturnedResources;
         ArgumentPlan = source.ArgumentPlan;
         Clips = source.Clips;
+        ComputeShapeMembership = source.ComputeShapeMembership;
+        MembershipService = source.MembershipService;
         EnforceWorkingBudget = source.EnforceWorkingBudget;
         MaxWorkingBytes = source.MaxWorkingBytes;
         _otherWorkingBytes = source._otherWorkingBytes;
@@ -49,6 +51,12 @@ public sealed class RenderPreparationContext2D
 
     /// <summary>Gets the target geometry normalized to Load.</summary>
     public DrawingTargetInfo2D Target { get; }
+
+    internal bool SupportsCanonicalRecords => _resources.SupportsCanonicalRecords;
+
+    internal bool ComputeShapeMembership { get; init; }
+
+    internal Pipelines.CoverageMembershipService2D? MembershipService { get; init; }
 
     internal ClipNormalizationCache2D Clips { get; }
 
@@ -105,13 +113,13 @@ public sealed class RenderPreparationContext2D
             throw new ArgumentException("The argument plan belongs to another device.", nameof(argumentPlan));
         }
 
-        return CopyWorkingBudget(new(Device, Target, _resources, argumentPlan, _allowReturnedResources) { EnforceWorkingBudget = EnforceWorkingBudget, MaxWorkingBytes = MaxWorkingBytes });
+        return CopyWorkingBudget(new(Device, Target, _resources, argumentPlan, _allowReturnedResources) { EnforceWorkingBudget = EnforceWorkingBudget, MaxWorkingBytes = MaxWorkingBytes, ComputeShapeMembership = ComputeShapeMembership, MembershipService = MembershipService });
     }
 
     internal RenderPreparationContext2D SnapshotWorkingBudget() => new(this);
 
     internal RenderPreparationContext2D WithWorkingLimit(long maximum)
-        => CopyWorkingBudget(new(Device, Target, _resources, ArgumentPlan, _allowReturnedResources) { EnforceWorkingBudget = true, MaxWorkingBytes = Math.Min(MaxWorkingBytes, maximum) });
+        => CopyWorkingBudget(new(Device, Target, _resources, ArgumentPlan, _allowReturnedResources) { EnforceWorkingBudget = true, MaxWorkingBytes = Math.Min(MaxWorkingBytes, maximum), ComputeShapeMembership = ComputeShapeMembership, MembershipService = MembershipService });
 
     internal void SetWorkingBytesSource(Func<long> source)
     {
@@ -123,6 +131,14 @@ public sealed class RenderPreparationContext2D
     }
 
     internal void CleanupAfterFailure(IDisposable resource, Exception preparationFailure) => _resources.CleanupAfterFailure(resource, preparationFailure);
+
+    internal RenderPreparationContext2D WithShapeMembership(Pipelines.CoverageMembershipService2D service) => CopyWorkingBudget(new(Device, Target, _resources, ArgumentPlan, _allowReturnedResources)
+    {
+        ComputeShapeMembership = true,
+        MembershipService = service,
+        EnforceWorkingBudget = true,
+        MaxWorkingBytes = MaxWorkingBytes,
+    });
 
     internal DrawRecordResources2D? RecordResources() => _resources.Records();
 
