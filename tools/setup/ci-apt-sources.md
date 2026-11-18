@@ -54,3 +54,27 @@ Offline verification (no system apt/sudo/root/network):
 Actual fixture copies of setup use fake uname/OS-release/apt-config/apt-get/sudo.
 LUMYTE_TEST_BASELINE=1 selects historical969a setup for historical fail-first regional
 source contracts. Tests read/write private fixtures, never live host config.
+
+## Bounded route diagnostics
+
+One stderr record reports the existing guard decision, using constant enums only:
+route is helper_selected/native/rootless; reason is eligible/not_github_actions/
+not_github_hosted/unsupported_os_arch/python_probe_unavailable_or_old/rootless.
+The gha, hosted, os, arch, privilege and pyProbe fields are normalized enums, not
+raw environment values. Unset runner metadata is reported as unset, never inferred
+from the runner banner or cloud host. Eligibility remains outside sudo; Python
+compatibility still uses the original single probe under the actual privileged
+PATH. Classification performs no extra probe or APT operation.
+
+A selected helper is not proof that it rewrote any URI. After private source
+preparation and pin validation, the helper reports rewrite=applied or rewrite=none.
+That record precedes APT: it is neither download success nor a performance result.
+No helper source record after helper_selected means unknown/not reached, not none.
+Rootless reports its original route before its unchanged prerequisites.
+
+The records do not contain raw flags/runner values, PATH, executable/source paths,
+source contents, proxy/token/private URIs or a configuration dump. Diagnostic I/O
+failure alone is ignored; actual APT/setup failures still propagate. Native APT
+keeps its existing output. These logs add bounded I/O perturbation but do not
+change eligibility, interpreter checks, package/signature/pin/TLS policy or CI
+limits. Hosted route/probe reasons remain unmeasured until genuine source CI.

@@ -87,12 +87,16 @@ class SourceTests(unittest.TestCase):
             with self.assertRaises(FileNotFoundError):
                 APT.prepare(main, parts, target)
 
-    def run_setup(self, github='true', distro='ubuntu', arch='x86_64', legacy=True, rootless=False, root_mode=False, runner='github-hosted', missing_python=False, privileged_missing=False, old_python=False, fail_update=False):
+    def run_setup(self, github='true', distro='ubuntu', arch='x86_64', legacy=True, rootless=False, root_mode=False, runner='github-hosted', missing_python=False, privileged_missing=False, old_python=False, fail_update=False, trace=False, no_rewrite=False, secret_path=False, baseline=False, audit=False, diagnostic_io_failure=False):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             tools = root / 'tools'
             tools.mkdir()
             source = (HERE / 'setup-os.sh').read_text()
+            if baseline:
+                source = subprocess.check_output(['git', 'show', 'bf0bf3f7:tools/setup/setup-os.sh'], cwd=HERE, text=True)
+            if os.environ.get('LUMYTE_TEST_ROUTE_BASELINE') == '1':
+                source = subprocess.check_output(['git', 'show', 'bf0bf3f7:tools/setup/setup-os.sh'], cwd=HERE, text=True)
             if os.environ.get('LUMYTE_TEST_BOOTSTRAP_BASELINE') == '1':
                 source = subprocess.check_output(['git', 'show', 'bbc7e5bc:tools/setup/setup-os.sh'], cwd=HERE, text=True)
             if os.environ.get('LUMYTE_TEST_BASELINE') == '1':
@@ -113,9 +117,11 @@ class SourceTests(unittest.TestCase):
             parts.mkdir()
             content = ('deb [signed-by=/unchanged/key.gpg arch=amd64] ' + AWS + ' noble main universe\n') if legacy else ('Types: deb\nURIs: ' + AWS + '\nSuites: noble noble-updates\nComponents: main universe\nSigned-By: /unchanged/key.gpg\n')
             selected = main if legacy else parts / 'ubuntu.sources'
+            if no_rewrite:
+                content = content.replace(AWS, CANONICAL)
             selected.write_text(content)
             (parts / 'thirdparty.list').write_text('deb https://user:password@private.example/pkg stable main\n')
-            binaries = root / 'bin'
+            binaries = root / ('CANARY_SECRET_PATH' if secret_path else 'bin')
             binaries.mkdir()
             scripts = {
                 'uname': '#!/bin/sh\nif [ "$1" = -s ]; then echo Linux; else echo "$FIXTURE_ARCH"; fi\n',
@@ -148,22 +154,27 @@ if os.environ.get('FIXTURE_FAIL_UPDATE')=='1' and args[0]=='update':sys.exit(100
                 path.write_text(path.read_text().replace('#!/usr/bin/env python3', '#!' + sys.executable, 1))
             for name in ['bash', 'dirname', 'mkdir', 'cat', 'env', 'true']:
                 (binaries / name).symlink_to(shutil.which(name))
-            if old_python:
+            if not missing_python:
                 path = binaries / 'python3'
-                path.write_text('#!/bin/sh\nexit 1\n')
+                path.write_text('#!' + sys.executable + '\nimport os,sys,json\nwith open(os.environ["FIXTURE_PY_LOG"],"a") as f:f.write(json.dumps(sys.argv[1:])+"\\n")\n' + ('sys.exit(1)\n' if old_python else 'os.execv(' + repr(sys.executable) + ', [' + repr(sys.executable) + ', *sys.argv[1:]])\n'))
                 path.chmod(0o755)
             private_path = ''
             if privileged_missing:
                 private = root / 'privileged-bin'
                 private.mkdir()
                 for path in binaries.iterdir():
-                    (private / path.name).symlink_to(path)
+                    if path.name != 'python3':
+                        (private / path.name).symlink_to(path)
                 private_path = str(private)
             log = root / 'calls.jsonl'
             env = {**os.environ, 'PATH': str(binaries) if missing_python else str(binaries) + ':' + os.environ['PATH'], 'FIXTURE_ROOT': str(root),
-                   'FIXTURE_FAIL_UPDATE': '1' if fail_update else '0', 'FIXTURE_MAIN': str(main), 'FIXTURE_PARTS': str(parts), 'FIXTURE_LOG': str(log), 'FIXTURE_ARCH': arch,
+                   'FIXTURE_PY_LOG': str(root / 'python-calls.jsonl'), 'FIXTURE_FAIL_UPDATE': '1' if fail_update else '0', 'FIXTURE_MAIN': str(main), 'FIXTURE_PARTS': str(parts), 'FIXTURE_LOG': str(log), 'FIXTURE_ARCH': arch,
                    'GITHUB_ACTIONS': github, 'RUNNER_ENVIRONMENT': runner, 'FIXTURE_PRIV_PATH': private_path, 'HTTPS_PROXY': 'https://proxy.example:1234', 'LUMYTE_SETUP_ROOTLESS': '1' if rootless else '0', 'FIXTURE_EUID': '0' if root_mode else '1000'}
-            result = subprocess.run(['bash', str(tools / 'setup-os.sh')], env=env, capture_output=True, text=True)
+            with open('/dev/full', 'w') if diagnostic_io_failure else open(os.devnull, 'w') as failed_sink:
+                result = subprocess.run(['bash', str(tools / 'setup-os.sh')], env=env, stdout=subprocess.PIPE,
+                                        stderr=failed_sink if diagnostic_io_failure else subprocess.PIPE, text=True)
+            if diagnostic_io_failure:
+                result.stderr = ''
             if fail_update:
                 self.assertNotEqual(0, result.returncode)
                 calls = [json.loads(line) for line in log.read_text().splitlines()]
@@ -171,7 +182,7 @@ if os.environ.get('FIXTURE_FAIL_UPDATE')=='1' and args[0]=='update':sys.exit(100
                 self.assertEqual('update', calls[0]['args'][0])
                 self.assertEqual(str(main), calls[0]['main'])
                 self.assertEqual(content, selected.read_text())
-                return calls, str(main)
+                return (calls, str(main), result.stdout + result.stderr) if trace else (calls, str(main))
             self.assertEqual(0, result.returncode, result.stderr)
             self.assertNotIn('password', result.stdout + result.stderr)
             calls = [json.loads(line) for line in log.read_text().splitlines()]
@@ -184,7 +195,22 @@ if os.environ.get('FIXTURE_FAIL_UPDATE')=='1' and args[0]=='update':sys.exit(100
             if not rootless:
                 for call in calls:
                     self.assertIn('https://user:password@private.example/pkg', ''.join(call['sources']))
-            return calls, str(main)
+            if audit:
+                def normalize(call):
+                    copied = json.loads(json.dumps(call))
+                    for index, arg in enumerate(copied['args']):
+                        if arg.startswith('Dir::Etc::sourcelist='):
+                            copied['args'][index] = 'Dir::Etc::sourcelist=<private-main>'
+                        elif arg.startswith('Dir::Etc::sourceparts='):
+                            copied['args'][index] = 'Dir::Etc::sourceparts=<private-parts>'
+                    if copied['main'] != str(main) and not rootless:
+                        copied['main'] = '<private-main>'
+                        copied['parts'] = '<private-parts>'
+                    return json.dumps(copied, sort_keys=True).replace(str(root), '<fixture>')
+                py_log = root / 'python-calls.jsonl'
+                probes = [line for line in py_log.read_text().splitlines() if json.loads(line)[0] == '-c'] if py_log.exists() else []
+                return [normalize(call) for call in calls], probes
+            return (calls, str(main), result.stdout + result.stderr) if trace else (calls, str(main))
 
     def test_ci_legacy_fail_first_then_private_effective_sources_selected(self):
         calls, original = self.run_setup()
@@ -251,6 +277,60 @@ if os.environ.get('FIXTURE_FAIL_UPDATE')=='1' and args[0]=='update':sys.exit(100
         for root_mode in [True, False]:
             calls, _ = self.run_setup(missing_python=True, fail_update=True, root_mode=root_mode)
             self.assertEqual(1, len(calls))
+
+    def test_route_ledger_matches_actual_selection_without_environment_echo(self):
+        matrix = [({}, 'helper_selected', 'eligible', 'compatible'),
+                  ({'runner': ''}, 'native', 'not_github_hosted', 'not-run'),
+                  ({'runner': 'self-hosted'}, 'native', 'not_github_hosted', 'not-run'),
+                  ({'github': ''}, 'native', 'not_github_actions', 'not-run'),
+                  ({'distro': 'debian'}, 'native', 'unsupported_os_arch', 'not-run'),
+                  ({'arch': 'aarch64'}, 'native', 'unsupported_os_arch', 'not-run'),
+                  ({'rootless': True}, 'rootless', 'rootless', 'not-run'),
+                  ({'missing_python': True}, 'native', 'python_probe_unavailable_or_old', 'not-compatible'),
+                  ({'old_python': True}, 'native', 'python_probe_unavailable_or_old', 'not-compatible'),
+                  ({'privileged_missing': True}, 'native', 'python_probe_unavailable_or_old', 'not-compatible'),
+                  ({'root_mode': True}, 'helper_selected', 'eligible', 'compatible'),
+                  ({'github': 'CANARY_SECRET_GHA', 'runner': 'CANARY_SECRET_RUNNER', 'secret_path': True}, 'native', 'not_github_actions', 'not-run')]
+        for options, route, reason, probe in matrix:
+            with self.subTest(options=options):
+                calls, original, output = self.run_setup(**options, trace=True)
+                lines = [line for line in output.splitlines() if line.startswith('APT acquisition route: ')]
+                self.assertEqual(1, len(lines))
+                self.assertIn('route=' + route + ' ', lines[0])
+                self.assertIn('reason=' + reason + ' ', lines[0])
+                self.assertIn('pyProbe=' + probe, lines[0])
+                self.assertLess(len(lines[0]), 320)
+                self.assertNotIn('CANARY_SECRET', output)
+                self.assertNotIn('https://', lines[0])
+                if route == 'helper_selected':
+                    self.assertNotEqual(original, calls[0]['main'])
+                    self.assertIn(CANONICAL, ''.join(calls[0]['sources']))
+                elif route == 'native':
+                    self.assertEqual(original, calls[0]['main'])
+
+    def test_helper_selected_is_not_a_claim_that_uri_rewrite_was_applied(self):
+        for unchanged in [False, True]:
+            calls, original, output = self.run_setup(no_rewrite=unchanged, trace=True)
+            self.assertIn('route=helper_selected reason=eligible', output)
+            self.assertIn('APT acquisition sources: rewrite=' + ('none' if unchanged else 'applied'), output)
+            self.assertEqual(unchanged, calls[0]['main'] == original)
+
+    def test_before_after_native_apt_signatures_and_probe_counts_are_identical(self):
+        matrix = [{}, {'runner': ''}, {'runner': 'self-hosted'}, {'github': ''},
+                  {'distro': 'debian'}, {'arch': 'aarch64'}, {'rootless': True},
+                  {'missing_python': True}, {'old_python': True},
+                  {'privileged_missing': True}, {'root_mode': True}, {'no_rewrite': True}]
+        for options in matrix:
+            with self.subTest(options=options):
+                before = self.run_setup(**options, baseline=True, audit=True)
+                after = self.run_setup(**options, audit=True)
+                self.assertEqual(before, after)
+                self.assertLessEqual(len(after[1]), 1)
+
+    def test_diagnostic_io_failure_does_not_change_acquisition_or_apt_failure(self):
+        for options in [{}, {'runner': ''}, {'rootless': True}]:
+            self.run_setup(**options, diagnostic_io_failure=True)
+        self.run_setup(runner='', fail_update=True, diagnostic_io_failure=True)
 
     def test_update_failure_stops_install_no_retry_and_private_copy_is_cleaned(self):
         calls = []
@@ -347,7 +427,7 @@ if os.environ.get('FIXTURE_FAIL_UPDATE')=='1' and args[0]=='update':sys.exit(100
 
     def test_rootless_tail_and_packages_workflow_remain_unchanged(self):
         base = subprocess.check_output(['git', 'show', '969a47dc:tools/setup/setup-os.sh'], cwd=HERE, text=True)
-        current = (HERE / 'setup-os.sh').read_text()
+        current = (HERE / 'setup-os.sh').read_text().replace('    report_acquisition_route rootless rootless rootless not-run\n', '')
         self.assertEqual(base[base.index('else\n    # Bootstrap requirements'):], current[current.index('else\n    # Bootstrap requirements'):])
         self.assertIn('LUMYTE_SETUP_ROOTLESS:-0', current)
         self.assertEqual(base[base.index('packages=('):base.index('\n\n', base.index('packages=('))], current[current.index('packages=('):current.index('\n\n', current.index('packages=('))])
