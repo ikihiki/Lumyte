@@ -11,6 +11,7 @@ public sealed class SvgPixelTests
 {
     /// <summary>Checks transformed red geometry and root viewport clipping on a native GPU.</summary>
     /// <returns>The asynchronous GPU check.</returns>
+    [Trait("Execution", "Gpu")]
     [GpuFact]
     public async Task SolidSvgRendersExpectedPixelsAsync()
     {

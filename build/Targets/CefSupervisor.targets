@@ -9,6 +9,6 @@
     <None Include="$(_LumyteCefSupervisorPath)" Link="lumyte-cef-supervisor" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
   <Target Name="BuildLumyteCefSupervisor" BeforeTargets="BeforeBuild;GetCopyToOutputDirectoryItems" DependsOnTargets="_PrepareLumyteBuildInvocation" Condition="$([MSBuild]::IsOSPlatform('Linux')) and '$(DesignTimeBuild)' != 'true'" Inputs="@(_LumyteCefSupervisorInput)" Outputs="$(_LumyteCefSupervisorPath)">
-    <Exec Command="$(_LumyteParleyBuildCommand) --target CefSupervisor --root &quot;$(_LumyteParleyInvocationRoot).&quot; --repository-root &quot;$(_LumyteParleyRepositoryRoot).&quot;" WorkingDirectory="$(_LumyteParleyRepositoryRoot)" />
+    <Exec Command="$(_LumyteParleyBuildCommand) --target Native --native-backend cef-supervisor --root &quot;$(_LumyteParleyInvocationRoot).&quot; --repository-root &quot;$(_LumyteParleyRepositoryRoot).&quot;" WorkingDirectory="$(_LumyteParleyRepositoryRoot)" />
   </Target>
 </Project>

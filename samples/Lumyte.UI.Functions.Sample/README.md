@@ -15,6 +15,6 @@ using var surface = new UiSurface(Counter(label, key: "main"));
 dotnet run --project samples/Lumyte.UI.Functions.Sample -c Release
 ```
 
-ソースからのビルドには既存Drawing2DのSlang環境が必要です。TestSignals、CIのSamplesとstrict NativeAOT対象へ登録しています。アプリで関数Widgetを定義するprojectには、Composition GeneratorをAnalyzerとして参照してください。
+ソースからのビルドには既存Drawing2DのSlang環境が必要です。Test --suite signals、CIのSamplesとstrict NativeAOT対象へ登録しています。アプリで関数Widgetを定義するprojectには、Composition GeneratorをAnalyzerとして参照してください。
 
 [設計と状態の規則](../../docs/adr/ui/UI-0023-function-widgets-and-local-signals.md)

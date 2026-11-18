@@ -14,6 +14,7 @@ public sealed partial class Drawing2DTests
 {
     /// <summary>Checks exact pixels for transformed fractional clips and both fill rules on Vulkan.</summary>
     /// <returns>The asynchronous pixel checks.</returns>
+    [Trait("Execution", "Gpu")]
     [GpuFact]
     public async Task VulkanRectanglePathPixelsAsync()
     {
@@ -23,6 +24,7 @@ public sealed partial class Drawing2DTests
 
     /// <summary>Checks exact pixels for transformed fractional clips and both fill rules on wgpu.</summary>
     /// <returns>The asynchronous pixel checks.</returns>
+    [Trait("Execution", "Gpu")]
     [GpuFact]
     public async Task WgpuRectanglePathPixelsAsync()
     {
@@ -32,6 +34,7 @@ public sealed partial class Drawing2DTests
 
     /// <summary>Non-invertible captured clips preserve transparent Vulkan pixels.</summary>
     /// <returns>The asynchronous pixel checks.</returns>
+    [Trait("Execution", "Gpu")]
     [GpuFact]
     public async Task VulkanNonInvertibleRectangleClipPixelsAsync()
     {
@@ -41,6 +44,7 @@ public sealed partial class Drawing2DTests
 
     /// <summary>Non-invertible captured clips preserve transparent wgpu pixels.</summary>
     /// <returns>The asynchronous pixel checks.</returns>
+    [Trait("Execution", "Gpu")]
     [GpuFact]
     public async Task WgpuNonInvertibleRectangleClipPixelsAsync()
     {

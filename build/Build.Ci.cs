@@ -5,17 +5,55 @@ namespace Lumyte.Build;
 
 internal sealed partial class Build
 {
-    private Target CiNative => definition => definition
-        .DependsOn(Test);
+    [Parameter("Distribution output: all (samples and packages), packages, window-sample, or diagnostic-gallery.")]
+    public string DistributionOutput { get; set; } = "all";
 
-    private Target CiBrowser => definition => definition
-        .DependsOn(TestBrowserContracts, TestWasm, TestBrowserAudio);
+    [Parameter("Restore metadata before packaging downloaded binaries without rebuilding them.")]
+    public bool RestoreMetadata { get; set; }
 
-    private Target CiDistribution => definition => definition
-        .DependsOn(Samples, Pack);
+    private Target Distribution => definition => definition.Executes(async () =>
+    {
+        if (DistributionOutput is not ("all" or "packages" or "window-sample" or "diagnostic-gallery"))
+        {
+            throw new ArgumentException("Invalid --distribution-output.");
+        }
 
-    private Target CiQuality => definition => definition
-        .DependsOn(CheckFormat, CheckNativeFormat, CheckMarkdown);
+        if (RestoreMetadata && (DistributionOutput != "packages" || !NoBuild || NoRestore))
+        {
+            throw new ArgumentException("--restore-metadata requires --distribution-output packages --no-build without --no-restore.");
+        }
+
+        if (DistributionOutput == "diagnostic-gallery")
+        {
+            await GenerateDiagnosticGalleryAsync().ConfigureAwait(false);
+            return;
+        }
+
+        if (DistributionOutput == "window-sample" && !OperatingSystem.IsWindows())
+        {
+            throw new PlatformNotSupportedException("The window sample requires Windows.");
+        }
+
+        await CompileAsync().ConfigureAwait(false);
+        if (DistributionOutput == "window-sample")
+        {
+            await PublishWindowSampleAsync().ConfigureAwait(false);
+            return;
+        }
+
+        // Packaging downloaded binaries still needs metadata, but must not rebuild them.
+        if (RestoreMetadata)
+        {
+            await RestoreAsync().ConfigureAwait(false);
+        }
+
+        if (DistributionOutput == "all")
+        {
+            await RunSamplesAsync().ConfigureAwait(false);
+        }
+
+        await PackAsync().ConfigureAwait(false);
+    });
 
     // Derive the host solution from the canonical list so new shared projects
     // automatically participate without maintaining multiple project inventories.
@@ -62,7 +100,7 @@ internal sealed partial class Build
             "Lumyte.Platform.Linux" => OperatingSystem.IsLinux(),
             "Lumyte.Platform.Windows" or "Lumyte.Platform.Windows.Sample"
                 or "Lumyte.Graphics.Direct3D12" or "Lumyte.Graphics.Direct3D12.Sample"
-                or "Lumyte.Graphics.Direct3D12.Tests" => OperatingSystem.IsWindows(),
+                or "Lumyte.Graphics.Direct3D12.Tests" or "Lumyte.Platform.Windows.TextInput.Tests" => OperatingSystem.IsWindows(),
             _ => true,
         };
     }

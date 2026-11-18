@@ -10,6 +10,7 @@ public sealed class SemaphoreTests
 {
     /// <summary>Checks ordered wgpu semaphore submissions and explicit completion.</summary>
     /// <returns>The asynchronous verification.</returns>
+    [Trait("Execution", "Gpu")]
     [GpuFact]
     public async Task WgpuExplicitSemaphoresAsync()
     {
@@ -19,6 +20,7 @@ public sealed class SemaphoreTests
 
     /// <summary>Checks native Vulkan binary semaphore submissions and explicit completion.</summary>
     /// <returns>The asynchronous verification.</returns>
+    [Trait("Execution", "Gpu")]
     [GpuFact]
     public async Task VulkanExplicitSemaphoresAsync()
     {

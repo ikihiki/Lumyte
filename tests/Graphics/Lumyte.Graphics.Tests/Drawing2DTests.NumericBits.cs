@@ -11,6 +11,7 @@ public sealed partial class Drawing2DTests
 {
     /// <summary>Checks zeros, subnormals, infinities and NaN-looking integer patterns on Vulkan.</summary>
     /// <returns>The completed GPU readback.</returns>
+    [Trait("Execution", "Gpu")]
     [GpuFact]
     public async Task VulkanNumericStreamBitsAsync()
     {
@@ -20,6 +21,7 @@ public sealed partial class Drawing2DTests
 
     /// <summary>Checks the identical float4 bitcasts through the WGSL helper.</summary>
     /// <returns>The completed GPU readback.</returns>
+    [Trait("Execution", "Gpu")]
     [GpuFact]
     public async Task WgpuNumericStreamBitsAsync()
     {

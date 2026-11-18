@@ -56,6 +56,7 @@ public sealed class WholeTableBindingGpuTests
 
     /// <summary>Vulkan binds sparse written slots with validation both disabled and enabled.</summary>
     /// <returns>The completed native readback checks.</returns>
+    [Trait("Execution", "Gpu")]
     [GpuFact]
     public async Task VulkanWholeTableNumericTextureIndexRendersGreenAsync()
     {
@@ -72,6 +73,7 @@ public sealed class WholeTableBindingGpuTests
 
     /// <summary>Wgpu projects sparse written slots without confusing capacity with registrations.</summary>
     /// <returns>The completed native readback checks.</returns>
+    [Trait("Execution", "Gpu")]
     [GpuFact]
     public async Task WgpuWholeTableNumericTextureIndexRendersGreenAsync()
     {

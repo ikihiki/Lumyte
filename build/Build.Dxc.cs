@@ -1,14 +1,10 @@
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
-using Fallout.Common;
 
 namespace Lumyte.Build;
 
 internal sealed partial class Build
 {
-    private Target SetupDxc => definition => definition
-        .Executes(SetupDxcAsync);
-
     private async Task SetupDxcAsync()
     {
         if (!OperatingSystem.IsLinux())

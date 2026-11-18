@@ -287,6 +287,7 @@
   <Folder Name="/tests/Tools/">
     <Project Path="tests/Tools/Lumyte.Samples.Tests/Lumyte.Samples.Tests.csproj" />
     <Project Path="tests/Tools/Lumyte.Build.Tests/Lumyte.Build.Tests.csproj" />
+    <Project Path="tests/Tools/Lumyte.TestRunner.Tests/Lumyte.TestRunner.Tests.csproj" />
   </Folder>
   <Folder Name="/build/">
     <Project Path="build/_build.csproj">

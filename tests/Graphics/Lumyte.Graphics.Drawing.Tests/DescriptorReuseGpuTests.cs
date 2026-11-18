@@ -11,6 +11,7 @@ namespace Lumyte.Graphics.Drawing.Tests;
 public sealed class DescriptorReuseGpuTests
 {
     /// <summary>Checks ordered pixels across root-only updates, replacement, release, tables, layouts and passes.</summary>
+    [Trait("Execution", "Gpu")]
     [DrawingGpuFact]
     public void OrderedDrawsPreserveEveryDescriptorSnapshot()
     {
@@ -71,6 +72,7 @@ public sealed class DescriptorReuseGpuTests
     }
 
     /// <summary>Records thirty-two distinct root ranges with exactly one command-owned native descriptor binding.</summary>
+    [Trait("Execution", "Gpu")]
     [DrawingGpuFact]
     public void UnchangedDescriptorsReuseOnePoolForThirtyTwoRoots()
     {
@@ -115,6 +117,7 @@ public sealed class DescriptorReuseGpuTests
     }
 
     /// <summary>Unchanged draws reuse all three identities; A/B/A retains each Set once.</summary>
+    [Trait("Execution", "Gpu")]
     [DrawingGpuFact]
     public void RepeatedDrawsAndTableSwitchesTrackActualBinds()
     {
@@ -165,6 +168,7 @@ public sealed class DescriptorReuseGpuTests
     }
 
     /// <summary>Distinct inline roots survive skipped binds and sparse descriptor layout changes.</summary>
+    [Trait("Execution", "Gpu")]
     [DrawingGpuFact]
     public void StableRootsAndLayoutShapeChangesPreservePixels()
     {
@@ -212,6 +216,7 @@ public sealed class DescriptorReuseGpuTests
 
     /// <summary>Rejects explicitly disposed resources on reuse, without executing invalid recorded commands.</summary>
     /// <param name="resource">The disposed resource category.</param>
+    [Trait("Execution", "Gpu")]
     [DrawingGpuTheory]
     [InlineData("view")]
     [InlineData("texture")]
@@ -251,6 +256,7 @@ public sealed class DescriptorReuseGpuTests
     }
 
     /// <summary>Commits descriptor generations only for successful sampled-resource mutations.</summary>
+    [Trait("Execution", "Gpu")]
     [DrawingGpuFact]
     public void BufferUpdatesAndFailedWritesDoNotChangeDescriptorGeneration()
     {
@@ -282,6 +288,7 @@ public sealed class DescriptorReuseGpuTests
     }
 
     /// <summary>Reuses canonical layouts across passes, command disposal and pipeline recreation.</summary>
+    [Trait("Execution", "Gpu")]
     [DrawingGpuFact]
     public void UnchangedTableSurvivesCommandsFramesAndPipelineRecreation()
     {
@@ -317,6 +324,7 @@ public sealed class DescriptorReuseGpuTests
     }
 
     /// <summary>Shared pages cross capacity, then old generations retire without an unbounded table history.</summary>
+    [Trait("Execution", "Gpu")]
     [DrawingGpuFact]
     public void SharedPagesCrossCapacityAndReclaimOldGenerations()
     {
@@ -346,6 +354,7 @@ public sealed class DescriptorReuseGpuTests
     }
 
     /// <summary>Device destruction closes shared pools; delayed table release must not call a dead device.</summary>
+    [Trait("Execution", "Gpu")]
     [DrawingGpuFact]
     public void TableCacheReleaseAfterDeviceDestructionIsManagedOnly()
     {

@@ -7,8 +7,8 @@ TabView、TabItem、Expanderを生成named slotで組み立て、通常の排他
 
 ```sh
 dotnet run --project samples/Lumyte.Samples -c Release -- --sample ui-tabs --backend headless --configuration Release -- tests/Graphics/Lumyte.Graphics.Text.Parley.Tests/Fonts/DejaVuSans.ttf
-dotnet run --project build -c Release -- --target TestUiTabs
-dotnet run --project build -c Release -- --target TestUiTabsAot
+dotnet run --project build -c Release -- --target Test --suite ui --feature tabs
+dotnet run --project build -c Release -- --target Test --suite ui --feature tabs --aot
 ```
 
 HeaderとContentは各0〜1個。`TabItem(key: "a")[TabItem.Header()[header], TabItem.Content()[content]]`を使う。

@@ -1,12 +1,7 @@
-using Fallout.Common;
-
 namespace Lumyte.Build;
 
 internal sealed partial class Build
 {
-    private Target WgpuNative => definition => definition
-        .Executes(BuildWgpuNativeAsync);
-
     private async Task BuildWgpuNativeAsync()
     {
         string root = RepositoryDirectory;

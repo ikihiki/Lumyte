@@ -38,6 +38,7 @@ public sealed class NativeShaderWriterAbiTests
 
     /// <summary>WGSL stores stable slots, relative subranges, exact counts, and reserved zeros.</summary>
     /// <returns>The native checks with validation disabled and enabled.</returns>
+    [Trait("Execution", "Gpu")]
     [GpuFact]
     public async Task WgpuNativeBytesAsync()
     {
@@ -54,6 +55,7 @@ public sealed class NativeShaderWriterAbiTests
 
     /// <summary>Vulkan stores actual native addresses plus subranges and exact counts.</summary>
     /// <returns>The native checks with validation disabled and enabled.</returns>
+    [Trait("Execution", "Gpu")]
     [GpuFact]
     public async Task VulkanNativeBytesAsync()
     {

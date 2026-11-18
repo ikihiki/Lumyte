@@ -23,6 +23,7 @@ public sealed class AdvancedCommandTests
 
     /// <summary>Checks wgpu pixels and GPU-generated indirect dispatch.</summary>
     /// <returns>The asynchronous verification.</returns>
+    [Trait("Execution", "Gpu")]
     [GpuFact]
     public async Task WgpuAdvancedCommandsAsync()
     {
@@ -32,6 +33,7 @@ public sealed class AdvancedCommandTests
 
     /// <summary>Checks Vulkan pixels and GPU-generated indirect dispatch.</summary>
     /// <returns>The asynchronous verification.</returns>
+    [Trait("Execution", "Gpu")]
     [GpuFact]
     public async Task VulkanAdvancedCommandsAsync()
     {
@@ -41,6 +43,7 @@ public sealed class AdvancedCommandTests
 
     /// <summary>Checks the new attachment variants with Vulkan pipeline caching disabled.</summary>
     /// <returns>The asynchronous verification.</returns>
+    [Trait("Execution", "Gpu")]
     [GpuFact]
     public async Task VulkanUncachedAdvancedCommandsAsync()
     {

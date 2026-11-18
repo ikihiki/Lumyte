@@ -1,10 +1,8 @@
-using Fallout.Common;
-
 namespace Lumyte.Build;
 
 internal sealed partial class Build
 {
-    private Target TestCefSupervisor => definition => definition.Executes(async () =>
+    private async Task TestCefSupervisorAsync()
     {
         if (!OperatingSystem.IsLinux())
         {
@@ -15,9 +13,9 @@ internal sealed partial class Build
         RustToolchain rust = await RustToolchain.ResolveAsync(root, "1.99.1", false).ConfigureAwait(false);
         var environment = rust.EnvironmentOverrides.ToDictionary(pair => pair.Key, pair => (string?)pair.Value);
         await ProcessRunner.RunAsync(rust.CargoPath, [$"+{rust.Toolchain}", "test", "--locked", "--offline", "--release", "--manifest-path", Path.Combine(root, "src/UI/Lumyte.UI.WebView.Cef.Supervisor/Cargo.toml"), "--target-dir", Path.Combine(root, "artifacts/cef-supervisor/cargo"), "--", "--test-threads=1"], root, environment).ConfigureAwait(false);
-    });
+    }
 
-    private Target CefSupervisor => definition => definition.Executes(async () =>
+    private async Task BuildCefSupervisorAsync()
     {
         if (!OperatingSystem.IsLinux())
         {
@@ -34,5 +32,5 @@ internal sealed partial class Build
         Directory.CreateDirectory(output);
         File.Copy(Path.Combine(target, "release", "lumyte-cef-supervisor"), Path.Combine(output, "lumyte-cef-supervisor"), true);
         File.SetUnixFileMode(Path.Combine(output, "lumyte-cef-supervisor"), UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute | UnixFileMode.GroupRead | UnixFileMode.GroupExecute | UnixFileMode.OtherRead | UnixFileMode.OtherExecute);
-    });
+    }
 }

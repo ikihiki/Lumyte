@@ -39,6 +39,7 @@ public sealed class ShaderResourcesUnmanagedGpuTests
 
     /// <summary>Vulkan renders an ordinary unmanaged root with diagnostics disabled and enabled.</summary>
     /// <returns>The completed pixel checks.</returns>
+    [Trait("Execution", "Gpu")]
     [GpuFact]
     public async Task VulkanUnmanagedHelperRendersNativeRootAsync()
     {
@@ -54,6 +55,7 @@ public sealed class ShaderResourcesUnmanagedGpuTests
 
     /// <summary>Wgpu renders an ordinary unmanaged root with diagnostics disabled and enabled.</summary>
     /// <returns>The completed pixel checks.</returns>
+    [Trait("Execution", "Gpu")]
     [GpuFact]
     public async Task WgpuUnmanagedHelperRendersNativeRootAsync()
     {

@@ -4,6 +4,7 @@ using Lumyte.Graphics.Drawing2D;
 using Lumyte.Graphics.Vulkan;
 using Lumyte.Graphics.Wgpu;
 using Lumyte.Mathematics.Colors;
+using Xunit;
 
 namespace Lumyte.Graphics.Tests;
 
@@ -12,6 +13,7 @@ public sealed partial class Drawing2DTests
 {
     /// <summary>Checks the small/large boundary and maximum program size on wgpu.</summary>
     /// <returns>The asynchronous pixel verification.</returns>
+    [Trait("Execution", "Gpu")]
     [GpuFact]
     public async Task WgpuProgramCapacitiesAsync()
     {
@@ -21,6 +23,7 @@ public sealed partial class Drawing2DTests
 
     /// <summary>Checks the small/large boundary and maximum program size on Vulkan.</summary>
     /// <returns>The asynchronous pixel verification.</returns>
+    [Trait("Execution", "Gpu")]
     [GpuFact]
     public async Task VulkanProgramCapacitiesAsync()
     {

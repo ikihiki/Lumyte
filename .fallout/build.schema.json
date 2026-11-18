@@ -13,88 +13,24 @@
     "ExecutableTarget": {
       "type": "string",
       "enum": [
-        "BenchmarkAnimation",
-        "BenchmarkAudio",
-        "BenchmarkCore",
-        "BenchmarkCoreEvaluate",
-        "BenchmarkGraphics",
-        "BenchmarkGraphicsIntegration",
-        "BenchmarkInput",
+        "Benchmark",
         "BenchmarkSignals",
-        "BenchmarkUI",
-        "BenchmarkUIIntegration",
-        "CefSupervisor",
-        "CheckFormat",
-        "CheckMarkdown",
-        "CheckNativeFormat",
-        "Ci",
-        "CiBrowser",
-        "CiDistribution",
-        "CiNative",
-        "CiQuality",
         "Clean",
         "Compile",
         "ComponentScreeningNotify",
         "ComponentScreeningPlan",
         "ComponentScreeningRun",
-        "ConfigureLavapipe",
-        "DiagnosticGallery",
         "DiagnosticPreviews",
-        "Direct3D12Native",
-        "FormatMarkdown",
-        "FormatNative",
+        "Distribution",
+        "Format",
         "GenerateNamedColors",
-        "NativeSmoke",
-        "Pack",
-        "ParleyNative",
-        "ParleyWasm",
-        "PipelineBenchmark",
-        "PreparePublish",
-        "PrepareWasmTools",
+        "Native",
         "Publish",
-        "PublishWindowSample",
-        "Restore",
-        "Samples",
-        "SetupDxc",
-        "SetupParleyNative",
-        "SetupParleyWasm",
-        "SetupWasm",
+        "Quality",
+        "Setup",
         "Test",
-        "TestAot",
-        "TestBrowserAudio",
-        "TestBrowserContracts",
-        "TestCefSupervisor",
-        "TestDiagnosticsProcesses",
-        "TestDiagnosticsUi",
-        "TestRust",
-        "TestSignals",
-        "TestText",
-        "TestUiApplication",
-        "TestUiCollections",
-        "TestUiCollectionsAot",
-        "TestUiControls",
-        "TestUiControlsAot",
-        "TestUiLayout",
-        "TestUiLayoutAot",
-        "TestUiNumeric",
-        "TestUiNumericAot",
-        "TestUiScroll",
-        "TestUiScrollAot",
-        "TestUiMenus",
-        "TestUiMenusAot",
-        "TestUiTabs",
-        "TestUiTabsAot",
-        "TestUiMedia",
-        "TestUiNavigation",
-        "TestUiPages",
-        "TestUiWebView",
-        "TestWasm",
-        "TestWindowing",
-        "UsvgNative",
-        "VerifyEnvironment",
-        "VerifyNamedColors",
-        "VerifySdk",
-        "WgpuNative"
+        "Verify",
+        "VerifyNamedColors"
       ]
     },
     "Verbosity": {
@@ -183,13 +119,29 @@
           "type": "string",
           "description": "Restored Microsoft.Direct3D.D3D12 package directory containing the selected Agility SDK"
         },
+        "Aot": {
+          "type": "boolean",
+          "description": "Publish and execute the selected UI feature using strict NativeAOT"
+        },
+        "BenchmarkArea": {
+          "type": "string",
+          "description": "Benchmark area: core, animation, input, audio, graphics, or ui"
+        },
         "BenchmarkCategory": {
           "type": "string",
           "description": "Optional BenchmarkDotNet category filter across selected projects"
         },
+        "BenchmarkEvaluate": {
+          "type": "boolean",
+          "description": "Evaluate Core in isolated serial method partitions"
+        },
         "BenchmarkFilter": {
           "type": "string",
           "description": "BenchmarkDotNet method filter for selected projects"
+        },
+        "BenchmarkIntegrated": {
+          "type": "boolean",
+          "description": "Include hardware-integrated Graphics/UI benchmarks"
         },
         "BenchmarkList": {
           "type": "boolean",
@@ -205,7 +157,7 @@
         },
         "BenchmarkTimeoutSeconds": {
           "type": "number",
-          "description": "Deadline seconds, up to 900: shared for BenchmarkCore; per build/catalog/Type.Method partition for BenchmarkCoreEvaluate"
+          "description": "Deadline seconds, up to 900: shared for Benchmark --benchmark-area core; per build/catalog/Type.Method partition for Benchmark --benchmark-area core --benchmark-evaluate"
         },
         "Cache": {
           "type": "string",
@@ -219,6 +171,10 @@
           "type": "string",
           "description": "Build configuration shared by repository targets"
         },
+        "DistributionOutput": {
+          "type": "string",
+          "description": "Distribution output: all (samples and packages), packages, window-sample, or diagnostic-gallery"
+        },
         "DotnetPath": {
           "type": "string",
           "description": "Explicit dotnet executable for child build commands"
@@ -227,6 +183,10 @@
           "type": "string",
           "description": "Emscripten SDK tools directory from the .NET wasm-tools workload"
         },
+        "Feature": {
+          "type": "string",
+          "description": "UI feature: layout, controls, media, scroll, menus, tabs, collections, numeric, application, navigation, pages, or webview"
+        },
         "GalleryRepository": {
           "type": "string",
           "description": "Repository whose successful diagnostic gallery artifacts are collected"
@@ -234,6 +194,14 @@
         "HostOnly": {
           "type": "boolean",
           "description": "Build and package only projects supported by the current host OS"
+        },
+        "Lane": {
+          "type": "string",
+          "description": "Test lane: all, cpu, integration, or gpu (managed only; classified lanes use one SDK test invocation over a generated .slnf)"
+        },
+        "NativeBackend": {
+          "type": "string",
+          "description": "Native backend: parley, parley-wasm, wgpu, usvg, direct3d12, or cef-supervisor"
         },
         "NoBuild": {
           "type": "boolean",
@@ -251,6 +219,10 @@
           "type": "string",
           "description": "Output directory for native libraries and Cargo intermediates"
         },
+        "PipelineValidation": {
+          "type": "boolean",
+          "description": "Capture the Vulkan pipeline validation output after the managed GPU lane"
+        },
         "Project": {
           "type": "string",
           "description": "Optional project for restore, compile, test, pack or publish"
@@ -263,9 +235,17 @@
           "type": "string",
           "description": "File receiving the resolved private Python executable for MSBuild"
         },
+        "QualityScope": {
+          "type": "string",
+          "description": "Quality/format scope: all, managed, native, or markdown"
+        },
         "RepositoryRoot": {
           "type": "string",
           "description": "Repository root when an isolated native worker uses a separate Fallout state directory"
+        },
+        "RestoreMetadata": {
+          "type": "boolean",
+          "description": "Restore metadata before packaging downloaded binaries without rebuilding them"
         },
         "Runtime": {
           "type": "string",
@@ -307,21 +287,38 @@
           "type": "number",
           "description": "Total screening deadline in seconds, capped at 900"
         },
+        "SetupTool": {
+          "type": "string",
+          "description": "Setup tool: wasm, parley, parley-wasm, dxc, lavapipe, or wasm-python"
+        },
         "SkipParleyPackage": {
           "type": "boolean",
           "description": "Exclude Parley packaging until native assets from all supported RIDs have been collected"
+        },
+        "SkipWgpuPackage": {
+          "type": "boolean",
+          "description": "Exclude Wgpu packaging until corrected native assets from all supported RIDs have been collected"
         },
         "Solution": {
           "type": "string",
           "description": "Solution to restore, compile and test"
         },
+        "Suite": {
+          "type": "string",
+          "description": "Test suite: managed, ui, aot, browser, wasm, browser-contracts, browser-audio, diagnostics-processes, diagnostics-ui, signals, text, windowing, rust, native"
+        },
+        "TestConcurrency": {
+          "type": "integer",
+          "format": "int32",
+          "description": "Maximum concurrent CPU test methods per assembly (1-64)"
+        },
         "Toolchain": {
           "type": "string",
           "description": "Rust toolchain override"
         },
-        "SkipWgpuPackage": {
-          "type": "boolean",
-          "description": "Exclude Wgpu packaging until corrected native assets from all supported RIDs have been collected."
+        "VerifyScope": {
+          "type": "string",
+          "description": "Verification scope: environment, sdk, or native"
         }
       }
     },
