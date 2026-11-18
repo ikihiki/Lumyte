@@ -92,6 +92,7 @@ MSBuild hookは`Native --native-backend ...`と`Setup --setup-tool wasm-python`�
 | `Setup --setup-tool wasm` / `Test --suite wasm` | wasm-toolsの導入／Graphics・Parley Browserのpublishと実WebGPU検証 |
 | `Test --suite ui --feature layout` / `Test --suite ui --feature layout --aot` | core layout全テストとフォント不要Headless配置画面／strict NativeAOT publishと実行 |
 | `Test --suite ui --feature controls` / `Test --suite ui --feature controls --aot` | Controlsの通常入力・意味情報と明示フォント付きHeadless設定画面／そのstrict NativeAOT publishと実行。前者は先にsolutionをCompile |
+| `Test --suite ui --feature virtualization` / `Test --suite ui --feature virtualization --aot` | 固定長の仮想化一覧・通常入力・Window scopeと明示フォント付きHeadless画面／strict NativeAOTのpublishと実行 |
 | `Test --suite ui --feature media` | Media・Parley adapterの単体検査と実フォントを渡すHeadless sample（先にsolutionをCompile） |
 | `Test --suite text` / `Test --suite rust` | 共通Text・Parley／Rust shimのテスト |
 | `Test --suite signals` / `BenchmarkSignals` | Signalsの単体テスト・sample・xUnitによるbenchmark動作確認／BenchmarkDotNet測定結果の保存 |

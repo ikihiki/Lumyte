@@ -11,7 +11,9 @@ public sealed class ScrollViewElement(ScrollWidget widget) : UiElement<ScrollWid
     private ScrollController? _bound;
 
     /// <summary>Gets the active borrowed or element-local controller.</summary>
-    public ScrollController Controller => _bound ?? _local;
+    public ScrollController Controller => PreparationSurface?.LayoutPass is not null ? Widget.Controller ?? _local : _bound ?? _local;
+
+    internal ScrollController PreparationController => ((ScrollWidget)PreparationWidget).Controller ?? _local;
 
     /// <inheritdoc/>
     protected override bool SupportsTransitionCapture => true;
@@ -83,10 +85,14 @@ public sealed class ScrollViewElement(ScrollWidget widget) : UiElement<ScrollWid
             content = LayoutChild(children[0], vertical ? new(0, viewport.X, 0, float.PositiveInfinity) : new(0, float.PositiveInfinity, 0, viewport.Y));
         }
 
-        Controller.Geometry(vertical ? content.Y : content.X, vertical ? viewport.Y : viewport.X);
+        Controller.Geometry(vertical ? content.Y : content.X, vertical ? viewport.Y : viewport.X, PreparationSurface?.IsPreparingViewportLayout == true);
         if (Controller.ItemAnchorResolver is { } resolve)
         {
-            Controller.ItemAnchorResolver = null;
+            if (PreparationSurface?.IsPreparingViewportLayout != true && !Widget.DeferredPosition)
+            {
+                Controller.ItemAnchorResolver = null;
+            }
+
             if (resolve() is { } offset)
             {
                 Controller.RestoreItemAnchor(offset);
@@ -95,7 +101,7 @@ public sealed class ScrollViewElement(ScrollWidget widget) : UiElement<ScrollWid
 
         if (children.Count != 0)
         {
-            SetChildOffset(children[0], vertical ? new(0, -Controller.Offset) : new(-Controller.Offset, 0));
+            SetChildOffset(children[0], vertical ? new(0, -Controller.ProposedOffset) : new(-Controller.ProposedOffset, 0));
         }
 
         return viewport;

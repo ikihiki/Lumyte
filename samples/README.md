@@ -1,5 +1,7 @@
 # サンプル
 
+固定長の大量一覧は[仮想化サンプル](Lumyte.UI.Virtualization.Sample/README.md)を参照してください。
+
 入口は `Lumyte.Samples` です。リポジトリの [開発環境](../docs/development-environment.md) を有効化して実行してください。
 ランチャーは選んだプロジェクトだけをビルドします。GPU、OpenAL、Wasm の依存をすべて導入しなくても managed の例から始められます。
 

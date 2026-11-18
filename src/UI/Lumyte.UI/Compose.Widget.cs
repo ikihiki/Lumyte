@@ -28,6 +28,8 @@ public static partial class Compose
 
             internal IReadOnlyList<WidgetChildren> ChildCollections => _childCollections is { } children ? children : Array.Empty<WidgetChildren>();
 
+            internal virtual bool RequiresViewportPreparation => false;
+
             internal UiElement CreateInstance()
             {
                 UiElement element = CreateElement();

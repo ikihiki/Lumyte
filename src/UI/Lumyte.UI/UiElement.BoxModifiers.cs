@@ -7,9 +7,11 @@ namespace Lumyte.UI;
 public partial class UiElement
 {
     private Rect2D[] _modifierBounds = [];
+    private Rect2D _contentBounds;
+    private (Rect2D Bounds, Rect2D[] Modifiers)? _preparedContent;
 
     /// <summary>Gets the innermost body rectangle relative to the outer origin.</summary>
-    public Rect2D ContentBounds { get; private set; }
+    public Rect2D ContentBounds => PreparationSurface?.LayoutPass is not null ? _preparedContent?.Bounds ?? _contentBounds : _contentBounds;
 
     /// <summary>Gets the size available to component drawing and input.</summary>
     public Vector2 ContentSize => new(ContentBounds.Width, ContentBounds.Height);
@@ -129,14 +131,30 @@ public partial class UiElement
         return result;
     }
 
+    private void CompletePreparedContentGeometry(bool commit)
+    {
+        if (_preparedContent is { } content && commit)
+        {
+            PublishContentGeometry(content.Bounds, content.Modifiers);
+        }
+
+        _preparedContent = null;
+    }
+
     private void PublishContentGeometry(Rect2D content, Rect2D[] rectangles)
     {
+        if (PreparationSurface?.IsPreparingViewportLayout == true)
+        {
+            _preparedContent = (content, rectangles);
+            return;
+        }
+
         if (ContentBounds != content || !_modifierBounds.AsSpan().SequenceEqual(rectangles))
         {
             ModifierGeometryRevision = checked(ModifierGeometryRevision + 1);
         }
 
-        ContentBounds = content;
+        _contentBounds = content;
         _modifierBounds = rectangles;
     }
 }

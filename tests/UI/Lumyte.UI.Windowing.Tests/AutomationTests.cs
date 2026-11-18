@@ -274,6 +274,98 @@ public sealed class AutomationTests
         f.Pump();
     }
 
+    /// <summary>Offscreen key realization never scrolls a covered owner or a different normal window.</summary>
+    /// <param name="covered">Whether another real hosted window covers the group point.</param>
+    /// <returns>The asynchronous check.</returns>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task KeyRealizationHonorsNormalWindowOcclusionAsync(bool covered)
+    {
+        using var f = new Fixture();
+        int templates = 0;
+        f.Surface.Rebuild(Lumyte.UI.Compose.Panel()[Collections.Compose.ListBox<int>(
+            items: Enumerable.Range(0, 1000).ToArray(),
+            keySelector: item => item.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            itemTemplate: _ =>
+            {
+                templates++;
+                return Lumyte.UI.Compose.SizedBox(height: 20);
+            },
+            testId: "list",
+            width: 200,
+            height: 60,
+            virtualization: new Collections.UiItemVirtualization(20, 0))]);
+        f.Surface.UpdateLayout();
+        ScrollViewElement scroll = Assert.IsType<ScrollViewElement>(f.Surface.RootElement.Children[0].Children[0]);
+        using var other = new UiSurface(Lumyte.UI.Compose.Button());
+        UiWindowId window = f.Windows.Create(new(f.Registration.Window, new(200, 150), UiWindowRole.Normal, UiWindowInputMode.Interactive, new(f.Registration.Window, new(0, 0, 0, 0), UiWindowPlacementSide.Below)));
+        Task<UiWindowBinding> pending = f.Windows.BindPresentationAsync(window, other).AsTask();
+        f.Pump();
+        UiWindowBinding binding = await pending;
+        using UiPopupOwner owner = f.Popups.RegisterOwner(window, other);
+        if (covered)
+        {
+            f.Windows.Show(window);
+            f.Pump();
+        }
+
+        Assert.Equal(covered ? window : f.Registration.Window, f.Windows.HitTest(f.Registration.Window, new(100, 30))!.Value.Window);
+        using var gate = new SemaphoreSlim(1, 1);
+        IUiAutomationHost Factory(UiSurface surface) => new Host(surface, () => f.Pump(1), gate);
+        await using var session = new UiPopupAutomationSession(f.Popups, Factory(f.Surface), Factory);
+        var page = new UiAutomationPage(session.CreateOwnerHost(f.Surface));
+        try
+        {
+            UiLocator item = page.GetByTestId("list").GetByItemKey("999");
+            Assert.Equal(0, await item.CountAsync());
+            if (covered)
+            {
+                await Assert.ThrowsAsync<UiAutomationException>(() => item.BringIntoViewAsync(new() { Timeout = TimeSpan.FromMilliseconds(30) }));
+                Assert.Equal(0, scroll.Controller.Offset);
+                Assert.Equal(3, templates);
+            }
+            else
+            {
+                await item.BringIntoViewAsync();
+                Assert.Equal(19940, scroll.Controller.Offset);
+                Assert.Equal(1, await item.CountAsync());
+                Assert.Equal(6, templates);
+            }
+        }
+        finally
+        {
+            owner.Dispose();
+            Task retired = binding.DisposeAsync().AsTask();
+            f.Pump();
+            Assert.True(retired.IsCompletedSuccessfully);
+            f.Windows.Close(window);
+            f.Pump();
+            f.Windows.Release(window);
+            f.Pump();
+        }
+    }
+
+    /// <summary>The actual popup page reveals only its own key scope before normal selection.</summary>
+    /// <returns>The asynchronous check.</returns>
+    [Fact]
+    public async Task VirtualPopupKeySelectionUsesPopupScopeAsync()
+    {
+        using var f = new Fixture();
+        int changes = 0;
+        UiPopupHandle popup = f.Popups.RequestOpen(f.Owner, new(f.Anchor, new(80, 60), () => Collections.Compose.ListBox<int>(items: Enumerable.Range(0, 1000).ToArray(), keySelector: item => item.ToString(System.Globalization.CultureInfo.InvariantCulture), itemTemplate: _ => Lumyte.UI.Compose.SizedBox(height: 20), testId: "list", height: 60, virtualization: new Collections.UiItemVirtualization(20, 0), onSelectionChanged: _ => changes++)));
+        f.Pump();
+        using var gate = new SemaphoreSlim(1, 1);
+        IUiAutomationHost Factory(UiSurface surface) => new Host(surface, () => f.Pump(1), gate);
+        await using var session = new UiPopupAutomationSession(f.Popups, Factory(f.Surface), Factory);
+        UiAutomationPage page = session.Popup(popup.Id);
+        await page.GetByTestId("list").GetByItemKey("999").ClickAsync();
+        Assert.Equal(1, changes);
+        Assert.Equal(0, f.Clicks);
+        popup.Close();
+        f.Pump();
+    }
+
     private sealed class Host(UiSurface surface, Action nextFrame, SemaphoreSlim gate) : IUiAutomationHost
     {
         private static long _next;

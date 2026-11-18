@@ -22,6 +22,12 @@ public sealed class UiElementContent
 
     internal IReadOnlyList<Widget>? CollectionItemRoots { get; init; }
 
+    internal bool FreshRealizations { get; set; }
+
+    internal Action? PrepareLayout { get; set; }
+
+    internal object? PreparationState { get; set; }
+
     internal Action? Commit { get; }
 
     internal SignalReadSet? Reads { get; init; }
