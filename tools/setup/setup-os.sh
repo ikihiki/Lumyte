@@ -19,10 +19,12 @@ packages=(build-essential pkg-config curl ca-certificates git
     unzip zip tar python3 fontconfig fonts-noto-cjk libicu-dev libssl-dev zlib1g-dev libvulkan-dev
     mesa-vulkan-drivers vulkan-tools)
 
-# Only hosted Ubuntu x64 normal APT acquisition selects private source copies.
+# Only explicitly hosted Ubuntu x64 with an already available privileged Python
+# selects private sources. Missing/old Python or other runners keep native APT.
 # Keep native package/signature/version policy and the original rootless path.
 install_system_packages() {
-    if [[ "${GITHUB_ACTIONS:-}" == true && "$ID" == ubuntu && "$dotnet_arch" == x64 ]]; then
+    if [[ "${GITHUB_ACTIONS:-}" == true && "${RUNNER_ENVIRONMENT:-}" == github-hosted && "$ID" == ubuntu && "$dotnet_arch" == x64 ]] \
+        && "$@" /bin/sh -c 'command -v python3 >/dev/null 2>&1 && python3 -c "import sys; sys.exit(sys.version_info < (3, 8))"'; then
         "$@" python3 "$script_dir/ci-apt-sources.py" "${packages[@]}"
     else
         "$@" apt-get update -o APT::Update::Error-Mode=any

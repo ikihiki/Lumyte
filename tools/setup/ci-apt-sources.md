@@ -1,7 +1,14 @@
 # CI Ubuntu archive acquisition
 
-The privileged setup-os.sh path on GitHub Actions Ubuntu x64 can select private
-APT source copies. Only exact HTTP/HTTPS regional
+Only the normal privileged setup-os.sh path with GITHUB_ACTIONS=true and
+RUNNER_ENVIRONMENT=github-hosted on Ubuntu x64 can select private APT source
+copies, and only if Python3.8+ is already available under that same root/sudo PATH.
+A native shell checks availability and the interpreter version before the helper.
+Missing/unsupported interpreters (including hosted job containers), self-hosted or unknown
+runners and local installs retain the original native APT update/install route,
+which still requires and installs all17 packages including python3. This adds no
+bootstrap dependency, reduced package preinstall, ignored package failure or
+extra APT round trip. A container's hosted runner label alone is insufficient. Only exact HTTP/HTTPS regional
 region-name.ec2.archive.ubuntu.com/ubuntu[/] URI tokens change to the official
 `https://archive.ubuntu.com/ubuntu[/]`. This avoids the observed slow regional
 archive route, not a measured throughput guarantee or retry loop.
@@ -45,5 +52,5 @@ Offline verification (no system apt/sudo/root/network):
     bash -n tools/setup/setup-os.sh
 
 Actual fixture copies of setup use fake uname/OS-release/apt-config/apt-get/sudo.
-LUMYTE_TEST_BASELINE=1 selects historical969a setup for two fail-first regional
+LUMYTE_TEST_BASELINE=1 selects historical969a setup for historical fail-first regional
 source contracts. Tests read/write private fixtures, never live host config.

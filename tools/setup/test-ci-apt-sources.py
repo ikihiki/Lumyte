@@ -4,6 +4,8 @@ import json
 import os
 from pathlib import Path
 import shlex
+import shutil
+import sys
 import subprocess
 import tempfile
 import unittest
@@ -85,12 +87,14 @@ class SourceTests(unittest.TestCase):
             with self.assertRaises(FileNotFoundError):
                 APT.prepare(main, parts, target)
 
-    def run_setup(self, github='true', distro='ubuntu', arch='x86_64', legacy=True, rootless=False, root_mode=False):
+    def run_setup(self, github='true', distro='ubuntu', arch='x86_64', legacy=True, rootless=False, root_mode=False, runner='github-hosted', missing_python=False, privileged_missing=False, old_python=False, fail_update=False):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             tools = root / 'tools'
             tools.mkdir()
             source = (HERE / 'setup-os.sh').read_text()
+            if os.environ.get('LUMYTE_TEST_BOOTSTRAP_BASELINE') == '1':
+                source = subprocess.check_output(['git', 'show', 'bbc7e5bc:tools/setup/setup-os.sh'], cwd=HERE, text=True)
             if os.environ.get('LUMYTE_TEST_BASELINE') == '1':
                 source = subprocess.check_output(['git', 'show', '969a47dc:tools/setup/setup-os.sh'], cwd=HERE, text=True)
             release = root / 'os-release'
@@ -100,8 +104,7 @@ class SourceTests(unittest.TestCase):
             source = source.replace('/etc/os-release', str(release)).replace('/usr/bin/apt-get', str(root / 'bin/apt-get'))
             source = source.replace('/usr/share/keyrings/ubuntu-archive-keyring.gpg', str(keyring))
             source = source.replace('/usr/share/keyrings/debian-archive-keyring.gpg', str(keyring))
-            if root_mode:
-                source = source.replace('"$EUID" == 0', '"$FIXTURE_EUID" == 0')
+            source = source.replace('"$EUID" == 0', '"$FIXTURE_EUID" == 0')
             (tools / 'setup-os.sh').write_text(source)
             (tools / 'environment.sh').write_text('export LUMYTE_ENV_ROOT="$FIXTURE_ROOT/env"\n')
             (tools / 'ci-apt-sources.py').write_text((HERE / 'ci-apt-sources.py').read_text())
@@ -116,7 +119,7 @@ class SourceTests(unittest.TestCase):
             binaries.mkdir()
             scripts = {
                 'uname': '#!/bin/sh\nif [ "$1" = -s ]; then echo Linux; else echo "$FIXTURE_ARCH"; fi\n',
-                'sudo': '#!/bin/sh\nwhile [ "$1" = -n ] || [ "' + chr(36) + '{1#--preserve-env=}" != "$1" ]; do shift; done\nexec "$@"\n',
+                'sudo': '#!/bin/sh\nif [ -n "$FIXTURE_PRIV_PATH" ]; then PATH="$FIXTURE_PRIV_PATH"; export PATH; fi\nwhile [ "$1" = -n ] || [ "' + chr(36) + '{1#--preserve-env=}" != "$1" ]; do shift; done\nexec "$@"\n',
                 'apt-config': '#!/usr/bin/env python3\nimport os,shlex\nprint("SourceList="+shlex.quote(os.environ["FIXTURE_MAIN"]))\nprint("SourceParts="+shlex.quote(os.environ["FIXTURE_PARTS"]))\n',
                 'apt-get': '''#!/usr/bin/env python3
 import os,sys,json
@@ -132,16 +135,43 @@ for value in args:
  if value.startswith('Dir::Etc::sourceparts='):parts=Path(value.split('=',1)[1])
 sources=([main.read_text()] if main.exists() else [])+[p.read_text() for p in sorted(parts.iterdir())]
 with open(os.environ['FIXTURE_LOG'],'a') as f:f.write(json.dumps({'args':args,'sources':sources,'proxy':os.environ.get('HTTPS_PROXY'),'frontend':os.environ.get('DEBIAN_FRONTEND'),'main':str(main),'parts':str(parts)})+'\\n')
+if os.environ.get('FIXTURE_FAIL_UPDATE')=='1' and args[0]=='update':sys.exit(100)
 '''}
             for name, script in scripts.items():
                 path = binaries / name
                 path.write_text(script)
                 path.chmod(0o755)
+            # Fake apt/config use an absolute interpreter solely to stay runnable
+            # while the target bootstrap PATH genuinely has no named python3.
+            for name in ['apt-get', 'apt-config']:
+                path = binaries / name
+                path.write_text(path.read_text().replace('#!/usr/bin/env python3', '#!' + sys.executable, 1))
+            for name in ['bash', 'dirname', 'mkdir', 'cat', 'env', 'true']:
+                (binaries / name).symlink_to(shutil.which(name))
+            if old_python:
+                path = binaries / 'python3'
+                path.write_text('#!/bin/sh\nexit 1\n')
+                path.chmod(0o755)
+            private_path = ''
+            if privileged_missing:
+                private = root / 'privileged-bin'
+                private.mkdir()
+                for path in binaries.iterdir():
+                    (private / path.name).symlink_to(path)
+                private_path = str(private)
             log = root / 'calls.jsonl'
-            env = {**os.environ, 'PATH': str(binaries) + ':' + os.environ['PATH'], 'FIXTURE_ROOT': str(root),
-                   'FIXTURE_MAIN': str(main), 'FIXTURE_PARTS': str(parts), 'FIXTURE_LOG': str(log), 'FIXTURE_ARCH': arch,
-                   'GITHUB_ACTIONS': github, 'HTTPS_PROXY': 'https://proxy.example:1234', 'LUMYTE_SETUP_ROOTLESS': '1' if rootless else '0', 'FIXTURE_EUID': '0' if root_mode else '1000'}
+            env = {**os.environ, 'PATH': str(binaries) if missing_python else str(binaries) + ':' + os.environ['PATH'], 'FIXTURE_ROOT': str(root),
+                   'FIXTURE_FAIL_UPDATE': '1' if fail_update else '0', 'FIXTURE_MAIN': str(main), 'FIXTURE_PARTS': str(parts), 'FIXTURE_LOG': str(log), 'FIXTURE_ARCH': arch,
+                   'GITHUB_ACTIONS': github, 'RUNNER_ENVIRONMENT': runner, 'FIXTURE_PRIV_PATH': private_path, 'HTTPS_PROXY': 'https://proxy.example:1234', 'LUMYTE_SETUP_ROOTLESS': '1' if rootless else '0', 'FIXTURE_EUID': '0' if root_mode else '1000'}
             result = subprocess.run(['bash', str(tools / 'setup-os.sh')], env=env, capture_output=True, text=True)
+            if fail_update:
+                self.assertNotEqual(0, result.returncode)
+                calls = [json.loads(line) for line in log.read_text().splitlines()]
+                self.assertEqual(1, len(calls))
+                self.assertEqual('update', calls[0]['args'][0])
+                self.assertEqual(str(main), calls[0]['main'])
+                self.assertEqual(content, selected.read_text())
+                return calls, str(main)
             self.assertEqual(0, result.returncode, result.stderr)
             self.assertNotIn('password', result.stdout + result.stderr)
             calls = [json.loads(line) for line in log.read_text().splitlines()]
@@ -186,6 +216,41 @@ with open(os.environ['FIXTURE_LOG'],'a') as f:f.write(json.dumps({'args':args,'s
         calls, main = self.run_setup(root_mode=True)
         self.assertNotEqual(main, calls[0]['main'])
         self.assertIn(CANONICAL, ''.join(calls[1]['sources']))
+
+    def test_missing_python_hosted_container_keeps_all_required_native_packages(self):
+        for root_mode in [True, False]:
+            with self.subTest(root_mode=root_mode):
+                calls, main = self.run_setup(missing_python=True, root_mode=root_mode)
+                self.assertEqual(main, calls[0]['main'])
+                self.assertIn(AWS, ''.join(calls[0]['sources']))
+                self.assertEqual(PACKAGES, calls[1]['args'][-len(PACKAGES):])
+                self.assertIn('python3', calls[1]['args'])
+
+    def test_sudo_guard_checks_privileged_path_not_caller_interpreter(self):
+        calls, main = self.run_setup(privileged_missing=True)
+        self.assertEqual(main, calls[0]['main'])
+        self.assertIn(AWS, ''.join(calls[0]['sources']))
+
+    def test_self_hosted_unknown_and_local_keep_original_acquisition(self):
+        for runner, github, missing in [('self-hosted', 'true', False),
+                                        ('self-hosted', 'true', True),
+                                        ('', 'true', False), ('unknown', 'true', False),
+                                        ('github-hosted', '', True)]:
+            with self.subTest(runner=runner, github=github, missing=missing):
+                calls, main = self.run_setup(runner=runner, github=github, missing_python=missing)
+                self.assertEqual(main, calls[0]['main'])
+                self.assertIn(AWS, ''.join(calls[0]['sources']))
+
+    def test_unsupported_python_version_keeps_native_package_installation(self):
+        for root_mode in [True, False]:
+            calls, main = self.run_setup(old_python=True, root_mode=root_mode)
+            self.assertEqual(main, calls[0]['main'])
+            self.assertIn('python3', calls[1]['args'])
+
+    def test_native_route_update_failure_is_not_ignored_or_noop_success(self):
+        for root_mode in [True, False]:
+            calls, _ = self.run_setup(missing_python=True, fail_update=True, root_mode=root_mode)
+            self.assertEqual(1, len(calls))
 
     def test_update_failure_stops_install_no_retry_and_private_copy_is_cleaned(self):
         calls = []
