@@ -460,6 +460,8 @@ internal static class SparseStripBuilder2D
 
         internal double Radius { get; set; }
 
+        internal bool Circle { get; private set; }
+
         internal bool Triangles { get; set; }
 
         internal FillRule2D Rule { get; set; }
@@ -476,6 +478,7 @@ internal static class SparseStripBuilder2D
 
         internal void SetCircle(Vector2 center, float radius)
         {
+            Circle = true;
             LocalLeft = (double)center.X - radius;
             LocalTop = (double)center.Y - radius;
             LocalRight = (double)center.X + radius;
@@ -539,7 +542,8 @@ internal static class SparseStripBuilder2D
 
             double cornerX = localX - Math.Clamp(localX, LocalLeft + Radius, right - Radius);
             double cornerY = localY - Math.Clamp(localY, LocalTop + Radius, bottom - Radius);
-            return Math.FusedMultiplyAdd(cornerX, cornerX, cornerY * cornerY) <= Radius * Radius;
+            double squared = Math.FusedMultiplyAdd(cornerX, cornerX, cornerY * cornerY);
+            return Circle ? squared < Radius * Radius : squared <= Radius * Radius;
         }
 
         private static int Contribution(Point a, Point b, double x, double y) => Geometry2D.GetWindingContributionFused(a.X, a.Y, b.X, b.Y, x, y);
