@@ -58,6 +58,7 @@ public sealed partial class Drawing2DTests
 
     private static async Task CheckFixedRecordsAsync(IGraphicDevice device)
     {
+        using var reuse = new SerialDrawingResources(device);
         Action<RenderGraphCanvas2D> boundaryDraw = canvas =>
         {
             for (int i = 0; i < 340; i++)

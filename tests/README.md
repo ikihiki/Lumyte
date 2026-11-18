@@ -37,6 +37,7 @@ CPUレーンは継承したLUMYTE_*TEST* / LUMYTE_*BENCHMARK* opt-inを子test p
 Browser・AOT・sample・Rust等のprocess検証は下記の専用入口も維持します。
 GPUを使わずに確認できるrectangle poolの所有権・8→10 allocation契約は既存CpuGraphicsDeviceへ移しました。
 backend固有のvalidation、native retirement、pixel/readbackの試験はfakeへ置き換えていません。
+反復pixel試験のserialなresource再利用・独立所有権境界と測定条件は[GPU resource reuse](../docs/gpu-test-resource-reuse.md)を参照してください。
 
 ## 単体テスト
 
