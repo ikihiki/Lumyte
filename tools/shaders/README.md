@@ -9,23 +9,43 @@ input is not a PATH search, so a missing relative file made two otherwise identi
 builds execute the compiler twice. The Linux default-PATH fixture reproduces this
 against the original target with a fake compiler, then verifies one invocation.
 
-The preparation target resolves a filesystem dependency without executing or
-probing the compiler. Linux lookup follows PATH order and effective execute access,
-including a non-executable placeholder before a valid tool. Absolute/relative
-paths, spaces and Unicode are covered. The resolved input remains a dependency;
-a write-only-when-different identity stamp also tracks selected path, timestamp and
-length, so selecting an older compiler or replacing one invalidates output.
-This retains ordinary MSBuild timestamp semantics, not a full content-hash cache.
-No entire PATH value is stored or logged.
+The preparation target resolves filesystem dependencies only. For the actually
+qualified .NET10.0.14 child host, unrooted ProcessStartInfo lookup checks the host
+executable directory first, then the child project working directory, then
+nonempty PATH entries. The task must not equate its DLL base or process with an
+arbitrary child host. An executable in CWD can shadow PATH even when the parent
+shell started outside the project. A regression reproduces b09 tracking PATH A
+while the child executed CWD B; modifying only B incorrectly skipped compilation.
 
-Unresolved/missing/inaccessible commands use an intentionally absent input and
-therefore rebuild instead of accepting stale output. The original invocation then
-succeeds or fails normally. Windows bare-command CreateProcess/PATHEXT selection
-and other unsupported platform lookups are not emulated: they retain original
-execution with conservative rebuilds. Windows explicit file paths are tracked,
-but Windows execution was not qualified by the Linux-only fake tests. No Windows
-incrementality or mock-as-runtime claim is made. NoBuild/pack does not resolve,
-probe or execute the compiler and keeps its existing embedded-assembly contract.
+Cache qualification requires a shell-resolved child dotnet host equal to the
+actual task process executable, the inspected10.0.14 runtime with a single10.x
+framework installation, and the exact SDK-generated tool runtime configuration.
+Wrappers, copied/different hosts, changed runtime/startup policies, unavailable
+metadata and other runtime versions/formats conservatively rebuild. This is a
+qualification restriction, not a runtime version requirement or changed launch
+policy. The one-invocation incremental fixtures require this qualified host
+prerequisite; additional installed10.x runtimes legitimately cause conservative
+rebuilds and do not qualify as a warm-skip fixture environment. Public BCL metadata APIs are accessed compatibly with the inline task's
+netstandard references; private runtime/MSBuild lookup methods are not invoked.
+
+Host-directory/CWD candidates retain File.Exists precedence: an inaccessible
+shadow cannot be skipped in favor of PATH. PATH non-executable placeholders are
+skipped; partial permission/ownership/ACL shapes are unqualified rather than
+approximated. Normal all-execute PATH files are checked for effective access.
+Absolute compiler paths remain direct; relative paths, spaces and Unicode are
+covered. The resolved executable and write-only-when-different path/mtime/length
+identity stamp remain dependencies, including older replacements. This uses
+ordinary timestamp semantics, not a full content-hash cache. No raw PATH is stored
+or logged.
+
+Unknown identities use an intentionally absent input, so they rebuild and retain
+original execution/failure, never guessed-cache success. Isolated tests copy a
+muxer and link its read-only framework directories to prove executable-directory
+precedence without changing any installed host. The different host is deliberately
+unqualified and rebuilds even on identical builds; an opaque wrapper is covered
+too. Windows bare commands retain original CreateProcess/PATHEXT execution and
+conservative rebuilds; no Windows runtime/optimization claim. NoBuild/pack still
+does not resolve, probe, write an identity stamp or execute the compiler.
 
 The original shader, shared include, imported-project/tool runtime dependencies,
 resource/backend/RID output layout and command arguments are retained. Tests cover

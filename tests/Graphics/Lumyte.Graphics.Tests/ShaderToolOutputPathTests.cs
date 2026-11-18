@@ -212,6 +212,35 @@ public sealed class ShaderToolOutputPathTests
     [InlineData(false)]
     [InlineData(true)]
     public async Task DefaultPathCompilerIsIncrementalWithoutAnOverrideAsync(bool absoluteCompiler)
+        => await VerifyCompilerLookupAsync(absoluteCompiler, false);
+
+    /// <summary>The child tool prefers its current directory over PATH, including after only that compiler changes.</summary>
+    /// <param name="shellOutsideProject">Whether the calling shell starts outside the project directory.</param>
+    /// <returns>The isolated current-directory shadow verification.</returns>
+    [LinuxTheory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task CurrentDirectoryCompilerShadowInvalidatesAsync(bool shellOutsideProject)
+        => await VerifyCompilerLookupAsync(false, true, shellOutsideProject);
+
+    /// <summary>Different or wrapped hosts cannot make the task assume its own executable directory.</summary>
+    /// <param name="copiedExecutable">Whether to use a private copied muxer rather than an opaque wrapper.</param>
+    /// <returns>The isolated executable-directory or wrapper verification.</returns>
+    [LinuxTheory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task DifferentChildHostConservativelyRebuildsAsync(bool copiedExecutable)
+        => await VerifyCompilerLookupAsync(false, true, false, copiedExecutable, !copiedExecutable);
+
+    /// <summary>Unqualified partial PATH permissions rebuild rather than pretending to match runtime ownership rules.</summary>
+    /// <param name="partialPermissions">Selects the deliberately unqualified permission shape.</param>
+    /// <returns>The isolated conservative rebuild verification.</returns>
+    [LinuxTheory]
+    [InlineData(true)]
+    public async Task UncertainPathPermissionsRebuildAsync(bool partialPermissions)
+        => await VerifyCompilerLookupAsync(false, false, partialPermissions: partialPermissions);
+
+    private static async Task VerifyCompilerLookupAsync(bool absoluteCompiler, bool currentShadow, bool shellOutsideProject = false, bool executableShadow = false, bool wrappedHost = false, bool partialPermissions = false)
     {
         if (OperatingSystem.IsWindows())
         {
@@ -267,7 +296,12 @@ public sealed class ShaderToolOutputPathTests
             string fake = Path.Combine(tools, "slangc");
             string fakeScript = """
                 #!/bin/sh
-                if [ "$1" = -version ]; then echo fake-slang-version; exit 0; fi
+                if [ "$1" = -version ]; then
+                  /usr/bin/readlink "/proc/$PPID/exe" > "$LUMYTE_FAKE_CHILD_RUNTIME"
+                  /bin/grep -m1 '/shared/Microsoft.NETCore.App/' "/proc/$PPID/maps" >> "$LUMYTE_FAKE_CHILD_RUNTIME"
+                  echo fake-slang-version
+                  exit 0
+                fi
                 printf 'compile\n' >> "$LUMYTE_FAKE_SLANG_LOG"
                 while [ "$#" -gt 0 ]; do
                   case "$1" in -o) shift; output="$1" ;; -reflection-json) shift; reflection="$1" ;; esac
@@ -277,9 +311,50 @@ public sealed class ShaderToolOutputPathTests
                 printf '{"parameters":[],"entryPoints":[]}' > "$reflection"
                 """;
             await File.WriteAllTextAsync(fake, fakeScript);
-            File.SetUnixFileMode(fake, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
-            string log = Path.Combine(directory, "invocations.txt");
-            var environment = new Dictionary<string, string> { ["PATH"] = tools + Path.PathSeparator + Environment.GetEnvironmentVariable("PATH"), ["LUMYTE_FAKE_SLANG_LOG"] = log };
+            File.SetUnixFileMode(fake, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute | UnixFileMode.GroupRead | UnixFileMode.GroupExecute | UnixFileMode.OtherRead | UnixFileMode.OtherExecute);
+            if (partialPermissions)
+            {
+                File.SetUnixFileMode(fake, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+            }
+
+            string pathLog = Path.Combine(directory, "invocations.txt");
+            string cwdLog = Path.Combine(directory, "cwd-invocations.txt");
+            string runtimeLog = Path.Combine(directory, "child-runtime.txt");
+            string local = Path.Combine(directory, "slangc");
+            if (currentShadow)
+            {
+                await File.WriteAllTextAsync(local, fakeScript.Replace("LUMYTE_FAKE_SLANG_LOG", "LUMYTE_FAKE_CWD_SLANG_LOG", StringComparison.Ordinal));
+                File.SetUnixFileMode(local, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+            }
+
+            string hostLog = Path.Combine(directory, "host-invocations.txt");
+            string privateHost = Path.Combine(directory, "private-host");
+            string hostCompiler = Path.Combine(privateHost, "slangc");
+            string childHost = Path.Combine(privateHost, "dotnet");
+            bool unknownHost = executableShadow || wrappedHost;
+            if (unknownHost)
+            {
+                Directory.CreateDirectory(privateHost);
+                string originalHost = Environment.ProcessPath!;
+                if (executableShadow)
+                {
+                    File.Copy(originalHost, childHost);
+                    string hostRoot = Path.GetDirectoryName(originalHost)!;
+                    Directory.CreateSymbolicLink(Path.Combine(privateHost, "host"), Path.Combine(hostRoot, "host"));
+                    Directory.CreateSymbolicLink(Path.Combine(privateHost, "shared"), Path.Combine(hostRoot, "shared"));
+                }
+                else
+                {
+                    await File.WriteAllTextAsync(childHost, "#!/bin/sh\nexec \"" + originalHost + "\" \"$@\"\n");
+                }
+
+                File.SetUnixFileMode(childHost, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+                await File.WriteAllTextAsync(hostCompiler, fakeScript.Replace("LUMYTE_FAKE_SLANG_LOG", "LUMYTE_FAKE_HOST_SLANG_LOG", StringComparison.Ordinal));
+                File.SetUnixFileMode(hostCompiler, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+            }
+
+            string log = executableShadow ? hostLog : currentShadow ? cwdLog : pathLog;
+            var environment = new Dictionary<string, string> { ["PATH"] = tools + Path.PathSeparator + Environment.GetEnvironmentVariable("PATH"), ["LUMYTE_FAKE_SLANG_LOG"] = pathLog, ["LUMYTE_FAKE_CWD_SLANG_LOG"] = cwdLog, ["LUMYTE_FAKE_CHILD_RUNTIME"] = runtimeLog, ["LUMYTE_FAKE_HOST_SLANG_LOG"] = hostLog };
             string offlineFeed = Path.Combine(directory, "offline-feed");
             Directory.CreateDirectory(offlineFeed);
             await RunWithEnvironmentAsync(directory, true, environment, "restore", Path.Combine(directory, "tools/shaders/Lumyte.ShaderCompiler/Lumyte.ShaderCompiler.csproj"), "-p:Configuration=Release", "--verbosity:quiet", "--source", offlineFeed);
@@ -289,9 +364,16 @@ public sealed class ShaderToolOutputPathTests
                 build = [.. build, "-p:SlangCompilerPath=" + fake];
             }
 
-            string first = await RunWithEnvironmentAsync(directory, true, environment, build);
+            if (unknownHost)
+            {
+                build = [.. build, "-p:DotNetHostPath=" + childHost];
+            }
+
+            // Start MSBuild outside the project directory for the CWD-shadow case.
+            string buildDirectory = shellOutsideProject ? Path.GetDirectoryName(directory)! : directory;
+            string first = await RunWithEnvironmentAsync(buildDirectory, true, environment, build);
             Assert.Single(await File.ReadAllLinesAsync(log));
-            string second = await RunWithEnvironmentAsync(directory, true, environment, build);
+            string second = await RunWithEnvironmentAsync(buildDirectory, true, environment, build);
             string? evidence = Environment.GetEnvironmentVariable("LUMYTE_SHADER_INCREMENTAL_EVIDENCE");
             if (evidence is not null)
             {
@@ -303,7 +385,46 @@ public sealed class ShaderToolOutputPathTests
                 File.Copy(log, Path.Combine(evidence, "invocations.txt"), true);
             }
 
-            Assert.Single(await File.ReadAllLinesAsync(log));
+            Assert.Equal(unknownHost || partialPermissions ? 2 : 1, (await File.ReadAllLinesAsync(log)).Length);
+            if (partialPermissions)
+            {
+                await File.AppendAllTextAsync(fake, "\n# changed uncertain compiler\n");
+                await RunWithEnvironmentAsync(buildDirectory, true, environment, build);
+                Assert.Equal(3, (await File.ReadAllLinesAsync(log)).Length);
+                return;
+            }
+
+            if (currentShadow)
+            {
+                Assert.False(File.Exists(pathLog));
+                string actualCompiler = executableShadow ? hostCompiler : local;
+                await File.AppendAllTextAsync(actualCompiler, "\n# only the actual selected compiler changes\n");
+                File.SetLastWriteTimeUtc(actualCompiler, DateTime.UtcNow.AddDays(-1));
+                string changed = await RunWithEnvironmentAsync(buildDirectory, true, environment, build);
+                if (evidence is not null)
+                {
+                    await File.WriteAllTextAsync(Path.Combine(evidence, "shadow-change.log"), changed);
+                    File.Copy(log, Path.Combine(evidence, executableShadow ? "host-invocations.txt" : "cwd-invocations.txt"), true);
+                    File.Copy(runtimeLog, Path.Combine(evidence, "child-runtime.txt"), true);
+                    await File.WriteAllTextAsync(Path.Combine(evidence, "path-invocations-count.txt"), File.Exists(pathLog) ? (await File.ReadAllLinesAsync(pathLog)).Length.ToString(System.Globalization.CultureInfo.InvariantCulture) : "0");
+                }
+
+                Assert.Equal(unknownHost ? 3 : 2, (await File.ReadAllLinesAsync(log)).Length);
+                Assert.False(File.Exists(pathLog));
+                string observedHost = (await File.ReadAllLinesAsync(runtimeLog))[0];
+                Assert.Equal(executableShadow ? childHost : Environment.ProcessPath, observedHost);
+                if (executableShadow)
+                {
+                    Assert.False(File.Exists(cwdLog));
+                }
+                else
+                {
+                    Assert.False(File.Exists(hostLog));
+                }
+
+                return;
+            }
+
             string artifact = Path.Combine(directory, "shader-output/Slang/fixture.lshader");
             byte[] originalArtifact = await File.ReadAllBytesAsync(artifact);
             int expected = 1;
@@ -332,7 +453,7 @@ public sealed class ShaderToolOutputPathTests
                 Directory.CreateDirectory(other);
                 string replacement = Path.Combine(other, "slangc");
                 await File.WriteAllTextAsync(replacement, fakeScript);
-                File.SetUnixFileMode(replacement, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+                File.SetUnixFileMode(replacement, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute | UnixFileMode.GroupRead | UnixFileMode.GroupExecute | UnixFileMode.OtherRead | UnixFileMode.OtherExecute);
                 File.SetLastWriteTimeUtc(replacement, DateTime.UtcNow.AddDays(-2));
                 environment["PATH"] = other + Path.PathSeparator + environment["PATH"];
                 await RunWithEnvironmentAsync(directory, true, environment, build);
