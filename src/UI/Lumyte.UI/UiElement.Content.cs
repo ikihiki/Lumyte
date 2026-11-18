@@ -10,6 +10,12 @@ public partial class UiElement
 
     internal SignalReadSet? ContentReads { get; set; }
 
+    internal virtual bool PrepareViewportContent() => false;
+
+    internal virtual void AcceptViewportPreparation()
+    {
+    }
+
     internal UiElementContent? PrepareContent(WidgetDefinition next, UiElementBuildContext context) => BuildContent(next, context);
 
     /// <summary>Optionally builds an instance-owned content slot before proposed-tree matching and validation.</summary>

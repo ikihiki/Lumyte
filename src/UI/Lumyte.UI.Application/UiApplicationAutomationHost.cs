@@ -207,7 +207,7 @@ internal class UiApplicationAutomationHost(UiApplication application, Func<UiSur
                     _keys.Add(key.Key);
                 }
             }
-            else if (input is not (UiCheckInput or UiExpandInput or UiSetNumericInput or UiWheelInput))
+            else if (input is not (UiCheckInput or UiExpandInput or UiSetNumericInput or UiBringItemInput or UiWheelInput))
             {
                 throw new ArgumentException("Only pointer, key, wheel and checked-state input are lease-owned.", nameof(input));
             }

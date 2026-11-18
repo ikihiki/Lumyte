@@ -89,6 +89,7 @@ internal sealed class UiLayoutPass
         {
             UiProfiling.Add(2, 202);
             node.PublishLayout(node.Size, Vector2.Zero);
+            node.CacheLayout(effective);
             node.LayoutComplete = true;
             return node.Size;
         }

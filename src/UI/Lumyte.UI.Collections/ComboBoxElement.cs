@@ -124,6 +124,7 @@ public class ComboBoxElement<T> : ItemsRepeaterElement<T>
                 Items = Items,
                 KeySelector = declaration.KeySelector,
                 ItemTemplate = declaration.ItemTemplate,
+                Virtualization = declaration.Virtualization,
                 ItemEnabled = declaration.ItemEnabled,
                 ItemVisible = declaration.ItemVisible,
                 SelectedKey = SelectedKey,

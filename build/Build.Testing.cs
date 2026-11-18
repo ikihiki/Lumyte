@@ -18,7 +18,7 @@ internal sealed partial class Build
     [Parameter("Independent browser case: contracts, graphics, text, ui-application, ui-navigation, ui-pages, ui-transitions, or audio. Omit for the complete suite.")]
     public string? BrowserCase { get; set; }
 
-    [Parameter("UI feature: layout, controls, media, scroll, menus, tabs, collections, numeric, application, navigation, or pages.")]
+    [Parameter("UI feature: layout, controls, media, scroll, menus, tabs, collections, virtualization, numeric, application, navigation, or pages.")]
     public string? Feature { get; set; }
 
     [Parameter("Publish and execute the selected UI feature using strict NativeAOT.")]

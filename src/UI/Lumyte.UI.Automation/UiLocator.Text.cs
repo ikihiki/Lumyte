@@ -14,6 +14,7 @@ public sealed partial class UiLocator
         return Page.ExecuteAsync(
  async run =>
         {
+            await PrepareItemTargetAsync(run);
             if (run.Host is not IUiAutomationTextHost editing)
             {
                 throw run.Failure(UiAutomationFailureKind.UnsupportedAction, "The host does not provide committed text editing.");

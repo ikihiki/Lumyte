@@ -8,7 +8,7 @@ public static partial class Compose
     /// <summary>Passive collection declarations.</summary>
     public static partial class Definitions
     {
-        /// <summary>A fully realized single-choice scrollable collection.</summary>
+        /// <summary>A single-choice scrollable collection, fully realized unless fixed-extent virtualization is specified.</summary>
         /// <typeparam name="T">The application item type.</typeparam>
         [Composable]
         public partial class ListBox<T> : ItemsRepeater<T>
@@ -36,6 +36,12 @@ public static partial class Compose
             /// <summary>Gets or sets optional item visibility.</summary>
             [ComposeParameter]
             public Func<T, bool>? ItemVisible { get; set; }
+
+            /// <summary>Gets or sets optional fixed-extent virtualization; null preserves full realization.</summary>
+            [ComposeParameter]
+            public UiItemVirtualization? Virtualization { get; set; }
+
+            internal override bool RequiresViewportPreparation => Virtualization is not null;
 
             internal Action<string>? ItemInvoked { get; set; }
 

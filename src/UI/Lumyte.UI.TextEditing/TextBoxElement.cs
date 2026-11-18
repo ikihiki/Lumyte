@@ -68,6 +68,9 @@ public class TextBoxElement : UiElement<Compose.Definitions.TextBox>, ITextDocum
     protected override bool PreservePointerGesture => true;
 
     /// <inheritdoc/>
+    protected override bool PreserveRealization => InputHandler?.HasPendingSession(this) == true;
+
+    /// <inheritdoc/>
     protected override bool CacheRetainedDrawing => GetType() == typeof(TextBoxElement);
 
     /// <inheritdoc/>

@@ -6,6 +6,7 @@ namespace Lumyte.UI;
 public partial class UiElement
 {
     private Widget _widget;
+    private UiElement? _parent;
     private UiElementChildren[] _slots = [];
     private IReadOnlyList<UiElement> _children = Array.Empty<UiElement>();
 
@@ -18,23 +19,29 @@ public partial class UiElement
     }
 
     /// <summary>Gets the current adopted configuration.</summary>
-    public Widget Widget => _widget;
+    public Widget Widget => UsesPreparedTopology ? _layoutPreparationWidget ?? _widget : _widget;
 
     /// <summary>Gets the mounted owning surface, or null outside the mounted lifetime.</summary>
     public UiSurface? Surface { get; private set; }
 
     /// <summary>Gets the mounted parent, independent of declaration replacement.</summary>
-    public UiElement? Parent { get; private set; }
+    public UiElement? Parent
+    {
+        get => UsesPreparedTopology ? _layoutPreparationParent : _parent;
+        private set => _parent = value;
+    }
 
     /// <summary>Gets the mounted children in component slot order.</summary>
-    public IReadOnlyList<UiElement> Children => _children;
+    public IReadOnlyList<UiElement> Children => UsesPreparedTopology ? _layoutPreparationChildren ?? _children : _children;
 
     /// <summary>Gets a value indicating whether this logical instance is mounted.</summary>
     public bool IsMounted => Surface is not null;
 
-    internal IReadOnlyList<UiElementChildren> Slots => _slots;
+    internal IReadOnlyList<UiElementChildren> Slots => UsesPreparedTopology ? _layoutPreparationSlots ?? _slots : _slots;
 
     internal bool HasCollectionItemOwnership { get; set; }
+
+    internal bool FreshItemRealizations { get; set; }
 
     internal bool HasIndependentContentOwnership { get; set; }
 
@@ -167,7 +174,7 @@ public partial class UiElement
             throw new ArgumentException("The slot must belong to the current configuration.", nameof(declarationSlot));
         }
 
-        return _slots[declarationSlot.SlotIndex];
+        return Slots[declarationSlot.SlotIndex];
     }
 
     /// <summary>Prepares custom state changes without modifying the live instance.</summary>

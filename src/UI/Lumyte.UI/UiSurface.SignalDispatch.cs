@@ -124,6 +124,43 @@ public sealed partial class UiSurface
             return false;
         }
 
+        if (input is UiBringItemInput bring)
+        {
+            if (string.IsNullOrEmpty(bring.Key) || bring.Key.Length > 1024 || !float.IsFinite(bring.Position.X) || !float.IsFinite(bring.Position.Y))
+            {
+                throw new ArgumentOutOfRangeException(nameof(input));
+            }
+
+            UiElement? target = FindElement(bring.Target);
+            if (target is not IUiItemViewport items || !ReferenceEquals(target.InputVersion, _inputVersion)
+                || !AcceptsCurrentInput(target) || !IsInside(target, bring.Position) || target.IsTransitioning || target.AutomationActivePress
+                || (target.SupportedActions & UiAutomationActions.SelectOption) == 0)
+            {
+                return false;
+            }
+
+            for (UiElement? ancestor = target; ancestor is not null; ancestor = ancestor.Parent)
+            {
+                if (ancestor.EffectiveAutomationExposure == UiAutomationExposure.RedactedSubtree)
+                {
+                    return false;
+                }
+            }
+
+            bool contained = false;
+            for (UiElement? itemHit = _rootElement.FindInputHit(bring.Position, _inputVersion); itemHit is not null; itemHit = itemHit.Parent)
+            {
+                if (itemHit.EffectiveAutomationExposure == UiAutomationExposure.RedactedSubtree)
+                {
+                    return false;
+                }
+
+                contained |= ReferenceEquals(itemHit, target);
+            }
+
+            return contained && items.BringIntoView(bring.Key);
+        }
+
         if (input is UiSetNumericInput numeric)
         {
             if (!double.IsFinite(numeric.Value) || (numeric.Upper is { } upper && (!double.IsFinite(upper) || numeric.Value > upper))

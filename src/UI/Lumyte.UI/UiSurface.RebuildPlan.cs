@@ -12,7 +12,7 @@ public sealed partial class UiSurface
         private readonly UiElement[] _validators;
         private readonly IReadOnlyDictionary<UiSharedElementKey, UiElement>? _shared;
 
-        internal RebuildPlan(UiElement? previous, Widget next, bool retainUninitialized = false, UiElement? surfaceRoot = null, IEnumerable<UiElement>? validators = null, IReadOnlyDictionary<UiSharedElementKey, UiElement>? shared = null, Action<ElementUpdate>? prepareArguments = null, ElementUpdate? preparedRoot = null)
+        internal RebuildPlan(UiElement? previous, Widget next, bool retainUninitialized = false, UiElement? surfaceRoot = null, IEnumerable<UiElement>? validators = null, IReadOnlyDictionary<UiSharedElementKey, UiElement>? shared = null, Action<ElementUpdate>? prepareArguments = null, ElementUpdate? preparedRoot = null, bool refreshContent = false, UiProposedTree? baseline = null)
         {
             var retained = new HashSet<UiElement>(ReferenceEqualityComparer.Instance);
             var unchanged = new HashSet<UiElement>(ReferenceEqualityComparer.Instance);
@@ -27,7 +27,9 @@ public sealed partial class UiSurface
             _validators = validators?.ToArray() ?? [];
             _shared = shared;
             var pending = new System.Collections.Generic.Stack<(UiElement Element, Widget Next, UiElement? Parent, UiUseEnvironment? Context)>();
-            pending.Push((Root, next, previous?.Parent, previous?.Parent?.Contexts));
+            UiElement? proposedParent = previous is null ? null : baseline?.Parent(previous) ?? previous.Parent;
+            UiUseEnvironment? inherited = proposedParent is null ? null : baseline is null ? proposedParent.Contexts : baseline.Environment(proposedParent);
+            pending.Push((Root, next, proposedParent, inherited));
             try
             {
                 while (pending.TryPop(out (UiElement Element, Widget Next, UiElement? Parent, UiUseEnvironment? Context) item))
@@ -35,7 +37,7 @@ public sealed partial class UiSurface
                     UiElement element = item.Element;
                     Widget widget = item.Next;
                     var environment = UiUseEnvironment.Overlay(item.Context, widget.ProvidedContexts);
-                    if (element.IsMounted && ReferenceEquals(element.Widget, widget) && UiUseEnvironment.Equivalent(element.Contexts, environment))
+                    if (!(refreshContent && ReferenceEquals(element, changedRoot)) && (element.IsMounted || baseline?.Contains(element) == true) && ReferenceEquals(baseline?.Configuration(element) ?? element.Widget, widget) && UiUseEnvironment.Equivalent(baseline?.Contains(element) == true ? baseline.Environment(element) : element.Contexts, environment))
                     {
                         unchanged.Add(element);
                         continue;
@@ -74,7 +76,8 @@ public sealed partial class UiSurface
                             continue;
                         }
 
-                        IReadOnlyList<UiElement> before = slotIndex < element.Slots.Count ? element.Slots[slotIndex] : Array.Empty<UiElement>();
+                        IReadOnlyList<UiElement>[] beforeSlots = baseline?.Slots(element) ?? element.Slots.Select(slot => (IReadOnlyList<UiElement>)slot).ToArray();
+                        IReadOnlyList<UiElement> before = slotIndex < beforeSlots.Length ? beforeSlots[slotIndex] : Array.Empty<UiElement>();
                         if (retainUninitialized && ReferenceEquals(element, changedRoot) && !widget.RebuildsChildTree && definition is { IsInitialized: false } && slotIndex < element.Slots.Count)
                         {
                             slots[slotIndex] = before;
@@ -156,7 +159,7 @@ public sealed partial class UiSurface
                             removed.Add(element);
                         }
 
-                        foreach (UiElement child in element.Children)
+                        foreach (UiElement child in baseline?.Children(element) ?? element.Children)
                         {
                             old.Push(child);
                         }
@@ -164,7 +167,7 @@ public sealed partial class UiSurface
                 }
 
                 Removed = removed.ToArray();
-                if (previous?.Parent is { } parent)
+                if ((previous is null ? null : baseline?.Parent(previous) ?? previous.Parent) is { } parent)
                 {
                     Root = surfaceRoot ?? throw new ArgumentNullException(nameof(surfaceRoot));
                     if (!ReferenceEquals(previous, changedRoot))
@@ -215,7 +218,7 @@ public sealed partial class UiSurface
                     {
                         for (int slot = 0; slot < update.Slots.Length; slot++)
                         {
-                            for (int index = 0; index < update.Slots[slot].Count; index++)
+                            for (int index = 0; slot < update.Element.Slots.Count && index < Math.Min(update.Slots[slot].Count, update.Element.Slots[slot].Count); index++)
                             {
                                 UiElement before = update.Element.Slots[slot][index];
                                 UiElement after = update.Slots[slot][index];
@@ -307,6 +310,8 @@ public sealed partial class UiSurface
             }
         }
 
+        internal UiProposedTree Projection() => new(Root, Updates.Select(update => (update.Element, update.Next, update.Slots)));
+
         internal void FinalizeScrollBindings()
         {
             foreach (ElementUpdate update in Updates)
@@ -381,7 +386,8 @@ public sealed partial class UiSurface
             {
                 update.Invalidation = update.Element.ConfigurationChanges(update.Next) | (update.ChildrenChanged ? UiInvalidation.Layout : UiInvalidation.None);
                 var context = new UiElementUpdateContext(update.Next, update.Slots);
-                update.Commit = update.Content?.Commit + update.Element.Prepare(update.Next, context);
+                update.ContentCommit = update.Content?.Commit;
+                update.Commit = update.Element.Prepare(update.Next, context);
                 update.CancelInput = context.InputCancellationRequested;
             }
         }
@@ -429,9 +435,11 @@ public sealed partial class UiSurface
             }
 
             var entries = new HashSet<UiElement>(ReferenceEqualityComparer.Instance);
+            var freshEntries = new HashSet<UiElement>(ReferenceEqualityComparer.Instance);
             foreach (UiElement element in nodes)
             {
                 IReadOnlyList<UiElement> roots = element.CollectionItemRoots;
+                bool fresh = element.FreshItemRealizations;
                 if (changed.TryGetValue(element, out ElementUpdate? update) && update.Content is { } content)
                 {
                     // Resolve immutable declaration boundaries to this proposal's actual identities.
@@ -439,6 +447,7 @@ public sealed partial class UiSurface
                         ? Array.AsReadOnly(declarations.Select(root => elements[root]).ToArray())
                         : Array.Empty<UiElement>();
                     CollectionItemRootUpdates[element] = roots;
+                    fresh = content.FreshRealizations;
                 }
                 else if (roots.Any(_replacements.ContainsKey))
                 {
@@ -448,6 +457,10 @@ public sealed partial class UiSurface
                 }
 
                 entries.UnionWith(roots);
+                if (fresh)
+                {
+                    freshEntries.UnionWith(roots);
+                }
             }
 
             if (Root.HasIndependentContentOwnership)
@@ -461,12 +474,13 @@ public sealed partial class UiSurface
                 return;
             }
 
-            var scoped = new System.Collections.Generic.Stack<(UiElement Element, bool InItem)>();
-            scoped.Push((Root, false));
-            while (scoped.TryPop(out (UiElement Element, bool InItem) item))
+            var scoped = new System.Collections.Generic.Stack<(UiElement Element, bool InItem, bool Fresh)>();
+            scoped.Push((Root, false, Root.HasIndependentContentOwnership));
+            while (scoped.TryPop(out (UiElement Element, bool InItem, bool Fresh) item))
             {
                 UiElement element = item.Element;
                 bool inItem = item.InItem || entries.Contains(element);
+                bool fresh = item.Fresh || freshEntries.Contains(element);
                 if (inItem)
                 {
                     Widget widget = projection.Configuration(element);
@@ -474,7 +488,7 @@ public sealed partial class UiSurface
                     // An unchanged declaration is legal only on the very same mounted element.
                     int ownMount = element.IsMounted && ReferenceEquals(element.Widget, widget) ? 1 : 0;
                     if (occurrences[widget] != 1 || widget.MountedInstanceCount != ownMount
-                        || (Root.HasIndependentContentOwnership && ownMount == 0 && widget.HasBeenMounted))
+                        || (fresh && ownMount == 0 && widget.HasBeenMounted))
                     {
                         throw new InvalidOperationException("Realized item descendants must be disjoint and cannot be mounted elsewhere.");
                     }
@@ -482,7 +496,7 @@ public sealed partial class UiSurface
 
                 foreach (UiElement child in projection.Children(element))
                 {
-                    scoped.Push((child, inItem));
+                    scoped.Push((child, inItem, fresh));
                 }
             }
         }
@@ -503,6 +517,8 @@ public sealed partial class UiSurface
         internal UiElementContent? Content { get; set; }
 
         internal UiUseEnvironment? Contexts { get; set; } = element.Contexts;
+
+        internal Action? ContentCommit { get; set; }
 
         internal Action? Commit { get; set; }
 
