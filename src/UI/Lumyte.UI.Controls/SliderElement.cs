@@ -11,6 +11,12 @@ public sealed class SliderElement(ControlWidget widget) : SliderElementBase<Cont
     public double Value { get; private set; } = Adopt(widget);
 
     /// <inheritdoc/>
+    protected override bool HasTrackVisual => Widget.TrackTemplate is not null;
+
+    /// <inheritdoc/>
+    protected override bool HasThumbVisual => Widget.ThumbTemplate is not null;
+
+    /// <inheritdoc/>
     protected override UiAutomationActions AutomationActions => base.AutomationActions | UiAutomationActions.SetValue;
 
     /// <inheritdoc/>
@@ -45,6 +51,36 @@ public sealed class SliderElement(ControlWidget widget) : SliderElementBase<Cont
 
     /// <inheritdoc/>
     protected override double? AutomationValue => SliderScale.Fraction(Value, Minimum, Maximum);
+
+    /// <inheritdoc/>
+    protected override UiElementContent? BuildContent(Lumyte.UI.Compose.Definitions.Widget next, UiElementBuildContext context)
+    {
+        var proposed = (ControlWidget)next;
+        if (proposed.TrackTemplate is null && proposed.ThumbTemplate is null)
+        {
+            return null;
+        }
+
+        SliderScale.Validate(proposed.Min, proposed.Max, proposed.Step);
+        if (!double.IsFinite(proposed.Value) || !Enum.IsDefined(proposed.Orientation))
+        {
+            throw new ArgumentOutOfRangeException(nameof(proposed.Value));
+        }
+
+        double value = ReferenceEquals(proposed, Widget) ? Value : Adopt(proposed);
+        var parts = new List<VisualPart>();
+        if (proposed.TrackTemplate is { } track)
+        {
+            parts.Add(new("track", track(new(value)), size => (size, System.Numerics.Vector2.Zero)));
+        }
+
+        if (proposed.ThumbTemplate is { } thumb)
+        {
+            parts.Add(ControlVisuals.ThumbPart("thumb", thumb(new(value)), value, proposed.Min, proposed.Max, proposed.Orientation, proposed.IsReversed));
+        }
+
+        return parts.Count == 0 ? null : new UiElementContent(new ControlVisuals(parts.ToArray()), ownsContent: true);
+    }
 
     /// <inheritdoc/>
     protected override UiInputResult OnInput(in UiInputContext context)
@@ -91,6 +127,12 @@ public sealed class SliderElement(ControlWidget widget) : SliderElementBase<Cont
         }
 
         Value = accepted;
+        if (HasThumbVisual || HasTrackVisual)
+        {
+            InvalidateContent();
+            InvalidateLayout();
+        }
+
         InvalidateDrawing();
         Widget.OnChanged?.Invoke(accepted);
     }

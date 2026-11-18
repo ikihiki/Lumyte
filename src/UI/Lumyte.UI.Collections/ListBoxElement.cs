@@ -364,7 +364,7 @@ public class ListBoxElement<T> : ItemsRepeaterElement<T>, IUiItemViewport
             Widget root;
             if (!previous.TryGetValue(keys[index], out root!))
             {
-                Widget content = declaration.ItemTemplate!(items[index]) ?? throw new InvalidOperationException("An item template returned null.");
+                Widget content = declaration.RealizeItem(items[index]);
                 content.ValidateFreshItemRoot();
                 if (!seen.Add(content))
                 {
@@ -414,7 +414,7 @@ public class ListBoxElement<T> : ItemsRepeaterElement<T>, IUiItemViewport
 
         if (_preparingRange && _rangePreparation?.Adopt is not null && restoreFocusKey is not null && !roots.Any(root => root.Key == restoreFocusKey))
         {
-            Widget root = declaration.ItemTemplate!(items[restoreIndex]) ?? throw new InvalidOperationException("An item template returned null.");
+            Widget root = declaration.RealizeItem(items[restoreIndex]);
             root.ValidateFreshItemRoot();
             if (!seen.Add(root))
             {

@@ -18,6 +18,9 @@ public partial class UiElement
 
     internal UiElementContent? PrepareContent(WidgetDefinition next, UiElementBuildContext context) => BuildContent(next, context);
 
+    /// <summary>Queues owned content reconstruction at the next idle tree update; repeated requests coalesce.</summary>
+    protected void InvalidateContent() => Surface?.QueueContentRefresh(this);
+
     /// <summary>Optionally builds an instance-owned content slot before proposed-tree matching and validation.</summary>
     /// <param name="next">The proposed configuration with resolved construction arguments.</param>
     /// <param name="context">The proposed construction environment.</param>
