@@ -6,7 +6,10 @@
     <RestoreTreatWarningsAsErrors>true</RestoreTreatWarningsAsErrors>
     <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
   </PropertyGroup>
-  <Target Name="RejectPrebuiltRunnerCompilation" BeforeTargets="CoreCompile;Restore" Condition="'$(LUMYTE_PREBUILT_CONSUMER)' == '1'">
+  <Target Name="RejectPrebuiltRunnerCompilation" BeforeTargets="CoreCompile" Condition="'$(LUMYTE_PREBUILT_CONSUMER)' == '1' and ('$(DesignTimeBuild)' != 'true' or '$(SkipCompilerExecution)' != 'true')">
     <Error Text="Prebuilt consumer attempted build runner compilation or restoration." />
+  </Target>
+  <Target Name="RejectPrebuiltRunnerRestore" BeforeTargets="Restore" Condition="'$(LUMYTE_PREBUILT_CONSUMER)' == '1'">
+    <Error Text="Prebuilt consumer attempted build runner restoration." />
   </Target>
 </Project>

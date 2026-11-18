@@ -100,8 +100,8 @@ jobs:
         LUMYTE_SETUP_TOOLS_ONLY=1 bash tools/setup/setup.sh
         source tools/setup/activate.sh
         test "$DOTNET_ROOT" = "$LUMYTE_PREBUILT_SDK_ROOT"
+        bash tools/setup/install-ci-runtime.sh native
         python tools/ci/prebuilt.py verify "$RUNNER_TEMP/prebuilt/native-linux-x64.tar.gz" --kind native --rid linux-x64 --configuration Release --sdk 10.0.403 --nuget-root "$GITHUB_WORKSPACE/artifacts/dev-env/nuget-packages" --check-runtime
-        sudo apt-get install -y libopenal1 xvfb xauth
     - name: Run integration tests (Linux)
       shell: bash
       run: |
@@ -120,8 +120,7 @@ jobs:
       run: |
         source tools/setup/activate.sh
         if ! command -v xvfb-run >/dev/null || ! command -v xauth >/dev/null; then
-          sudo apt-get update
-          sudo apt-get install -y xvfb xauth
+          bash tools/setup/install-ci-runtime.sh native
         fi
         dotnet run --project build -c Release --no-build --no-restore -- --target Test --suite windowing --configuration Release --no-build --no-restore
     - name: Distribution / samples and packages
@@ -180,6 +179,7 @@ jobs:
       LumyteBuildParleyNative: 'false'
       LumyteBuildWgpuNative: 'false'
       LumyteBuildUsvgNative: 'false'
+      LUMYTE_PREBUILT_ROOT: ${{ github.workspace }}
   cpu-linux-x64:
     name: Cpu (linux-x64)
     needs:
@@ -206,8 +206,8 @@ jobs:
         LUMYTE_SETUP_TOOLS_ONLY=1 bash tools/setup/setup.sh
         source tools/setup/activate.sh
         test "$DOTNET_ROOT" = "$LUMYTE_PREBUILT_SDK_ROOT"
+        bash tools/setup/install-ci-runtime.sh native
         python tools/ci/prebuilt.py verify "$RUNNER_TEMP/prebuilt/native-linux-x64.tar.gz" --kind native --rid linux-x64 --configuration Release --sdk 10.0.403 --nuget-root "$GITHUB_WORKSPACE/artifacts/dev-env/nuget-packages" --check-runtime
-        sudo apt-get install -y libopenal1 xvfb xauth
     - name: Run CPU tests
       run: |
         source tools/setup/activate.sh
@@ -226,6 +226,7 @@ jobs:
       LumyteBuildParleyNative: 'false'
       LumyteBuildWgpuNative: 'false'
       LumyteBuildUsvgNative: 'false'
+      LUMYTE_PREBUILT_ROOT: ${{ github.workspace }}
   gpu-linux-x64:
     name: Gpu (linux-x64)
     needs:
@@ -252,8 +253,8 @@ jobs:
         LUMYTE_SETUP_TOOLS_ONLY=1 bash tools/setup/setup.sh
         source tools/setup/activate.sh
         test "$DOTNET_ROOT" = "$LUMYTE_PREBUILT_SDK_ROOT"
+        bash tools/setup/install-ci-runtime.sh native
         python tools/ci/prebuilt.py verify "$RUNNER_TEMP/prebuilt/native-linux-x64.tar.gz" --kind native --rid linux-x64 --configuration Release --sdk 10.0.403 --nuget-root "$GITHUB_WORKSPACE/artifacts/dev-env/nuget-packages" --check-runtime
-        sudo apt-get install -y libopenal1 xvfb xauth
     - name: Native / cold-cache maximum drawing program
       shell: bash
       run: |
@@ -304,6 +305,7 @@ jobs:
       LumyteBuildParleyNative: 'false'
       LumyteBuildWgpuNative: 'false'
       LumyteBuildUsvgNative: 'false'
+      LUMYTE_PREBUILT_ROOT: ${{ github.workspace }}
   quality-linux-x64:
     name: Quality (linux-x64)
     needs:
@@ -330,8 +332,8 @@ jobs:
         LUMYTE_SETUP_TOOLS_ONLY=1 bash tools/setup/setup.sh
         source tools/setup/activate.sh
         test "$DOTNET_ROOT" = "$LUMYTE_PREBUILT_SDK_ROOT"
+        bash tools/setup/install-ci-runtime.sh native
         python tools/ci/prebuilt.py verify "$RUNNER_TEMP/prebuilt/native-linux-x64.tar.gz" --kind native --rid linux-x64 --configuration Release --sdk 10.0.403 --nuget-root "$GITHUB_WORKSPACE/artifacts/dev-env/nuget-packages" --check-runtime
-        sudo apt-get install -y libopenal1 xvfb xauth
     - name: Quality / format and lint (Linux)
       shell: bash
       run: |
@@ -351,6 +353,7 @@ jobs:
       LumyteBuildParleyNative: 'false'
       LumyteBuildWgpuNative: 'false'
       LumyteBuildUsvgNative: 'false'
+      LUMYTE_PREBUILT_ROOT: ${{ github.workspace }}
   native-build-linux-arm64:
     name: Native build (linux-arm64, Release)
     runs-on: ubuntu-24.04-arm
@@ -429,8 +432,8 @@ jobs:
         LUMYTE_SETUP_TOOLS_ONLY=1 bash tools/setup/setup.sh
         source tools/setup/activate.sh
         test "$DOTNET_ROOT" = "$LUMYTE_PREBUILT_SDK_ROOT"
+        bash tools/setup/install-ci-runtime.sh native
         python tools/ci/prebuilt.py verify "$RUNNER_TEMP/prebuilt/native-linux-arm64.tar.gz" --kind native --rid linux-arm64 --configuration Release --sdk 10.0.403 --nuget-root "$GITHUB_WORKSPACE/artifacts/dev-env/nuget-packages" --check-runtime
-        sudo apt-get install -y libopenal1 xvfb xauth
     - name: Run integration tests (Linux)
       shell: bash
       run: |
@@ -445,8 +448,7 @@ jobs:
       run: |
         source tools/setup/activate.sh
         if ! command -v xvfb-run >/dev/null || ! command -v xauth >/dev/null; then
-          sudo apt-get update
-          sudo apt-get install -y xvfb xauth
+          bash tools/setup/install-ci-runtime.sh native
         fi
         dotnet run --project build -c Release --no-build --no-restore -- --target Test --suite windowing --configuration Release --no-build --no-restore
     - name: Verify diagnostic server and game processes
@@ -468,6 +470,7 @@ jobs:
       LumyteBuildParleyNative: 'false'
       LumyteBuildWgpuNative: 'false'
       LumyteBuildUsvgNative: 'false'
+      LUMYTE_PREBUILT_ROOT: ${{ github.workspace }}
   native-build-windows-x64:
     name: Native build (win-x64, Release)
     runs-on: windows-2022
@@ -584,6 +587,7 @@ jobs:
       LumyteBuildParleyNative: 'false'
       LumyteBuildWgpuNative: 'false'
       LumyteBuildUsvgNative: 'false'
+      LUMYTE_PREBUILT_ROOT: ${{ github.workspace }}
   quality-windows-x64:
     name: Quality (win-x64)
     needs:
@@ -631,6 +635,7 @@ jobs:
       LumyteBuildParleyNative: 'false'
       LumyteBuildWgpuNative: 'false'
       LumyteBuildUsvgNative: 'false'
+      LUMYTE_PREBUILT_ROOT: ${{ github.workspace }}
   native-build-windows-arm64:
     name: Native build (win-arm64, Release)
     runs-on: windows-11-arm
@@ -740,6 +745,7 @@ jobs:
       LumyteBuildParleyNative: 'false'
       LumyteBuildWgpuNative: 'false'
       LumyteBuildUsvgNative: 'false'
+      LUMYTE_PREBUILT_ROOT: ${{ github.workspace }}
   browser-build:
     name: Browser publish (one shared workspace)
     runs-on: ubuntu-24.04
@@ -804,8 +810,8 @@ jobs:
         LUMYTE_SETUP_TOOLS_ONLY=1 bash tools/setup/setup.sh
         source tools/setup/activate.sh
         test "$DOTNET_ROOT" = "$LUMYTE_PREBUILT_SDK_ROOT"
+        bash tools/setup/install-ci-runtime.sh browser
         python tools/ci/prebuilt.py verify "$RUNNER_TEMP/prebuilt/browser-linux-x64.tar.gz" --kind browser --rid linux-x64 --configuration Release --sdk 10.0.403 --nuget-root "$GITHUB_WORKSPACE/artifacts/dev-env/nuget-packages" --check-runtime
-        sudo apt-get install -y libopenal1 xvfb xauth
     - name: Install pinned Chrome with bundled SwiftShader
       id: chrome
       uses: browser-actions/setup-chrome@48ad923757ca74d66703209fe939badbdf80f2f4
@@ -852,6 +858,7 @@ jobs:
       LumyteBuildParleyNative: 'false'
       LumyteBuildWgpuNative: 'false'
       LumyteBuildUsvgNative: 'false'
+      LUMYTE_PREBUILT_ROOT: ${{ github.workspace }}
   browser-text:
     name: Browser (text)
     needs:
@@ -878,8 +885,8 @@ jobs:
         LUMYTE_SETUP_TOOLS_ONLY=1 bash tools/setup/setup.sh
         source tools/setup/activate.sh
         test "$DOTNET_ROOT" = "$LUMYTE_PREBUILT_SDK_ROOT"
+        bash tools/setup/install-ci-runtime.sh browser
         python tools/ci/prebuilt.py verify "$RUNNER_TEMP/prebuilt/browser-linux-x64.tar.gz" --kind browser --rid linux-x64 --configuration Release --sdk 10.0.403 --nuget-root "$GITHUB_WORKSPACE/artifacts/dev-env/nuget-packages" --check-runtime
-        sudo apt-get install -y libopenal1 xvfb xauth
     - name: Install pinned Chrome with bundled SwiftShader
       id: chrome
       uses: browser-actions/setup-chrome@48ad923757ca74d66703209fe939badbdf80f2f4
@@ -926,6 +933,7 @@ jobs:
       LumyteBuildParleyNative: 'false'
       LumyteBuildWgpuNative: 'false'
       LumyteBuildUsvgNative: 'false'
+      LUMYTE_PREBUILT_ROOT: ${{ github.workspace }}
   browser-ui-application:
     name: Browser (ui-application)
     needs:
@@ -952,8 +960,8 @@ jobs:
         LUMYTE_SETUP_TOOLS_ONLY=1 bash tools/setup/setup.sh
         source tools/setup/activate.sh
         test "$DOTNET_ROOT" = "$LUMYTE_PREBUILT_SDK_ROOT"
+        bash tools/setup/install-ci-runtime.sh browser
         python tools/ci/prebuilt.py verify "$RUNNER_TEMP/prebuilt/browser-linux-x64.tar.gz" --kind browser --rid linux-x64 --configuration Release --sdk 10.0.403 --nuget-root "$GITHUB_WORKSPACE/artifacts/dev-env/nuget-packages" --check-runtime
-        sudo apt-get install -y libopenal1 xvfb xauth
     - name: Install pinned Chrome with bundled SwiftShader
       id: chrome
       uses: browser-actions/setup-chrome@48ad923757ca74d66703209fe939badbdf80f2f4
@@ -1000,6 +1008,7 @@ jobs:
       LumyteBuildParleyNative: 'false'
       LumyteBuildWgpuNative: 'false'
       LumyteBuildUsvgNative: 'false'
+      LUMYTE_PREBUILT_ROOT: ${{ github.workspace }}
   browser-ui-navigation:
     name: Browser (ui-navigation)
     needs:
@@ -1026,8 +1035,8 @@ jobs:
         LUMYTE_SETUP_TOOLS_ONLY=1 bash tools/setup/setup.sh
         source tools/setup/activate.sh
         test "$DOTNET_ROOT" = "$LUMYTE_PREBUILT_SDK_ROOT"
+        bash tools/setup/install-ci-runtime.sh browser
         python tools/ci/prebuilt.py verify "$RUNNER_TEMP/prebuilt/browser-linux-x64.tar.gz" --kind browser --rid linux-x64 --configuration Release --sdk 10.0.403 --nuget-root "$GITHUB_WORKSPACE/artifacts/dev-env/nuget-packages" --check-runtime
-        sudo apt-get install -y libopenal1 xvfb xauth
     - name: Install pinned Chrome with bundled SwiftShader
       id: chrome
       uses: browser-actions/setup-chrome@48ad923757ca74d66703209fe939badbdf80f2f4
@@ -1074,6 +1083,7 @@ jobs:
       LumyteBuildParleyNative: 'false'
       LumyteBuildWgpuNative: 'false'
       LumyteBuildUsvgNative: 'false'
+      LUMYTE_PREBUILT_ROOT: ${{ github.workspace }}
   browser-ui-pages:
     name: Browser (ui-pages)
     needs:
@@ -1100,8 +1110,8 @@ jobs:
         LUMYTE_SETUP_TOOLS_ONLY=1 bash tools/setup/setup.sh
         source tools/setup/activate.sh
         test "$DOTNET_ROOT" = "$LUMYTE_PREBUILT_SDK_ROOT"
+        bash tools/setup/install-ci-runtime.sh browser
         python tools/ci/prebuilt.py verify "$RUNNER_TEMP/prebuilt/browser-linux-x64.tar.gz" --kind browser --rid linux-x64 --configuration Release --sdk 10.0.403 --nuget-root "$GITHUB_WORKSPACE/artifacts/dev-env/nuget-packages" --check-runtime
-        sudo apt-get install -y libopenal1 xvfb xauth
     - name: Install pinned Chrome with bundled SwiftShader
       id: chrome
       uses: browser-actions/setup-chrome@48ad923757ca74d66703209fe939badbdf80f2f4
@@ -1148,6 +1158,7 @@ jobs:
       LumyteBuildParleyNative: 'false'
       LumyteBuildWgpuNative: 'false'
       LumyteBuildUsvgNative: 'false'
+      LUMYTE_PREBUILT_ROOT: ${{ github.workspace }}
   browser-ui-transitions:
     name: Browser (ui-transitions)
     needs:
@@ -1174,8 +1185,8 @@ jobs:
         LUMYTE_SETUP_TOOLS_ONLY=1 bash tools/setup/setup.sh
         source tools/setup/activate.sh
         test "$DOTNET_ROOT" = "$LUMYTE_PREBUILT_SDK_ROOT"
+        bash tools/setup/install-ci-runtime.sh browser
         python tools/ci/prebuilt.py verify "$RUNNER_TEMP/prebuilt/browser-linux-x64.tar.gz" --kind browser --rid linux-x64 --configuration Release --sdk 10.0.403 --nuget-root "$GITHUB_WORKSPACE/artifacts/dev-env/nuget-packages" --check-runtime
-        sudo apt-get install -y libopenal1 xvfb xauth
     - name: Install pinned Chrome with bundled SwiftShader
       id: chrome
       uses: browser-actions/setup-chrome@48ad923757ca74d66703209fe939badbdf80f2f4
@@ -1232,6 +1243,7 @@ jobs:
       LumyteBuildParleyNative: 'false'
       LumyteBuildWgpuNative: 'false'
       LumyteBuildUsvgNative: 'false'
+      LUMYTE_PREBUILT_ROOT: ${{ github.workspace }}
   browser-audio:
     name: Browser (audio)
     needs:
@@ -1258,8 +1270,8 @@ jobs:
         LUMYTE_SETUP_TOOLS_ONLY=1 bash tools/setup/setup.sh
         source tools/setup/activate.sh
         test "$DOTNET_ROOT" = "$LUMYTE_PREBUILT_SDK_ROOT"
+        bash tools/setup/install-ci-runtime.sh browser
         python tools/ci/prebuilt.py verify "$RUNNER_TEMP/prebuilt/browser-linux-x64.tar.gz" --kind browser --rid linux-x64 --configuration Release --sdk 10.0.403 --nuget-root "$GITHUB_WORKSPACE/artifacts/dev-env/nuget-packages" --check-runtime
-        sudo apt-get install -y libopenal1 xvfb xauth
     - name: Install pinned Chrome with bundled SwiftShader
       id: chrome
       uses: browser-actions/setup-chrome@48ad923757ca74d66703209fe939badbdf80f2f4
@@ -1306,6 +1318,7 @@ jobs:
       LumyteBuildParleyNative: 'false'
       LumyteBuildWgpuNative: 'false'
       LumyteBuildUsvgNative: 'false'
+      LUMYTE_PREBUILT_ROOT: ${{ github.workspace }}
   aot-build:
     name: Aot publish (one shared workspace)
     runs-on: ubuntu-24.04
@@ -1370,8 +1383,8 @@ jobs:
         LUMYTE_SETUP_TOOLS_ONLY=1 bash tools/setup/setup.sh
         source tools/setup/activate.sh
         test "$DOTNET_ROOT" = "$LUMYTE_PREBUILT_SDK_ROOT"
+        bash tools/setup/install-ci-runtime.sh aot
         python tools/ci/prebuilt.py verify "$RUNNER_TEMP/prebuilt/aot-linux-x64.tar.gz" --kind aot --rid linux-x64 --configuration Release --sdk 10.0.403 --nuget-root "$GITHUB_WORKSPACE/artifacts/dev-env/nuget-packages" --check-runtime
-        sudo apt-get install -y libopenal1 xvfb xauth
     - name: Execute prebuilt AOT outputs
       run: |-
         source tools/setup/activate.sh
@@ -1390,6 +1403,7 @@ jobs:
       LumyteBuildParleyNative: 'false'
       LumyteBuildWgpuNative: 'false'
       LumyteBuildUsvgNative: 'false'
+      LUMYTE_PREBUILT_ROOT: ${{ github.workspace }}
   aot-balanced-2:
     name: Aot (balanced-2)
     needs:
@@ -1416,8 +1430,8 @@ jobs:
         LUMYTE_SETUP_TOOLS_ONLY=1 bash tools/setup/setup.sh
         source tools/setup/activate.sh
         test "$DOTNET_ROOT" = "$LUMYTE_PREBUILT_SDK_ROOT"
+        bash tools/setup/install-ci-runtime.sh aot
         python tools/ci/prebuilt.py verify "$RUNNER_TEMP/prebuilt/aot-linux-x64.tar.gz" --kind aot --rid linux-x64 --configuration Release --sdk 10.0.403 --nuget-root "$GITHUB_WORKSPACE/artifacts/dev-env/nuget-packages" --check-runtime
-        sudo apt-get install -y libopenal1 xvfb xauth
     - name: Execute prebuilt AOT outputs
       run: |-
         source tools/setup/activate.sh
@@ -1436,6 +1450,7 @@ jobs:
       LumyteBuildParleyNative: 'false'
       LumyteBuildWgpuNative: 'false'
       LumyteBuildUsvgNative: 'false'
+      LUMYTE_PREBUILT_ROOT: ${{ github.workspace }}
   package:
     name: Parley native NuGet package
     needs:

@@ -161,6 +161,7 @@ internal sealed partial class Build : FalloutBuild
         {
             ["LUMYTE_BUILD_ASSEMBLY"] = Assembly.GetExecutingAssembly().Location,
             ["LumyteAgilityChannel"] = SelectedAgilityChannel,
+            ["LUMYTE_PREBUILT_ROOT"] = Environment.GetEnvironmentVariable("LUMYTE_PREBUILT_CONSUMER") == "1" ? RepositoryDirectory : null,
         };
         overrides.TryAdd("LUMYTE_LANE_CATALOG", null);
         overrides.TryAdd("LUMYTE_LANE_INVENTORY", null);
@@ -175,7 +176,7 @@ internal sealed partial class Build : FalloutBuild
             arguments = [.. arguments, "-m:1"];
         }
 
-        return ProcessRunner.RunAsync(DotNetExecutable, arguments, RootDirectory, overrides);
+        return ProcessRunner.RunAsync(DotNetExecutable, arguments, RootDirectory, overrides, includeStandardError: arguments.FirstOrDefault() == "format");
     }
 
     private Task<string> NodeAsync(params string[] arguments) => ToolAsync(NodeExecutable, arguments);

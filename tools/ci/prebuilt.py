@@ -79,6 +79,8 @@ def allowed(name):
         return False
     q = p[1:]
     rel = '/'.join(q)
+    if len(q) >= 5 and q[:3] == ('tools', 'shaders', 'Lumyte.ShaderCompiler'):
+        return q[3] in ('bin', 'obj')
     if q and q[0] in ('build', 'src', 'tests', 'samples', 'benchmarks'):
         return any(x in ('bin', 'obj') for x in q[1:-1])
     if len(q) >= 5 and q[:2] == ('artifacts', 'build') and q[2] not in ('tools', 'invocations'):
@@ -96,6 +98,18 @@ def git(root, *args):
     return subprocess.check_output(['git', '-C', str(root), *args])
 
 
+def source_content(path, name):
+    data = path.read_bytes()
+    if name == '.fallout/build.schema.json':
+        # Fallout rewrites this tracked JSON with Environment.NewLine. Its
+        # .gitattributes eol=lf checkout and Windows-generated CRLF form are
+        # identical source metadata, but all content edits remain hash-bound.
+        # This narrow text-only rule never changes source or payload files.
+        json.loads(data)
+        data = data.replace(bytes((13, 10)), bytes((10,)))
+    return data
+
+
 def identity(root, nuget, rid, configuration, sdk):
     closure = []
     for name in sorted(filter(None, git(root, 'ls-files', '-z').decode().split(chr(0)))):
@@ -104,7 +118,7 @@ def identity(root, nuget, rid, configuration, sdk):
         require(not p.is_dir(), 'submodules unsupported: ' + name)
         no_link_parents(p.parent)
         closure.append([name, 'link' if p.is_symlink() else 'file',
-                        digest(os.readlink(p).encode() if p.is_symlink() else p.read_bytes()),
+                        digest(os.readlink(p).encode() if p.is_symlink() else source_content(p, name)),
                         bool(p.lstat().st_mode & 0o111)])
     run = os.environ.get('GITHUB_RUN_ID', '')
     require(run, 'GITHUB_RUN_ID is required')
@@ -115,6 +129,26 @@ def identity(root, nuget, rid, configuration, sdk):
                 rid=rid, configuration=configuration, sdk=sdk, run=run,
                 sdk_root=os.environ.get('LUMYTE_PREBUILT_SDK_ROOT', os.environ.get('DOTNET_ROOT', '')),
                 abi=list(platform.libc_ver()))
+
+
+def require_identity(actual, expected):
+    if actual == expected:
+        return
+    if not isinstance(actual, dict):
+        raise Invalid('prebuilt identity mismatch: identity is not an object')
+    fields = sorted(set(actual) | set(expected))
+    differences = []
+    # Identity values are non-secret paths, hashes and scalar build context,
+    # never source contents, auth configuration or artifact download URLs.
+    for field in fields:
+        if actual.get(field) != expected.get(field):
+            label = repr(field)[:100]
+            if field in expected:
+                differences.append(label + ': producer=' + repr(actual.get(field))[:512]
+                                   + '; consumer=' + repr(expected.get(field))[:512])
+            else:
+                differences.append(label + ': unexpected producer identity field')
+    raise Invalid('prebuilt identity mismatch: ' + ' | '.join(differences))
 
 
 def no_link_parents(path):
@@ -180,7 +214,8 @@ def require_package_root(assets, nuget, label, windows=None):
 
 def collect(root, nuget):
     paths = {}
-    for base in ('build', 'src', 'tests', 'samples', 'benchmarks', 'artifacts'):
+    for base in ('build', 'src', 'tests', 'samples', 'benchmarks',
+                 'tools/shaders/Lumyte.ShaderCompiler', 'artifacts'):
         for directory, dirs, files in os.walk(root / base, followlinks=False):
             rel = Path(directory).relative_to(root).as_posix()
             if base == 'artifacts':
@@ -300,7 +335,7 @@ def verify(archive, root, nuget, expected, extract=False, check_runtime=False):
         with read_archive(raw) as tf:
             manifest = read_manifest(tf)
             require(manifest.get('version') == 1, 'unsupported manifest')
-            require(manifest.get('identity') == expected, 'prebuilt identity mismatch')
+            require_identity(manifest.get('identity'), expected)
             require(expected['rid'].startswith('win-') == (platform.system() == 'Windows'), 'RID/OS mismatch')
             machine = platform.machine().lower()
             require(expected['rid'].endswith('-arm64') == (machine in ('aarch64', 'arm64')), 'RID/architecture mismatch')

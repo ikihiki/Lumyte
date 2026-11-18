@@ -13,8 +13,14 @@
   </ItemGroup>
   <!-- Consumers may evaluate metadata and compile isolated fixtures, never the
        checkout's canonical product projects. This also covers nested dotnet. -->
-  <Target Name="RejectPrebuiltProductCompilation" BeforeTargets="CoreCompile;Restore;BuildLumyteParleyNative;BuildLumyteWgpuNative;BuildLumyteUsvgNative;BuildLumyteDirect3D12Native;BuildLumyteParleyWasm"
-          Condition="'$(LUMYTE_PREBUILT_CONSUMER)' == '1' and ($([System.String]::Copy('$(MSBuildProjectDirectory)').StartsWith('$(MSBuildThisFileDirectory)src')) or $([System.String]::Copy('$(MSBuildProjectDirectory)').StartsWith('$(MSBuildThisFileDirectory)samples')) or $([System.String]::Copy('$(MSBuildProjectDirectory)').StartsWith('$(MSBuildThisFileDirectory)tests')) or $([System.String]::Copy('$(MSBuildProjectDirectory)').StartsWith('$(MSBuildThisFileDirectory)benchmarks')) or '$(MSBuildProjectDirectory)' == '$(MSBuildThisFileDirectory)build')">
+  <!-- MSBuildWorkspace evaluates CoreCompile with both switches to collect
+       compiler arguments; the Csc task must not execute a compiler. -->
+  <Target Name="RejectPrebuiltProductCompilation" BeforeTargets="CoreCompile"
+          Condition="'$(LUMYTE_PREBUILT_CONSUMER)' == '1' and ($([System.String]::Copy('$(MSBuildProjectDirectory)').StartsWith('$(MSBuildThisFileDirectory)src')) or $([System.String]::Copy('$(MSBuildProjectDirectory)').StartsWith('$(MSBuildThisFileDirectory)samples')) or $([System.String]::Copy('$(MSBuildProjectDirectory)').StartsWith('$(MSBuildThisFileDirectory)tests')) or $([System.String]::Copy('$(MSBuildProjectDirectory)').StartsWith('$(MSBuildThisFileDirectory)benchmarks')) or '$(MSBuildProjectDirectory)' == '$([MSBuild]::NormalizePath($(MSBuildThisFileDirectory), tools, shaders, Lumyte.ShaderCompiler))' or '$(MSBuildProjectDirectory)' == '$(MSBuildThisFileDirectory)build') and ('$(DesignTimeBuild)' != 'true' or '$(SkipCompilerExecution)' != 'true')">
     <Error Text="Prebuilt consumer attempted product compilation or restoration: $(MSBuildProjectFullPath)" />
+  </Target>
+  <Target Name="RejectPrebuiltProductPreparation" BeforeTargets="Restore;CompileSlangShaders;BuildLumyteParleyNative;BuildLumyteWgpuNative;BuildLumyteUsvgNative;BuildLumyteDirect3D12Native;BuildLumyteParleyWasm"
+          Condition="'$(LUMYTE_PREBUILT_CONSUMER)' == '1' and ($([System.String]::Copy('$(MSBuildProjectDirectory)').StartsWith('$(MSBuildThisFileDirectory)src')) or $([System.String]::Copy('$(MSBuildProjectDirectory)').StartsWith('$(MSBuildThisFileDirectory)samples')) or $([System.String]::Copy('$(MSBuildProjectDirectory)').StartsWith('$(MSBuildThisFileDirectory)tests')) or $([System.String]::Copy('$(MSBuildProjectDirectory)').StartsWith('$(MSBuildThisFileDirectory)benchmarks')) or '$(MSBuildProjectDirectory)' == '$([MSBuild]::NormalizePath($(MSBuildThisFileDirectory), tools, shaders, Lumyte.ShaderCompiler))' or '$(MSBuildProjectDirectory)' == '$(MSBuildThisFileDirectory)build')">
+    <Error Text="Prebuilt consumer attempted product restoration or native source build: $(MSBuildProjectFullPath)" />
   </Target>
 </Project>

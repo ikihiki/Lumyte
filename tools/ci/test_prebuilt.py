@@ -122,6 +122,13 @@ class TransportTests(unittest.TestCase):
             self.create()
         self.assertFalse(self.archive.exists())
 
+    def test_identity_diagnostics_name_only_differing_fields_and_safe_values(self):
+        with self.assertRaises(p.Invalid) as caught:
+            p.require_identity({'rid': 'win-x64', 'sdk_root': 'D:/SDK'},
+                               {'rid': 'win-x64', 'sdk_root': 'D:/Other'})
+        self.assertIn("'sdk_root': producer='D:/SDK'; consumer='D:/Other'", str(caught.exception))
+        self.assertNotIn("'rid'", str(caught.exception))
+
     def test_all_identity_mismatches_before_writes(self):
         self.create()
         self.fresh()
@@ -131,6 +138,29 @@ class TransportTests(unittest.TestCase):
                 with self.assertRaisesRegex(p.Invalid, 'identity mismatch'):
                     self.verify(wrong, extract=True)
         self.assertFalse((self.root / 'src/P').exists())
+
+    def test_generated_schema_line_endings_match_but_edits_and_binary_changes_do_not(self):
+        self.put('.fallout/build.schema.json', '{\n  "schema": 1\n}\n')
+        self.git('add', '.fallout/build.schema.json')
+        self.git('commit', '-qm', 'schema fixture')
+        original = self.identity()
+        schema = self.root / '.fallout/build.schema.json'
+        schema.write_bytes(schema.read_bytes().replace(b'\n', b'\r\n'))
+        self.assertEqual(original, self.identity())
+        self.expected = original
+        self.create()
+        schema.write_bytes(schema.read_bytes().replace(b'\r\n', b'\n'))
+        self.fresh()
+        self.verify(self.identity(), extract=True)
+        schema.write_bytes(schema.read_bytes().replace(b'1', b'2'))
+        self.assertNotEqual(original['source_sha256'], self.identity()['source_sha256'])
+        binary = self.root / 'src/binary.dat'
+        binary.write_bytes(b'\0binary\r\n')
+        self.git('add', 'src/binary.dat')
+        self.git('commit', '-qm', 'binary fixture')
+        before = self.identity()
+        binary.write_bytes(b'\0binary\n')
+        self.assertNotEqual(before['source_sha256'], self.identity()['source_sha256'])
 
     def test_dirty_source_and_actual_head(self):
         before = self.identity()
@@ -312,6 +342,23 @@ class TransportTests(unittest.TestCase):
         with self.assertRaises(p.Invalid):
             p.require_package_root({'packageFolders': {'/repo/Packages': {}}},
                                    '/repo/packages', 'fixture', windows=False)
+
+    def test_shader_helper_exact_project_outputs_and_assets_are_transferred(self):
+        self.put('tools/shaders/Lumyte.ShaderCompiler/bin/Release/net10.0/Lumyte.ShaderCompiler.dll', 'helper')
+        self.put('tools/shaders/Lumyte.ShaderCompiler/obj/project.assets.json',
+                 (self.root / 'src/P/obj/project.assets.json').read_text())
+        self.put('tools/setup/private/bin/secret', 'excluded')
+        self.create()
+        entries = self.verify()['entries']
+        self.assertIn('workspace/tools/shaders/Lumyte.ShaderCompiler/obj/project.assets.json', entries)
+        self.assertIn('workspace/tools/shaders/Lumyte.ShaderCompiler/bin/Release/net10.0/Lumyte.ShaderCompiler.dll', entries)
+        self.assertFalse(any('tools/setup/private' in name for name in entries))
+        self.assertTrue(any(name.startswith('nuget/example/1.0/') for name in entries))
+        shutil.rmtree(self.root / 'tools/shaders/Lumyte.ShaderCompiler')
+        self.fresh()
+        self.verify(extract=True)
+        self.assertTrue((self.root / 'tools/shaders/Lumyte.ShaderCompiler/obj/project.assets.json').is_file())
+        self.assertEqual((self.root / 'tools/shaders/Lumyte.ShaderCompiler/bin/Release/net10.0/Lumyte.ShaderCompiler.dll').read_text(), 'helper')
 
     def test_wrong_nuget_root_in_assets(self):
         self.put('src/P/obj/project.assets.json', json.dumps({'packageFolders': {'/wrong/': {}}}))

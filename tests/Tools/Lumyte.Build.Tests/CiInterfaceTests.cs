@@ -175,6 +175,20 @@ public sealed class CiInterfaceTests
         }
     }
 
+    /// <summary>dotnet format cannot silently skip a project whose metadata failed to load.</summary>
+    /// <returns>The completed fail-closed workspace assertion.</returns>
+    [Fact]
+    [Trait("Execution", "Integration")]
+    public async Task QualityRejectsZeroExitWorkspaceLoadFailuresAsync()
+    {
+        using var fixture = new BuildFixture();
+        fixture.Environment["LUMYTE_TEST_FORMAT_WORKSPACE_FAILURE"] = "1";
+        BuildFixture.ProcessResult result = await fixture.RunAsync("Quality", "--project", fixture.Project, "--dotnet-path", fixture.DotnetTool);
+        Assert.NotEqual(0, result.ExitCode);
+        Assert.Contains("Quality refused an incomplete MSBuild workspace", result.Output + result.Error, StringComparison.Ordinal);
+        Assert.Single(fixture.Records("dotnet"));
+    }
+
     /// <summary>GPU validation output follows the classified SDK test, never a failing gate.</summary>
     /// <param name="failTest">Whether the managed GPU gate fails.</param>
     /// <returns>The completed output ordering assertion.</returns>

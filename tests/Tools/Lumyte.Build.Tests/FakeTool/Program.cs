@@ -65,6 +65,11 @@ internal static class Program
                 }
             }
 
+            if (args.FirstOrDefault() == "format" && Environment.GetEnvironmentVariable("LUMYTE_TEST_FORMAT_WORKSPACE_FAILURE") == "1")
+            {
+                Console.Error.WriteLine("Msbuild failed when processing the file fixture.csproj with message: simulated load failure");
+            }
+
             if (args.FirstOrDefault() == "msbuild" && args.Contains("-getProperty:IsPackable", StringComparer.Ordinal))
             {
                 var project = XDocument.Load(args[1]);

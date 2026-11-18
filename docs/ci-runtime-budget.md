@@ -43,7 +43,8 @@ interchanged. Default developer commands still build/publish and test. Explicit
 Standard pinned Actions upload/download-artifact transports a standard gzip-compressed tar.
 The small stdlib helper validates the entire payload before extraction, retaining
 executable modes and safe relative symlinks. It binds actual checkout HEAD
-(including PR synthetic merge SHA), tracked source contents/modes, OS/architecture,
+(including PR synthetic merge SHA), tracked source contents/modes (with generated-schema newline canonicalization),
+OS/architecture,
 RID, configuration, SDK, publication kind, run ID, absolute workspace and
 NuGet root. Hashes protect integrity, not against replacement by an untrusted
 publisher; normal Actions same-run/ref trust remains essential.
@@ -73,7 +74,7 @@ NuGet imports/adapters, final native binaries/provenance/staged licenses, runtim
 DXC/Mesa libraries and Browser/AOT published outputs. Cargo targets, Rustup,
 download caches, whole user profiles, credentials and source trees are excluded.
 New final-output locations require an explicit allowlist change. Consumer jobs
-are isolated fresh workspaces. MSBuild rejects canonical product CoreCompile,
+are isolated fresh workspaces. MSBuild rejects actual canonical product compilation,
 restore and native hooks while allowing fixtures outside canonical source roots.
 
 ### Retained stage coverage
@@ -111,6 +112,62 @@ transport/SDK adapter boundary, not a claim that every native/Windows/Browser/AO
 runtime has been exercised locally. Full hosted terminal CI, artifact size and
 actual remote product-build counts remain required after parent review/push.
 Old-head CI cannot validate this graph. No old run was cancelled or restarted.
+
+### Hosted consumer fixes after successful producer transport
+
+Run 44293546120 proved all six producers and compressed uploads successful, but
+exposed three consumer prerequisites. The fixes preserve producer-once and all
+seventeen parallel consumers; no fallback product restore/build was added.
+
+- Linux runtime installation now uses install-ci-runtime.sh. It sources the
+  existing signed CI APT routing, updates fresh indexes and installs packages
+  using identical options. Native gets OpenAL/Xvfb/xauth; Browser/AOT get OpenAL.
+  No host sources or authentication policy are changed. Fake-APT tests cover all
+  roles, ordering, option equality and fail-closed errors; the tests are required
+  Linux host contracts, not real Browser API checks.
+- Windows source identity divergence is proven, not an SDK-path guess: the clean
+  merge checkout hashes to fc6900872167246958a5c1d2d861539eb9ed9d9a3280220bf1e6dcb8c50eb702.
+  Changing only .fallout/build.schema.json from LF to Fallout's Windows-generated
+  CRLF reproduces the actual producer hash
+  c99550ab8665d4dbc4b5d2d806b637d7b6f8fde2a2ce1d1a375567ca93423108 exactly.
+  Only that known generated JSON metadata is fingerprinted with LF, consistent
+  with its Git text policy. Its meaningful content edits still fail; code/binary
+  bytes, executable modes, SDK roots, actual merge SHA, run/RID/config/ABI checks
+  remain strict. No source or archive payload is rewritten. Identity errors now
+  name differing fields and safe producer/consumer values. Reproduction log:
+  /tmp/lumyte-windows-source-repro.log.
+- The canonical tools/shaders/Lumyte.ShaderCompiler bin/obj and exact NuGet imports
+  are explicitly transported; other tools/private caches remain excluded. Native
+  producers already build this ProjectReference once. Canonical consumers resolve
+  its evaluated TargetPath, never Build. A checkout-root-bound scope preserves
+  temporary copied-source fixture builds and alternate output layout tests.
+  Canonical shader helper CoreCompile/Restore remains guarded.
+
+Fresh full-fixture extraction removed all producer bin/obj, the helper bin/obj and
+its entire private NuGet root. The complete host Integration category then passed:
+**30 projects, 953 passed**, zero failures, with six existing conditional skips
+(two optional audio benchmarks, three separately required X11 cases and one
+optional Browser benchmark). OpenAL opt-ins were enabled and all ten passed.
+All 92 graphics Integration cases passed, including the five offline Mesh cases
+and both copied-source/alternate-output fixtures. The same restored consumer then
+passed CPU: **49 projects, 3,836 passed**, zero failures/skips. Logs:
+/tmp/lumyte-consumer-fixes-fresh-extract.log,
+/tmp/lumyte-consumer-fixes-full-integration.log and
+/tmp/lumyte-consumer-fixes-full-cpu.log. Local Xvfb is unavailable; dedicated X11
+execution remains an unchanged required hosted gate.
+
+Quality needs compiler-free MSBuildWorkspace evaluation, not product compilation.
+The guard permits CoreCompile metadata evaluation only when both DesignTimeBuild
+and SkipCompilerExecution are true; either flag alone still fails, as does any
+Restore/native build or canonical Slang compilation. Actual product DLL hashes remain unchanged. Design-time shader compilation is
+also suppressed, while temporary fixture shader inputs still compile normally. Quality now
+captures diagnostic workspace errors (including stderr) and rejects incomplete
+workspaces even when dotnet format itself exits zero. The complete guarded host
+Quality gate analyzed **4,403 files**, formatted zero, reported zero workspace
+load failures, and passed managed/native/370-file Markdown checks. Logs:
+/tmp/lumyte-consumer-quality-final.log and the new zero-exit workspace-failure
+orchestration regression. Required host Node contracts: **245 passed**, one existing
+optional skip; signed APT contracts independently pass all eighteen tests.
 
 ### Disk-bounded streaming compression
 
@@ -193,12 +250,12 @@ ARM/Windows/GPU proof.
   dependency paths were provided, not a hosted cold-build timing claim.
 - CPU: 49 projects, 3,836 passed, no failures/skips; one SDK invocation with the
   prebuilt consumer guard enabled and fresh discovery/TRX.
-- Orchestration: **345 passed**, zero failures/skips, including the real
+- Orchestration: **346 passed**, zero failures/skips, including the real
   producer-to-two-AOT-consumers executable fixture and all no-publish contracts.
 - Relevant Integration orchestration: 227 passed with no-build/no-restore and
   the consumer guard enabled. Node contracts: 235 passed, one optional skip.
-- Transport: 50 Python security/closure tests across raw tar and gzip;
-  graph/shell contracts: seven tests.
+- Transport: 56 Python security/closure tests across raw tar and gzip;
+  graph/shell contracts: nine tests.
   Seven YAML files and XML/Python syntax parse. Managed/build format and all
   370 Markdown files pass.
 - Real clean-output product proof: Lumyte.Memory plus its DI library and test

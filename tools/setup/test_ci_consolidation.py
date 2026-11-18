@@ -2,6 +2,7 @@
 import re
 import subprocess
 import unittest
+import xml.etree.ElementTree as ET
 from pathlib import Path
 
 import yaml
@@ -34,6 +35,7 @@ class ConsolidationTests(unittest.TestCase):
                 self.assertEqual(jobs[consumer]["needs"], [key])
                 self.assertEqual(jobs[consumer]["runs-on"], jobs[key]["runs-on"])
                 self.assertEqual(jobs[consumer]["env"]["LUMYTE_PREBUILT_CONSUMER"], "1")
+                self.assertEqual(jobs[consumer]["env"]["LUMYTE_PREBUILT_ROOT"], "$" + "{{ github.workspace }}")
         self.assertEqual(len(consumers), 8)
         self.assertIn("cpu-linux-x64", consumers)
         self.assertIn("gpu-linux-x64", consumers)
@@ -100,6 +102,30 @@ class ConsolidationTests(unittest.TestCase):
                 if 'actions/upload-artifact@' in step.get('uses', '') and step['with'].get('name', '').startswith('prebuilt-'):
                     self.assertTrue(step['with']['path'].endswith('.tar.gz'))
                     self.assertEqual(step['with']['compression-level'], 0)
+
+    def test_runtime_roles_use_signed_helper_before_reverification(self):
+        for key, job in self.jobs.items():
+            if 'needs' not in job or key == 'package' or job['runs-on'].startswith('windows'):
+                continue
+            step = next(step for step in job['steps'] if step.get('name') == 'Provision tools and runtime only (no product compilation)')
+            kind = 'browser' if key.startswith('browser-') else 'aot' if key.startswith('aot-') else 'native'
+            self.assertIn('bash tools/setup/install-ci-runtime.sh ' + kind, step['run'])
+            self.assertLess(step['run'].index('install-ci-runtime.sh'), step['run'].index('--check-runtime'))
+            self.assertNotIn('sudo apt-get install', step['run'])
+
+    def test_metadata_analysis_skips_compilers_and_keeps_actual_build_guards(self):
+        props = ET.parse(ROOT / 'Directory.Build.props').getroot()
+        compile_guard = next(t for t in props.findall('Target') if t.get('Name') == 'RejectPrebuiltProductCompilation')
+        self.assertEqual(compile_guard.get('BeforeTargets'), 'CoreCompile')
+        self.assertIn("'$(DesignTimeBuild)' != 'true' or '$(SkipCompilerExecution)' != 'true'", compile_guard.get('Condition'))
+        preparation = next(t for t in props.findall('Target') if t.get('Name') == 'RejectPrebuiltProductPreparation')
+        self.assertIn('Restore', preparation.get('BeforeTargets').split(';'))
+        self.assertIn('CompileSlangShaders', preparation.get('BeforeTargets').split(';'))
+        self.assertIn('Lumyte.ShaderCompiler', preparation.get('Condition'))
+        slang = ET.parse(ROOT / 'tools/shaders/Slang.targets').getroot()
+        target = next(t for t in slang.findall('Target') if t.get('Name') == 'CompileSlangShaders')
+        self.assertIn("'$(DesignTimeBuild)' != 'true'", target.get('Condition'))
+        self.assertIn('LUMYTE_PREBUILT_ROOT', ET.tostring(slang, encoding='unicode'))
 
     def test_bash_syntax(self):
         for job in self.jobs.values():
