@@ -205,9 +205,171 @@ public sealed class ShaderToolOutputPathTests
         }
     }
 
+    /// <summary>A bare PATH compiler is a file dependency, not a perpetually missing relative file.</summary>
+    /// <returns>The isolated fake-compiler invocation-count verification.</returns>
+    /// <param name="absoluteCompiler">Selects the original explicit absolute compiler control.</param>
+    [LinuxTheory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task DefaultPathCompilerIsIncrementalWithoutAnOverrideAsync(bool absoluteCompiler)
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return; // POSIX fake execution is not Windows runtime coverage.
+        }
+
+        string? root = AppContext.BaseDirectory;
+        while (root is not null && !File.Exists(Path.Combine(root, "tools", "shaders", "Slang.targets")))
+        {
+            root = Path.GetDirectoryName(root);
+        }
+
+        Assert.NotNull(root);
+        string directory = Path.Combine(Path.GetTempPath(), "lumyte-default-tool-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(directory);
+        try
+        {
+            string[] sources = ["tools/shaders/Lumyte.ShaderCompiler", "src/Graphics/Lumyte.Graphics.Shaders", "src/Graphics/Lumyte.Graphics.Abstractions"];
+            foreach (string source in sources)
+            {
+                foreach (string file in Directory.EnumerateFiles(Path.Combine(root, source), "*", SearchOption.AllDirectories))
+                {
+                    string relative = Path.GetRelativePath(Path.Combine(root, source), file);
+                    if (relative.Split(Path.DirectorySeparatorChar).Any(part => part is "bin" or "obj"))
+                    {
+                        continue;
+                    }
+
+                    string destination = Path.Combine(directory, source, relative);
+                    Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
+                    File.Copy(file, destination);
+                }
+            }
+
+            string targets = Path.Combine(directory, "tools/shaders/Slang.targets");
+            File.Copy(Path.Combine(root, "tools/shaders/Slang.targets"), targets);
+            Directory.CreateDirectory(Path.Combine(directory, "tools/shaders/include"));
+            File.Copy(Path.Combine(root, "tools/shaders/include/lumyte.slang"), Path.Combine(directory, "tools/shaders/include/lumyte.slang"));
+            File.Copy(Path.Combine(root, "global.json"), Path.Combine(directory, "global.json"));
+            await File.WriteAllTextAsync(Path.Combine(directory, "Directory.Build.props"), "<Project><PropertyGroup><Nullable>enable</Nullable><UseSharedCompilation>false</UseSharedCompilation></PropertyGroup></Project>");
+            await File.WriteAllTextAsync(Path.Combine(directory, "fixture.slang"), "[shader(\"compute\")] [numthreads(1,1,1)] void main() {}");
+            string defaultFixture = """
+                <Project>
+                  <PropertyGroup><IntermediateOutputPath>shader-output/</IntermediateOutputPath></PropertyGroup>
+                  <ItemGroup><SlangShader Include="fixture.slang" ResourceName="fixture" Targets="spirv" /></ItemGroup>
+                  <Import Project="tools/shaders/Slang.targets" />
+                  <Target Name="DescribeCompiler"><WriteLinesToFile File="evaluated-compiler.txt" Lines="$(SlangCompilerPath)|$(_LumyteSlangCompilerInput)|$(IntermediateOutputPath)Slang/fixture.lshader" Overwrite="true" /></Target>
+                </Project>
+                """;
+            await File.WriteAllTextAsync(Path.Combine(directory, "fixture.proj"), defaultFixture);
+            string tools = Path.Combine(directory, "fake tools ü");
+            Directory.CreateDirectory(tools);
+            string fake = Path.Combine(tools, "slangc");
+            string fakeScript = """
+                #!/bin/sh
+                if [ "$1" = -version ]; then echo fake-slang-version; exit 0; fi
+                printf 'compile\n' >> "$LUMYTE_FAKE_SLANG_LOG"
+                while [ "$#" -gt 0 ]; do
+                  case "$1" in -o) shift; output="$1" ;; -reflection-json) shift; reflection="$1" ;; esac
+                  shift
+                done
+                printf '\003\002\043\007\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000' > "$output"
+                printf '{"parameters":[],"entryPoints":[]}' > "$reflection"
+                """;
+            await File.WriteAllTextAsync(fake, fakeScript);
+            File.SetUnixFileMode(fake, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+            string log = Path.Combine(directory, "invocations.txt");
+            var environment = new Dictionary<string, string> { ["PATH"] = tools + Path.PathSeparator + Environment.GetEnvironmentVariable("PATH"), ["LUMYTE_FAKE_SLANG_LOG"] = log };
+            string offlineFeed = Path.Combine(directory, "offline-feed");
+            Directory.CreateDirectory(offlineFeed);
+            await RunWithEnvironmentAsync(directory, true, environment, "restore", Path.Combine(directory, "tools/shaders/Lumyte.ShaderCompiler/Lumyte.ShaderCompiler.csproj"), "-p:Configuration=Release", "--verbosity:quiet", "--source", offlineFeed);
+            string[] build = ["msbuild", Path.Combine(directory, "fixture.proj"), "-t:CompileSlangShaders;DescribeCompiler", "-v:normal", "-nologo", "-nr:false", "-m:1"];
+            if (absoluteCompiler)
+            {
+                build = [.. build, "-p:SlangCompilerPath=" + fake];
+            }
+
+            string first = await RunWithEnvironmentAsync(directory, true, environment, build);
+            Assert.Single(await File.ReadAllLinesAsync(log));
+            string second = await RunWithEnvironmentAsync(directory, true, environment, build);
+            string? evidence = Environment.GetEnvironmentVariable("LUMYTE_SHADER_INCREMENTAL_EVIDENCE");
+            if (evidence is not null)
+            {
+                Directory.CreateDirectory(evidence);
+                await File.WriteAllTextAsync(Path.Combine(evidence, "first.log"), first);
+                await File.WriteAllTextAsync(Path.Combine(evidence, "second.log"), second);
+                File.Copy(Path.Combine(directory, "evaluated-compiler.txt"), Path.Combine(evidence, "evaluated-compiler.txt"), true);
+                File.Copy(targets, Path.Combine(evidence, "tested-Slang.targets"), true);
+                File.Copy(log, Path.Combine(evidence, "invocations.txt"), true);
+            }
+
+            Assert.Single(await File.ReadAllLinesAsync(log));
+            string artifact = Path.Combine(directory, "shader-output/Slang/fixture.lshader");
+            byte[] originalArtifact = await File.ReadAllBytesAsync(artifact);
+            int expected = 1;
+            async Task RebuildForAsync(string input)
+            {
+                DateTime originalTime = File.GetLastWriteTimeUtc(input);
+                File.SetLastWriteTimeUtc(input, File.GetLastWriteTimeUtc(artifact).AddMinutes(1));
+                await RunWithEnvironmentAsync(directory, true, environment, build);
+                Assert.Equal(++expected, (await File.ReadAllLinesAsync(log)).Length);
+                File.SetLastWriteTimeUtc(input, originalTime);
+            }
+
+            await RebuildForAsync(Path.Combine(directory, "fixture.slang"));
+            await RebuildForAsync(Path.Combine(directory, "tools/shaders/include/lumyte.slang"));
+            await File.WriteAllTextAsync(Path.Combine(directory, "fixture.proj"), defaultFixture.Replace("Targets=\"spirv\"", "Targets=\"spirv\" Defines=\"-DFIXTURE_VARIANT=1\"", StringComparison.Ordinal));
+            await RebuildForAsync(Path.Combine(directory, "fixture.proj"));
+            await File.AppendAllTextAsync(fake, "\n# changed fake executable identity\n");
+            File.SetLastWriteTimeUtc(fake, DateTime.UtcNow.AddDays(-1));
+            await RunWithEnvironmentAsync(directory, true, environment, build);
+            Assert.Equal(++expected, (await File.ReadAllLinesAsync(log)).Length);
+            await RunWithEnvironmentAsync(directory, true, environment, build);
+            Assert.Equal(expected, (await File.ReadAllLinesAsync(log)).Length);
+            if (!absoluteCompiler)
+            {
+                string other = Path.Combine(directory, "older fake tools");
+                Directory.CreateDirectory(other);
+                string replacement = Path.Combine(other, "slangc");
+                await File.WriteAllTextAsync(replacement, fakeScript);
+                File.SetUnixFileMode(replacement, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+                File.SetLastWriteTimeUtc(replacement, DateTime.UtcNow.AddDays(-2));
+                environment["PATH"] = other + Path.PathSeparator + environment["PATH"];
+                await RunWithEnvironmentAsync(directory, true, environment, build);
+                Assert.Equal(++expected, (await File.ReadAllLinesAsync(log)).Length);
+                await RunWithEnvironmentAsync(directory, true, environment, build);
+                Assert.Equal(expected, (await File.ReadAllLinesAsync(log)).Length);
+
+                string placeholder = Path.Combine(directory, "nonexecutable-placeholder");
+                Directory.CreateDirectory(placeholder);
+                string unavailable = Path.Combine(placeholder, "slangc");
+                await File.WriteAllTextAsync(unavailable, "not executable");
+                File.SetUnixFileMode(unavailable, UnixFileMode.UserRead | UnixFileMode.UserWrite);
+                environment["PATH"] = placeholder + Path.PathSeparator + environment["PATH"];
+                await File.WriteAllTextAsync(Path.Combine(directory, "fixture.proj"), defaultFixture.Replace("shader-output/", "placeholder-output/", StringComparison.Ordinal));
+                await RunWithEnvironmentAsync(directory, true, environment, build);
+                Assert.Equal(++expected, (await File.ReadAllLinesAsync(log)).Length);
+                await File.WriteAllTextAsync(Path.Combine(directory, "fixture.proj"), defaultFixture);
+            }
+
+            Assert.Equal(originalArtifact, await File.ReadAllBytesAsync(artifact));
+            await RunWithEnvironmentAsync(directory, true, environment, [.. build, "-p:SlangCompilerPath=" + Path.GetRelativePath(directory, fake)]);
+            Assert.Equal(++expected, (await File.ReadAllLinesAsync(log)).Length);
+            await RunWithEnvironmentAsync(directory, false, environment, [.. build, "-p:SlangCompilerPath=" + Path.Combine(directory, "absent-compiler")]);
+            Assert.Equal(expected, (await File.ReadAllLinesAsync(log)).Length);
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
     private static async Task RunAsync(string directory, params string[] arguments) => await RunAsync(directory, true, arguments);
 
     private static async Task<string> RunAsync(string directory, bool success, params string[] arguments)
+        => await RunWithEnvironmentAsync(directory, success, null, arguments);
+
+    private static async Task<string> RunWithEnvironmentAsync(string directory, bool success, IReadOnlyDictionary<string, string>? environment, params string[] arguments)
     {
         var start = new ProcessStartInfo("dotnet")
         {
@@ -218,9 +380,18 @@ public sealed class ShaderToolOutputPathTests
         };
         start.Environment["MSBUILDDISABLENODEREUSE"] = "1";
         start.Environment["DOTNET_CLI_DO_NOT_USE_MSBUILD_SERVER"] = "1";
+        start.Environment["UseSharedCompilation"] = "false";
         foreach (string argument in arguments)
         {
             start.ArgumentList.Add(argument);
+        }
+
+        if (environment is not null)
+        {
+            foreach ((string key, string value) in environment)
+            {
+                start.Environment[key] = value;
+            }
         }
 
         using Process process = Process.Start(start)!;
@@ -241,5 +412,17 @@ public sealed class ShaderToolOutputPathTests
         string output = await stdout + await stderr;
         Assert.True(success ? process.ExitCode == 0 : process.ExitCode != 0, string.Join(' ', arguments) + Environment.NewLine + output);
         return output;
+    }
+
+    [AttributeUsage(AttributeTargets.Method)]
+    private sealed class LinuxTheoryAttribute : TheoryAttribute
+    {
+        public LinuxTheoryAttribute()
+        {
+            if (!OperatingSystem.IsLinux())
+            {
+                Skip = "The fake executable and effective-access fixture are Linux-only; this is not Windows runtime coverage.";
+            }
+        }
     }
 }
