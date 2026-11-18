@@ -1,6 +1,6 @@
 # Lumyte.Composition
 
-C# の宣言的構築を支える属性、`Optional<T>`、名前付きスロットの契約ライブラリ。値の保存、UI 型、アニメーション実行エンジンは含まない。
+C# の宣言的構築を支える属性、`Optional<T>`、名前付きスロットと型付きテンプレートの契約ライブラリ。値の保存、UI 型、アニメーション実行エンジンは含まない。
 
 `Lumyte.Composition.Generators` をビルド時の Analyzer として導入すると、Composable クラスから専用デリゲート型のファクトリプロパティと子要素インデクサを生成する。
 
@@ -26,7 +26,7 @@ private static void Column(Widget target, int value)
 
 ジェネリック型は `ListView<int>()` の静的メソッドと `ListViewFactory<int>()` のデリゲート取得メソッドを生成し、型制約を引き継ぐ。
 
-名前付きスロットは `[ComposeSlot]` を付けた静的メソッドから生成する。先頭引数は定義型自身、第二引数は子要素の配列または対応 collection interface とする。
+名前付きスロットは `[ComposeSlot]` を付けた静的メソッドから生成する。先頭引数は定義型自身、第二引数は子要素の配列、対応 collection interface、または `CompositionTemplate` とする。
 
 ```csharp
 [ComposeSlot]
@@ -60,3 +60,28 @@ callbackは構築時には実行せず、引数の代入→with→内容の順�
 UIのWidgetはこの契約を標準で提供します。Compositionは利用側の実行基盤に依存せず、具体的な実行・状態保持・寿命はhostの責務です。関数とクラスは同じDefinitionsへ混在できます。生成factoryの名前重複や非対応のasync/ref/params等はLYC001になります。
 
 [関数factoryのADRと独立hostの利用例](../../../docs/adr/composition/COMPOSITION-0005-function-factories.md)
+
+## 型付きテンプレート Slot
+
+`CompositionTemplate` は 1〜16 引数を受け取って構成を返す delegate です。最後の型引数が戻り値の型になります。Slot の第二引数にこの型を指定すると、Generator が型付きラムダを受け取る入口を生成します。
+
+```csharp
+[ComposeSlot]
+private static void Item(
+    ListView<T> target, CompositionTemplate<T, ListView<T>, Widget> template)
+    => target.ItemTemplate = template;
+
+// using static Compose;
+var list = ListView<int>()[
+    4, 5,
+    ListViewFactory<int>().Item()[
+        (value, owner) => Text(content: $"{value}/{owner.Items.Count}")
+    ]
+];
+```
+
+Slot の適用は delegate を渡すだけで、評価はホストが `list.ItemTemplate!(4, list)` のように明示的に行います。自身を含むすべての引数はホストが渡し、自動注入・購読・結果のキャッシュは行いません。
+
+固定の構成も同じインデクサーへ直接指定できます。サンプルでは `Button()[Button.Thumb()[Text(content: "fixed")]]` と書けます。式は指定時に評価され、引数を無視して同じ構成を返す delegate として保存されます。複製はしないため、複数接続先の所有権はホストの規則に従います。
+
+入口は null の delegate と null の固定構成を拒否します。裸の null がオーバーロード間で曖昧になる場合は、C# の通常の規則に従って型を明示する必要があります。テンプレートの評価で返される null と例外はそのままホストへ渡します。
