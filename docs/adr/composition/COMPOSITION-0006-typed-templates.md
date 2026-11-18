@@ -27,25 +27,21 @@ Composition に、引数を受け取って構成を返す `CompositionTemplate<T
 ```csharp
 using System;
 
-Func<Person, Label> personRow = BuildPersonRow;
+Func<Person, Label> personRow = person => new Label(person.Name);
 Label first = personRow(new Person("Ada"));
-
-static Label BuildPersonRow(Person person) => new(person.Name);
 
 public sealed record Person(string Name);
 public sealed record Label(string Text);
 ```
 
-変更後は今回追加するテンプレートを使う。上と同じ Person、Label、BuildPersonRow を使い、生成される構成は変わらない。テンプレートの作成だけでは関数を実行しない。
+変更後は今回追加するテンプレートを使う。上と同じ Person、Label を使い、生成される構成は変わらない。テンプレートの作成だけではラムダを実行しない。
 
 ```csharp
 using Lumyte.Composition;
 
-var personRow = new CompositionTemplate<Person, Label>(BuildPersonRow);
-Label first = personRow.Build(new Person("Ada"));
-
-var inlineRow = new CompositionTemplate<Person, Label>(
+var personRow = new CompositionTemplate<Person, Label>(
     person => new Label(person.Name));
+Label first = personRow.Build(new Person("Ada"));
 ```
 
 関数の分割に専用属性は必要ない。通常の静的メソッド、インスタンスメソッド、ローカル関数、ラムダを、同じ型付き関数として受け取る。複数の入力は `TArgs` に専用の型やタプルを使い、引数のない処理は ValueTuple を使う。一つのテンプレートは一つの戻り値を返す。複数の子を返す場合は利用側がコレクションなどの結果型と、その取り付け方法を定義する。
@@ -96,26 +92,98 @@ public static partial class Compose
 }
 ```
 
-利用側は通常の関数をテンプレートに包んで Slot へ渡す。以下は別の呼び出し側コードの抜粋であり、返された構成を画面へ接続する処理は省略する。
+利用側は Item の指定箇所へラムダを直接書く。テンプレート用の変数や独立した構築関数は必要ない。以下は別の呼び出し側コードの抜粋であり、返された構成を画面へ接続する処理は省略する。
 
 ```csharp
 using Lumyte.Composition;
 using TemplateExample;
 using static TemplateExample.Compose;
 
-var personRow = new CompositionTemplate<Person, Compose.Definitions.Widget>(
-    BuildPersonRow);
-
 var list = ListView<Person>()[
     new Person("Ada"),
-    ListViewFactory<Person>().Item(personRow)
+    new Person("Grace"),
+    ListViewFactory<Person>().Item(
+        new CompositionTemplate<Person, Compose.Definitions.Widget>(
+            person => Text(content: person.Name)))
 ];
-
-static Compose.Definitions.Widget BuildPersonRow(Person person)
-    => Text(content: person.Name);
 ```
 
-`Item(personRow)` はテンプレートを捕捉した Slot 指定を返す。外側のインデクサーが定義側の Item を呼んで保存するだけで、人物ごとの生成は行わない。利用側のリスト処理が必要な時点で `list.ItemTemplate!.Build(person)` を呼び、返された構成を取り付ける。
+`Item(...)` はラムダを包んだテンプレートを捕捉した Slot 指定を返す。外側のインデクサーが定義側の Item を呼んで保存するだけで、人物ごとの生成は行わない。利用側のリスト処理が必要な時点で `list.ItemTemplate!.Build(person)` を呼び、返された構成を取り付ける。
+
+### Slider のノブをカスタマイズする利用案
+
+UI ホストへの適用案として、Slider のノブを表す Thumb Slot にもテンプレートを渡す。基準コミットの `src/UI/Lumyte.UI.Controls/Compose.Slider.cs` は ThumbColor による色指定を提供し、`SliderElementBase.cs` の OnRecord がノブの矩形を直接描く。任意の構成をノブへ差し替える Slot はまだなく、以下の Thumb と SliderThumbContext は今回の提案である。
+
+変更前は、値と色などを設定し、ノブの内容は組み込み描画へ任せる。
+
+```csharp
+using Controls = Lumyte.UI.Controls.Compose;
+
+var slider = Controls.Slider(min: 0, max: 100, step: 1, value: 25);
+```
+
+変更後は、利用箇所でラムダを指定し、受理された値に応じてノブの表示を差し替える。`textLayoutProvider` は利用側が用意する既存の ITextLayoutProvider であり、その取得と画面への接続は省略する。
+
+```csharp
+using Lumyte.Composition;
+using Lumyte.UI.Controls;
+using Controls = Lumyte.UI.Controls.Compose;
+using Media = Lumyte.UI.Media.Compose;
+using Widget = Lumyte.UI.Compose.Definitions.Widget;
+
+var slider = Controls.Slider(min: 0, max: 100, step: 1, value: 25)[
+    Controls.Slider.Thumb(
+        new CompositionTemplate<SliderThumbContext, Widget>(
+            thumb => Media.Text(
+                value: thumb.Value >= 50 ? "◆" : "●",
+                layoutProvider: textLayoutProvider)))
+];
+```
+
+この案の公開境界は次のとおりとする。UI 固有の状態と保存領域は UI.Controls に置き、Composition 契約へ Slider の知識を持ち込まない。
+
+```diff
+ namespace Lumyte.UI.Controls
+ {
++    // 呼び出し時点で Slider が受理した値。宣言の初期値ではない。
++    public readonly record struct SliderThumbContext(double Value);
+
+     public static partial class Compose
+     {
+         public static partial class Definitions
+         {
+             public partial class Slider
+             {
++                // 未指定は null で、既存の ThumbColor による描画を使う。
++                public CompositionTemplate<SliderThumbContext,
++                    Lumyte.UI.Compose.Definitions.Widget>? ThumbTemplate
++                { get; private set; }
++
++                // 非公開の定義メソッド。適用時は保存だけを行う。
++                [ComposeSlot]
++                private static void Thumb(Slider target,
++                    CompositionTemplate<SliderThumbContext,
++                        Lumyte.UI.Compose.Definitions.Widget> template);
+             }
+         }
+     }
+
++    public static class ComposeSliderCompositionExtensions
++    {
++        // null は入口で拒否する。テンプレートの Build は呼ばない。
++        public static CompositionSlotAssignment<Compose.Definitions.Slider> Thumb(
++            this Compose.Definitions.SliderFactory factory,
++            CompositionTemplate<SliderThumbContext,
++                Lumyte.UI.Compose.Definitions.Widget> template);
++    }
+ }
+```
+
+Slider の要素は初回接続時と受理値またはテンプレート参照の変更時に Build を呼び、結果をノブ専用の子として保持する。描画のたびには評価せず、旧結果の更新・切り離しは UI ホストの所有権規則に従う。同じ宣言を複数の画面へ接続する場合も、各画面の要素が自身の受理値で評価し、生成済みの子を画面間で共有しない。利用側のラムダは接続先ごとに所有可能な構成を返す必要がある。
+
+差し替えるのはノブの表示内容である。位置、入力用の当たり領域、ポインター捕捉、ドラッグ、キーボード操作、値の制約、OnChanged と OnCommitted は引き続き Slider が管理する。この適用案では既存のノブ矩形へ子を配置・クリップし、子の希望サイズでトラックや入力領域を変更しない。ノブの子は装飾として扱い、独立した入力対象・フォーカス対象・自動操作対象にはせず、Slider 自身の操作契約を維持する。
+
+テンプレート未指定時は既存のノブを描き、指定時は組み込みノブの代わりに結果の構成を描く。ThumbColor は既存の組み込み描画にだけ作用し、カスタム構成の色を暗黙に上書きしない。
 
 ### 評価、状態、所有権
 
@@ -197,3 +265,5 @@ Slot 定義の同期・非ジェネリック・static void、対象型を先頭�
 受け入れ条件は、UI 非依存の型でラムダ・メソッドグループ・ローカル関数・タプル入力をコンパイルできること、作成時には未実行で Build ごとに一回実行されること、入力と結果の null/default および例外が契約どおり扱われることとする。Slot では対象型と両型引数の不一致を拒否し、適用順序・再利用・null の拒否・通常内容との併用・LYC001・別アセンブリからの利用を確認する。
 
 既存の子 Slot、ComposeParameter、引数 adapter、所有コレクション、関数宣言と再構築のテストを維持し、テンプレートの Build が遅延宣言の評価まで進めないことを確認する。NativeAOT と trimming で実行時探索なしに呼び出せることも受け入れ条件とする。
+
+Slider への適用では、未指定時の既定描画、受理値によるラムダの再評価、描画のみでの非評価、複数画面での所有権の分離、値またはテンプレート変更時の子の更新と切り離し、既存のノブ領域内への配置を確認する。カスタムノブが入力を奪わず、ドラッグ・キーボード・値の制約・通知・自動操作の既存契約を維持することを受け入れ条件とする。
