@@ -159,6 +159,10 @@
           "type": "number",
           "description": "Deadline seconds, up to 900: shared for Benchmark --benchmark-area core; per build/catalog/Type.Method partition for Benchmark --benchmark-area core --benchmark-evaluate"
         },
+        "BrowserCase": {
+          "type": "string",
+          "description": "Independent browser case: contracts, graphics, text, ui-application, ui-navigation, ui-pages, ui-transitions, or audio. Omit for the complete suite"
+        },
         "Cache": {
           "type": "string",
           "description": "Emscripten cache from the .NET wasm-tools workload"

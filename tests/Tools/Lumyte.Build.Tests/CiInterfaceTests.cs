@@ -210,6 +210,35 @@ public sealed class CiInterfaceTests
         Assert.Contains(fixture.Records("python"), record => record.GetProperty("arguments").ToString().Contains("test_collect_gallery_artifacts.py", StringComparison.Ordinal));
     }
 
+    /// <summary>Every browser scenario is mandatory and isolated, with a pre-test cache checkpoint.</summary>
+    [Fact]
+    public void BrowserMatrixAndCacheCheckpointsPreserveGates()
+    {
+        string workflow = File.ReadAllText(Path.Combine(GetRepository(), ".github", "workflows", "composition.yml"));
+        string browser = workflow[workflow.IndexOf("  browser:", StringComparison.Ordinal)..workflow.IndexOf("  aot:", StringComparison.Ordinal)];
+        Assert.Contains("case: [contracts, graphics, text, ui-application, ui-navigation, ui-pages, ui-transitions, audio]", browser, StringComparison.Ordinal);
+        Assert.Contains("--suite browser --browser-case ${{ matrix.case }}", browser, StringComparison.Ordinal);
+        Assert.Contains("name: test-results-browser-${{ matrix.case }}", browser, StringComparison.Ordinal);
+        Assert.Contains("fail-fast: false", browser, StringComparison.Ordinal);
+        Assert.Contains("timeout-minutes: 30", browser, StringComparison.Ordinal);
+        Assert.True(browser.IndexOf("mode: save", StringComparison.Ordinal) < browser.IndexOf("Browser / contracts", StringComparison.Ordinal));
+        string cache = File.ReadAllText(Path.Combine(GetRepository(), ".github", "actions", "cache-dependencies", "action.yml"));
+        Assert.Contains("actions/cache/save@", cache, StringComparison.Ordinal);
+        Assert.Contains("ci-apt/archives/*.deb", cache, StringComparison.Ordinal);
+        Assert.Contains("tools/setup/ci-apt.sh", cache, StringComparison.Ordinal);
+        string[] keys = cache.Split((char)10).Where(line => line.TrimStart().StartsWith("key:", StringComparison.Ordinal)).Select(line => line.Trim()).ToArray();
+        Assert.Equal(2, keys.GroupBy(value => value).Count(group => group.Count() == 2));
+
+        string gpu = workflow[workflow.IndexOf("  gpu:", StringComparison.Ordinal)..workflow.IndexOf("  linux:", StringComparison.Ordinal)];
+        Assert.True(gpu.IndexOf("VulkanProgramCapacitiesAsync", StringComparison.Ordinal) < gpu.IndexOf("Cache ordinary GPU", StringComparison.Ordinal));
+        Assert.Contains("git ls-files -z -- src tests native build tools .github", gpu, StringComparison.Ordinal);
+        Assert.Contains("dpkg-query -W", gpu, StringComparison.Ordinal);
+        Assert.Contains("steps.gpu-cache.outputs.driver", gpu, StringComparison.Ordinal);
+        Assert.Contains("steps.gpu-cache.outputs.packages", gpu, StringComparison.Ordinal);
+        Assert.Contains("steps.gpu-cache.outputs.source", gpu, StringComparison.Ordinal);
+        Assert.DoesNotContain("restore-keys:", gpu, StringComparison.Ordinal);
+    }
+
     private static string GetRepository()
     {
         string directory = AppContext.BaseDirectory;

@@ -11,6 +11,7 @@ permissions:
   contents: read
 
 env:
+  LUMYTE_CI_APT: "1"
   CARGO_HOME: ${{ github.workspace }}/artifacts/build/tools/cargo
   RUSTUP_HOME: ${{ github.workspace }}/artifacts/build/tools/rustup
 
@@ -67,6 +68,29 @@ jobs:
           # A unique empty driver cache prevents a previous shader binary from hiding the regression.
           export MESA_SHADER_CACHE_DIR="$RUNNER_TEMP/lumyte-capacity-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
           dotnet test tests/Graphics/Lumyte.Graphics.Tests -c Release --no-build --no-restore --filter FullyQualifiedName~VulkanProgramCapacitiesAsync --logger "trx;LogFileName=graphics-cold-capacity.trx" --results-directory artifacts/test-results
+
+      - name: Fingerprint software GPU compiler and driver
+        id: gpu-cache
+        shell: bash
+        run: |
+          source tools/setup/activate.sh
+          # Driver closure changes invalidate every cached compiled shader.
+          driver_hash=$(find /usr/lib/x86_64-linux-gnu -maxdepth 1 -type f \( -name 'libvulkan*' -o -name 'libLLVM*' -o -name 'libgallium*' \) -print0 | sort -z | xargs -0 sha256sum | sha256sum | cut -d ' ' -f 1)
+          echo "driver=$driver_hash" >> "$GITHUB_OUTPUT"
+          source_hash=$(git ls-files -z -- src tests native build tools .github global.json mise.toml mise.lock Directory.Build.props | sort -z | xargs -0 sha256sum | sha256sum | cut -d ' ' -f 1)
+          echo "source=$source_hash" >> "$GITHUB_OUTPUT"
+          dpkg-query -W > artifacts/gpu-package-versions.txt
+          package_hash=$(sha256sum artifacts/gpu-package-versions.txt | cut -d ' ' -f 1)
+          echo "packages=$package_hash" >> "$GITHUB_OUTPUT"
+          slangc -version
+          VK_DRIVER_FILES="$LUMYTE_LAVAPIPE_ICD" vulkaninfo --summary
+
+      - name: Cache ordinary GPU compiled shaders
+        # Deliberately after the unique-empty cold maximum drawing guard.
+        uses: actions/cache@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
+        with:
+          path: artifacts/dev-env/mesa-cache
+          key: gpu-shaders-v1-ubuntu24-${{ runner.arch }}-${{ steps.gpu-cache.outputs.driver }}-${{ steps.gpu-cache.outputs.packages }}-${{ steps.gpu-cache.outputs.source }}
 
       - name: GPU backend and pixel contracts
         run: |
@@ -292,7 +316,11 @@ jobs:
           }
 
   browser:
-    name: Browser (Linux x64)
+    name: Browser (${{ matrix.case }}, Linux x64)
+    strategy:
+      fail-fast: false
+      matrix:
+        case: [contracts, graphics, text, ui-application, ui-navigation, ui-pages, ui-transitions, audio]
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
@@ -313,7 +341,16 @@ jobs:
           profile: browser
 
       - name: Mise setup (Browser)
-        run: bash tools/setup/setup.sh
+        run: |
+          bash tools/setup/setup.sh
+          source tools/setup/activate.sh
+          dotnet workload install wasm-tools --version "$(dotnet --version)"
+
+      - name: Save prepared dependencies before tests
+        uses: ./.github/actions/cache-dependencies
+        with:
+          profile: browser
+          mode: save
 
       - name: Install pinned Chrome with bundled SwiftShader
         id: chrome
@@ -326,8 +363,11 @@ jobs:
         env:
           CHROME: ${{ steps.chrome.outputs.chrome-path }}
         run: |
-          sudo apt-get update
-          sudo apt-get install -y libopenal1
+          source tools/setup/environment.sh
+          source /etc/os-release
+          source tools/setup/ci-apt.sh
+          sudo apt-get "${lumyte_apt_options[@]}" update
+          sudo apt-get "${lumyte_apt_options[@]}" install -y libopenal1
           "$CHROME" --version
           # Fail before publishing if this browser has no matching software driver.
           chrome_directory=$(dirname "$(readlink -f "$CHROME")")
@@ -360,13 +400,13 @@ jobs:
           LUMYTE_QUARANTINE_CONNECTED_PNG_TIMEOUT: "1"
         run: |
           source tools/setup/activate.sh
-          dotnet run --project build -c Release --no-build --no-restore -- --target Test --suite browser --configuration Release
+          dotnet run --project build -c Release --no-build --no-restore -- --target Test --suite browser --browser-case ${{ matrix.case }} --configuration Release
 
       - name: Upload browser results
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: test-results-browser
+          name: test-results-browser-${{ matrix.case }}
           path: artifacts/test-results/
           if-no-files-found: ignore
 

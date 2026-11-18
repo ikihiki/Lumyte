@@ -13,6 +13,11 @@ internal sealed partial class Build
     [Parameter("Test suite: managed, ui, aot, browser, wasm, browser-contracts, browser-audio, diagnostics-processes, diagnostics-ui, signals, text, windowing, rust.")]
     public string Suite { get; set; } = "managed";
 
+    private static readonly string[] _browserCases = ["contracts", "graphics", "text", "ui-application", "ui-navigation", "ui-pages", "ui-transitions", "audio"];
+
+    [Parameter("Independent browser case: contracts, graphics, text, ui-application, ui-navigation, ui-pages, ui-transitions, or audio. Omit for the complete suite.")]
+    public string? BrowserCase { get; set; }
+
     [Parameter("UI feature: layout, controls, media, scroll, menus, tabs, collections, numeric, application, navigation, or pages.")]
     public string? Feature { get; set; }
 
@@ -42,6 +47,11 @@ internal sealed partial class Build
 
     private void ValidateTestSelection()
     {
+        if (BrowserCase is not null && (Suite != "browser" || !_browserCases.Contains(BrowserCase, StringComparer.Ordinal)))
+        {
+            throw new ArgumentException("--browser-case requires --suite browser and an exact supported case.");
+        }
+
         if (PipelineValidation && (Suite != "managed" || Lane != "gpu"))
         {
             throw new ArgumentException("--pipeline-validation requires --suite managed --lane gpu.");
@@ -102,10 +112,16 @@ internal sealed partial class Build
             case "ui": await RunUiFeatureAsync().ConfigureAwait(false); break;
             case "aot": await TestAotAsync().ConfigureAwait(false); break;
             case "browser":
-                await TestBrowserContractsAsync().ConfigureAwait(false);
-                await InstallWasmToolsAsync().ConfigureAwait(false);
-                await TestWasmAsync().ConfigureAwait(false);
-                await TestBrowserAudioAsync().ConfigureAwait(false);
+                if (BrowserCase is null or "contracts")
+                {
+                    await TestBrowserContractsAsync().ConfigureAwait(false);
+                }
+
+                if (BrowserCase != "contracts")
+                {
+                    await InstallWasmToolsAsync().ConfigureAwait(false);
+                    await TestWasmAsync().ConfigureAwait(false);
+                }
                 break;
             case "wasm":
                 await InstallWasmToolsAsync().ConfigureAwait(false);

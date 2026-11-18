@@ -277,3 +277,6 @@ Test --suite ui --feature menus --aot（strict NativeAOTのpublishと実行）�
 
 分類レーンはartifacts/test-lanes/へ正本Lumyte.slnxを参照する.slnfとproject別VSTest filterを生成し、全選択projectを一度のdotnet testで実行します。
 [一括実行の設計と選択規則](TASK-MIGRATION.md#one-sdk-test-invocation-per-classified-lane)を参照してください。
+
+Required-CI timing baselines, cache provenance, Browser case ownership, and the
+ten-minute evaluation method: [CI runtime budget](../docs/ci-runtime-budget.md).
