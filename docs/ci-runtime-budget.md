@@ -268,3 +268,14 @@ paths in `/tmp/lumyte-lanes-env.sh`; they do not prove a fresh native compile.
 Native source/RID/binary verifier tests and the real native warm probe are
 separate evidence. Hosted Windows/ARM compilation, cache transfer behavior,
 all 14 real AOT publications and terminal package completion remain CI-only.
+
+### Fresh GPU build auxiliary executable
+
+GPU compilation also includes the DeviceCaps pipeline-validation executable.
+Its single authoritative project identity is owned by the validation task and
+consumed by the GPU build filter, checked against the canonical solution. The
+SDK test filter remains test-only; CPU/integration build scopes exclude this
+auxiliary root. This fixes a fresh-checkout gap that existing local full-workspace
+outputs could conceal. A clean real-SDK fixture verifies the executable is built,
+the test filter excludes it, and default full Compile still retains samples.
+Neither the pipeline gate nor its `--no-build` contract is changed.

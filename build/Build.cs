@@ -77,11 +77,12 @@ internal sealed partial class Build : FalloutBuild
     private async Task CompileAsync(string? lane)
     {
         ValidateBuildLane();
-        string? scopedSolution = lane is null ? null : CreateLaneBuildSolution(lane);
         if (NoBuild)
         {
             return;
         }
+
+        string? scopedSolution = lane is null ? null : CreateLaneBuildSolution(lane);
 
         await RestoreAsync(scopedSolution).ConfigureAwait(false);
         var arguments = new List<string> { "build", scopedSolution ?? Project ?? BuildSolution, "--configuration", Configuration, "--no-restore" };

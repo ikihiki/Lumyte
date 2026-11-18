@@ -8,6 +8,8 @@ namespace Lumyte.Build.Tests;
 /// <summary>Checks category compilation uses the same canonical classification as execution.</summary>
 public sealed class ScopedBuildTests
 {
+    private const string Driver = "samples/Lumyte.Graphics.DeviceCaps.Sample/Lumyte.Graphics.DeviceCaps.Sample.csproj";
+
     /// <summary>Explicit compilation and automatic Test compilation share exact roots.</summary>
     /// <param name="lane">The requested category.</param>
     /// <returns>The completed orchestration check.</returns>
@@ -31,7 +33,7 @@ public sealed class ScopedBuildTests
         Assert.Equal(new[] { "restore", "build" }, records.Select(record => record.GetProperty("arguments")[0].GetString()));
         string buildFilter = records[1].GetProperty("arguments")[1].GetString()!;
         Assert.Equal(records[0].GetProperty("arguments")[1].GetString(), buildFilter);
-        AssertFilter(fixture, buildFilter, lane + ".csproj");
+        AssertFilter(fixture, buildFilter, lane == "gpu" ? [lane + ".csproj", Driver] : [lane + ".csproj"]);
         BuildFixture.ProcessResult test = await fixture.RunAsync("Test", "--lane", lane, "--dotnet-path", fixture.DotnetTool);
         Assert.True(test.ExitCode == 0, test.Output + test.Error);
         records = fixture.Records("dotnet");
@@ -89,7 +91,7 @@ public sealed class ScopedBuildTests
         Assert.True(result.ExitCode == 0, result.Output + result.Error);
         string solution = fixture.Records("dotnet")[1].GetProperty("arguments")[1].GetString()!;
         Assert.EndsWith(".slnx", solution, StringComparison.Ordinal);
-        Assert.Equal(4, XDocument.Load(solution).Descendants("Project").Count());
+        Assert.Equal(5, XDocument.Load(solution).Descendants("Project").Count());
     }
 
     /// <summary>The pinned SDK builds only selected roots and their evaluated transitive references.</summary>
@@ -131,12 +133,84 @@ public sealed class ScopedBuildTests
         Assert.False(Directory.Exists(Path.Combine(fixture.Root, "Unrelated", "obj")));
     }
 
-    private static void AssertFilter(BuildFixture fixture, string path, string project)
+    /// <summary>A clean GPU compilation builds the validation executable without adding it to test roots.</summary>
+    /// <returns>The completed clean SDK executable assertion.</returns>
+    [Fact]
+    [Trait("Execution", "Integration")]
+    public async Task CleanGpuBuildIncludesPipelineExecutableAsync()
+    {
+        using var fixture = new BuildFixture();
+        Prepare(fixture);
+        foreach (string name in new[] { "cpu", "gpu", "integration", "Sample" })
+        {
+            File.WriteAllText(
+                Path.Combine(fixture.Root, name + ".csproj"),
+                "<Project Sdk=\"Microsoft.NET.Sdk\"><PropertyGroup><TargetFramework>net10.0</TargetFramework><EnableDefaultCompileItems>false</EnableDefaultCompileItems><BaseIntermediateOutputPath>obj/" + name + "/</BaseIntermediateOutputPath><IsTestProject>" + (name == "Sample" ? "false" : "true") + "</IsTestProject></PropertyGroup></Project>");
+        }
+
+        // Do not reuse SDK worker/server state from other real-build fixtures.
+        fixture.Environment["MSBUILDDISABLENODEREUSE"] = "1";
+        fixture.Environment["DOTNET_CLI_USE_MSBUILD_SERVER"] = "0";
+        string driverDirectory = Path.GetDirectoryName(Path.Combine(fixture.Root, Driver))!;
+        Assert.False(Directory.Exists(Path.Combine(driverDirectory, "bin")));
+        string dotnet = Path.GetFullPath(Path.Combine(RuntimeEnvironment.GetRuntimeDirectory(), "..", "..", "..", OperatingSystem.IsWindows() ? "dotnet.exe" : "dotnet"));
+        fixture.Environment["PATH"] = Path.GetDirectoryName(dotnet) + Path.PathSeparator + Environment.GetEnvironmentVariable("PATH");
+        BuildFixture.ProcessResult result = await fixture.RunAsync("Compile", "--build-lane", "gpu", "--dotnet-path", dotnet);
+        Assert.True(result.ExitCode == 0, result.Output + result.Error);
+        Assert.True(File.Exists(Path.Combine(driverDirectory, "bin", "Release", "net10.0", "Lumyte.Graphics.DeviceCaps.Sample.dll")), result.Output + result.Error);
+        Assert.True(File.Exists(Path.Combine(driverDirectory, "bin", "Release", "net10.0", "Lumyte.Graphics.DeviceCaps.Sample.runtimeconfig.json")));
+        Assert.True(File.Exists(Path.Combine(driverDirectory, "bin", "Release", "net10.0", "Lumyte.Graphics.DeviceCaps.Sample" + (OperatingSystem.IsWindows() ? ".exe" : string.Empty))));
+        AssertFilter(fixture, Path.Combine(fixture.Root, "artifacts", "ci", "gpu.slnf"), "gpu.csproj", Driver);
+        BuildFixture.ProcessResult test = await fixture.RunAsync("Test", "--lane", "gpu", "--no-build", "--dotnet-path", fixture.DotnetTool);
+        Assert.True(test.ExitCode == 0, test.Output + test.Error);
+        AssertFilter(fixture, Path.Combine(fixture.Root, "artifacts", "test-lanes", "gpu.slnf"), "gpu.csproj");
+    }
+
+    /// <summary>GPU auxiliary roots must exist and be owned by the canonical solution.</summary>
+    /// <param name="removeFile">Remove the file rather than its solution membership.</param>
+    /// <returns>The completed before-tools assertion.</returns>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    [Trait("Execution", "Integration")]
+    public async Task MissingPipelineRootFailsBeforeToolsAsync(bool removeFile)
+    {
+        using var fixture = new BuildFixture();
+        Prepare(fixture);
+        if (removeFile)
+        {
+            File.Delete(Path.Combine(fixture.Root, Driver));
+        }
+        else
+        {
+            var solution = XDocument.Load(fixture.Solution);
+            solution.Descendants("Project").Single(project => project.Attribute("Path")!.Value == Driver).Remove();
+            solution.Save(fixture.Solution);
+        }
+
+        BuildFixture.ProcessResult result = await fixture.RunAsync("Compile", "--build-lane", "gpu", "--dotnet-path", fixture.DotnetTool);
+        Assert.NotEqual(0, result.ExitCode);
+        Assert.Contains("pipeline validation executable", result.Output + result.Error, StringComparison.Ordinal);
+        Assert.False(File.Exists(Path.Combine(fixture.Log, "dotnet.jsonl")));
+    }
+
+    private static void AssertFilter(BuildFixture fixture, string path, params string[] projects)
     {
         using var document = JsonDocument.Parse(File.ReadAllText(path));
         JsonElement solution = document.RootElement.GetProperty("solution");
         Assert.Equal(fixture.Solution, Path.GetFullPath(solution.GetProperty("path").GetString()!, Path.GetDirectoryName(path)!));
-        Assert.Equal(project, Assert.Single(solution.GetProperty("projects").EnumerateArray()).GetString());
+        Assert.Equal(projects.Order(StringComparer.Ordinal), solution.GetProperty("projects").EnumerateArray().Select(item => item.GetString()!.Replace(Path.DirectorySeparatorChar, '/')).Order(StringComparer.Ordinal));
+    }
+
+    private static void AddDriver(BuildFixture fixture)
+    {
+        string path = Path.Combine(fixture.Root, Driver);
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        File.WriteAllText(path, "<Project Sdk=\"Microsoft.NET.Sdk\"><PropertyGroup><TargetFramework>net10.0</TargetFramework><OutputType>Exe</OutputType></PropertyGroup></Project>");
+        File.WriteAllText(Path.Combine(Path.GetDirectoryName(path)!, "Program.cs"), "System.Console.WriteLine(\"driver-ready\");");
+        var solution = XDocument.Load(fixture.Solution);
+        solution.Root!.Add(new XElement("Project", new XAttribute("Path", Driver)));
+        solution.Save(fixture.Solution);
     }
 
     private static void Prepare(BuildFixture fixture)
@@ -148,6 +222,7 @@ public sealed class ScopedBuildTests
         }
 
         File.WriteAllText(fixture.Solution, new XDocument(new XElement("Solution", names.Select(name => new XElement("Project", new XAttribute("Path", name + ".csproj"))))).ToString());
+        AddDriver(fixture);
         Directory.CreateDirectory(Path.Combine(fixture.Root, "build"));
         File.WriteAllText(Path.Combine(fixture.Root, "build", "TestLanes.json"), JsonSerializer.Serialize(new[]
         {

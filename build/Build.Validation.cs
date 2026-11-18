@@ -4,6 +4,10 @@ namespace Lumyte.Build;
 
 internal sealed partial class Build
 {
+    // The validation task owns its executable identity; scoped compilation consumes
+    // this same root instead of maintaining an independent auxiliary project list.
+    private const string PipelineValidationProject = "samples/Lumyte.Graphics.DeviceCaps.Sample/Lumyte.Graphics.DeviceCaps.Sample.csproj";
+
     private static readonly string[][] _invocationModes = [[], ["--di"], ["--host"], ["--host", "--di"]];
     private static readonly IReadOnlyDictionary<string, string?> _openAlEnvironment = new Dictionary<string, string?> { ["ALSOFT_DRIVERS"] = "null" };
     private static readonly IReadOnlyDictionary<string, string?> _isolatedPythonEnvironment = new Dictionary<string, string?>
@@ -41,7 +45,7 @@ internal sealed partial class Build
     private async Task PipelineValidationAsync()
     {
         await CaptureValidationLogAsync("vulkan-pipeline-benchmark.jsonl", () => DotNetAsync(
-            "run", "--project", "samples/Lumyte.Graphics.DeviceCaps.Sample", "-c", Configuration, "--no-build", "--", "vulkan", "pipeline-benchmark")).ConfigureAwait(false);
+            "run", "--project", Path.GetDirectoryName(PipelineValidationProject)!, "-c", Configuration, "--no-build", "--", "vulkan", "pipeline-benchmark")).ConfigureAwait(false);
     }
 
     private async Task TestWindowingAsync()
