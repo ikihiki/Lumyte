@@ -119,7 +119,11 @@ internal sealed partial class Build
     {
         if (Platform == "browser")
         {
-            await InstallWasmToolsAsync().ConfigureAwait(false);
+            if (!NoBuild)
+            {
+                await InstallWasmToolsAsync().ConfigureAwait(false);
+            }
+
             await TestWasmAsync().ConfigureAwait(false);
             return;
         }
@@ -138,17 +142,29 @@ internal sealed partial class Build
 
                 break;
             case "ui": await RunUiFeatureAsync().ConfigureAwait(false); break;
-            case "aot": await TestAotAsync().ConfigureAwait(false); break;
+            case "aot": await TestPublishedAotAsync().ConfigureAwait(false); break;
             case "browser":
-                await InstallWasmToolsAsync().ConfigureAwait(false);
+                if (!NoBuild)
+                {
+                    await InstallWasmToolsAsync().ConfigureAwait(false);
+                }
+
                 await TestWasmAsync().ConfigureAwait(false);
                 break;
             case "wasm":
-                await InstallWasmToolsAsync().ConfigureAwait(false);
+                if (!NoBuild)
+                {
+                    await InstallWasmToolsAsync().ConfigureAwait(false);
+                }
+
                 await TestWasmAsync().ConfigureAwait(false);
                 break;
             case "browser-audio":
-                await InstallWasmToolsAsync().ConfigureAwait(false);
+                if (!NoBuild)
+                {
+                    await InstallWasmToolsAsync().ConfigureAwait(false);
+                }
+
                 await TestBrowserAudioAsync().ConfigureAwait(false);
                 break;
             case "browser-contracts": await TestBrowserContractsAsync().ConfigureAwait(false); break;

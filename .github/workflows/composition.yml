@@ -1,517 +1,1459 @@
 name: CI
-
-on:
-  push:
-    branches:
-      - main
-  pull_request:
-  workflow_dispatch:
-
 permissions:
   contents: read
-
 env:
-  LUMYTE_CI_APT: "1"
+  LUMYTE_CI_APT: '1'
   CARGO_HOME: ${{ github.workspace }}/artifacts/build/tools/cargo
   RUSTUP_HOME: ${{ github.workspace }}/artifacts/build/tools/rustup
-
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
-
 jobs:
-  linux:
-    name: Linux (${{ matrix.arch }})
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: ubuntu-24.04
-            platform: Linux
-            arch: x64
-          - os: ubuntu-24.04-arm
-            platform: Linux
-            arch: aarch64
-    runs-on: ${{ matrix.os }}
+  native-build-linux-x64:
+    name: Native build (linux-x64, Release)
+    runs-on: ubuntu-24.04
     timeout-minutes: 120
     steps:
-      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
-
-      - name: Cache dependencies
-        uses: ./.github/actions/cache-dependencies
-        with:
-          profile: native
-
-      - name: Mise setup (Linux)
-        uses: ./.github/actions/setup-linux
-
-      - name: Prepare Linux validation dependencies
-        if: matrix.os == 'ubuntu-24.04'
-        shell: bash
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libopenal1
-
-      - name: Restore native Cargo compilation
-        uses: ./.github/actions/cache-native
-      - name: Build solution (Linux)
-        shell: bash
-        run: |
-          source tools/setup/activate.sh
-          dotnet run --project build -c Release --no-build --no-restore -- --target Compile --configuration Release --host-only
-
-      - name: Checkpoint verified native Cargo compilation
-        uses: ./.github/actions/cache-native
-        with:
-          mode: save
-      - name: Run CPU tests
-        if: matrix.arch == 'x64'
-        run: |
-          source tools/setup/activate.sh
-          dotnet run --project build -c Release --no-build --no-restore -- --target Test --lane cpu --host-only --test-concurrency 4 --no-build --no-restore
-
-      - name: Run integration tests (Linux)
-        shell: bash
-        run: |
-          source tools/setup/activate.sh
-          if [[ "${{ matrix.arch }}" == 'x64' ]]; then
-            export LUMYTE_OPENAL_TESTS=1
-            export ALSOFT_DRIVERS=null
-          fi
-          dotnet run --project build -c Release --no-build --no-restore -- --target Test --lane integration --configuration Release --host-only --no-build --no-restore
-
-      - name: Host-side browser bridge contracts (Node mocks, no browser)
-        if: matrix.arch == 'x64'
-        run: |
-          source tools/setup/activate.sh
-          dotnet run --project build -c Release --no-build --no-restore -- --target Test --suite browser-contracts --no-build --no-restore
-
-      - name: Native / cold-cache maximum drawing program
-        if: matrix.arch == 'x64'
-        shell: bash
-        run: |
-          source tools/setup/activate.sh
-          export LUMYTE_GRAPHICS_GPU_TESTS=1
-          export VK_DRIVER_FILES="$LUMYTE_LAVAPIPE_ICD"
-          # A unique empty driver cache prevents a previous shader binary from hiding the regression.
-          export MESA_SHADER_CACHE_DIR="$(mktemp -d "$RUNNER_TEMP/lumyte-capacity-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-XXXXXX")"
-          dotnet test tests/Graphics/Lumyte.Graphics.Tests -c Release --no-build --no-restore --filter FullyQualifiedName~VulkanProgramCapacitiesAsync --logger "trx;LogFileName=graphics-cold-capacity.trx" --results-directory artifacts/test-results
-
-      - name: Fingerprint software GPU compiler and driver
-        if: matrix.arch == 'x64'
-        id: gpu-cache
-        shell: bash
-        run: |
-          source tools/setup/activate.sh
-          # Driver closure changes invalidate every cached compiled shader.
-          driver_hash=$(find /usr/lib/x86_64-linux-gnu -maxdepth 1 -type f \( -name 'libvulkan*' -o -name 'libLLVM*' -o -name 'libgallium*' \) -print0 | sort -z | xargs -0 sha256sum | sha256sum | cut -d ' ' -f 1)
-          echo "driver=$driver_hash" >> "$GITHUB_OUTPUT"
-          source_hash=$(git ls-files -z -- src tests native build tools .github global.json mise.toml mise.lock Directory.Build.props | sort -z | xargs -0 sha256sum | sha256sum | cut -d ' ' -f 1)
-          echo "source=$source_hash" >> "$GITHUB_OUTPUT"
-          dpkg-query -W > artifacts/gpu-package-versions.txt
-          package_hash=$(sha256sum artifacts/gpu-package-versions.txt | cut -d ' ' -f 1)
-          echo "packages=$package_hash" >> "$GITHUB_OUTPUT"
-          slangc -version
-          VK_DRIVER_FILES="$LUMYTE_LAVAPIPE_ICD" vulkaninfo --summary
-
-      - name: Cache ordinary GPU compiled shaders
-        if: matrix.arch == 'x64'
-        # Deliberately after the unique-empty cold maximum drawing guard.
-        uses: actions/cache@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
-        with:
-          path: artifacts/dev-env/mesa-cache
-          key: gpu-shaders-v1-ubuntu24-${{ runner.arch }}-${{ steps.gpu-cache.outputs.driver }}-${{ steps.gpu-cache.outputs.packages }}-${{ steps.gpu-cache.outputs.source }}
-
-      - name: GPU backend and pixel contracts
-        if: matrix.arch == 'x64'
-        run: |
-          source tools/setup/activate.sh
-          export LUMYTE_GRAPHICS_GPU_TESTS=1
-          export VK_DRIVER_FILES="$LUMYTE_LAVAPIPE_ICD"
-          dotnet run --project build -c Release --no-build --no-restore -- --target Test --lane gpu --host-only --no-build --no-restore --pipeline-validation
-
-      - name: Upload native Parley package assets
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        with:
-          name: parley-native-${{ matrix.platform }}-${{ matrix.arch }}
-          path: artifacts/text-parley/package/
-          if-no-files-found: error
-          retention-days: 7
-
-      # The native job supplies the desktop P/Invoke assembly for packaging.
-      - name: Upload managed Parley package assets
-        if: matrix.os == 'ubuntu-24.04'
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        with:
-          name: parley-managed
-          path: src/Graphics/Lumyte.Graphics.Text.Parley/bin/Release/net10.0/
-          if-no-files-found: error
-          retention-days: 7
-
-      - name: Native / X11 windowing
-        shell: bash
-        run: |
-          source tools/setup/activate.sh
-          if ! command -v xvfb-run >/dev/null || ! command -v xauth >/dev/null; then
-            sudo apt-get update
-            sudo apt-get install -y xvfb xauth
-          fi
-          dotnet run --project build -c Release --no-build --no-restore -- --target Test --suite windowing --configuration Release --no-build --no-restore
-
-      - name: Quality / format and lint (Linux)
-        if: matrix.arch == 'x64'
-        shell: bash
-        run: |
-          source tools/setup/activate.sh
-          dotnet run --project build -c Release --no-build --no-restore -- --target Quality --configuration Release --host-only --no-build --no-restore
-
-      - name: Distribution / samples and packages
-        if: matrix.arch == 'x64'
-        shell: bash
-        run: |
-          source tools/setup/activate.sh
-          dotnet run --project build -c Release --no-build --no-restore -- --target Distribution --configuration Release --host-only --no-build --no-restore --skip-parley-package --skip-wgpu-package
-
-      - name: Verify diagnostic server and game processes
-        shell: bash
-        run: |
-          source tools/setup/activate.sh
-          dotnet run --project build -c Release --no-build --no-restore -- --target Test --suite diagnostics-processes --configuration Release --no-build --no-restore
-
-      - name: Install pinned Chrome for diagnostic UI
-        if: matrix.os == 'ubuntu-24.04'
-        id: diagnostics-chrome
-        uses: browser-actions/setup-chrome@48ad923757ca74d66703209fe939badbdf80f2f4 # v2.2.0
-        with:
-          chrome-version: "156.0.8078.47"
-          install-dependencies: true
-
-      - name: Verify server-hosted diagnostic UI
-        if: matrix.os == 'ubuntu-24.04'
-        shell: bash
-        env:
-          CHROME: ${{ steps.diagnostics-chrome.outputs.chrome-path }}
-        run: |
-          source tools/setup/activate.sh
-          "$CHROME" --version
-          dotnet run --project build -c Release --no-build --no-restore -- --target Test --suite diagnostics-ui --configuration Release --no-build --no-restore
-
-      - name: Generate diagnostic gallery
-        if: matrix.os == 'ubuntu-24.04'
-        shell: bash
-        env:
-          PREVIEW_COMMIT: ${{ github.sha }}
-          PREVIEW_HEAD_COMMIT: ${{ github.event.pull_request.head.sha || github.sha }}
-          PREVIEW_LABEL: "${{ github.event_name == 'pull_request' && format('PR #{0}', github.event.pull_request.number) || github.ref_name }}"
-        run: |
-          source tools/setup/activate.sh
-          dotnet run --project build -c Release --no-build --no-restore -- --target Distribution --distribution-output diagnostic-gallery --no-build --no-restore
-
-      - name: Upload diagnostic gallery
-        if: matrix.os == 'ubuntu-24.04'
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        with:
-          name: diagnostics-gallery
-          path: artifacts/diagnostics-gallery/
-          if-no-files-found: error
-          retention-days: 30
-
-      - name: Upload test results
-        if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        with:
-          name: test-results-${{ matrix.platform }}-${{ matrix.arch }}
-          path: artifacts/test-results/
-          if-no-files-found: ignore
-
-      - name: Upload CPU results
-        if: always() && matrix.arch == 'x64'
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        with:
-          name: test-results-cpu
-          path: artifacts/test-results/
-          if-no-files-found: ignore
-      - name: Upload GPU results
-        if: always() && matrix.arch == 'x64'
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        with:
-          name: test-results-gpu
-          path: artifacts/test-results/
-          if-no-files-found: ignore
-
-  windows:
-    name: Windows (${{ matrix.arch }})
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: windows-2022
-            platform: Windows
-            arch: x64
-          - os: windows-11-arm
-            platform: Windows
-            arch: aarch64
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 120
-    steps:
-      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
-
-      - name: Cache dependencies
-        uses: ./.github/actions/cache-dependencies
-        with:
-          profile: native
-
-      - name: Mise setup (Windows)
-        shell: powershell
-        run: |
-          .\tools\setup\setup.ps1
-          . ./tools/setup/activate.ps1
-          Invoke-LumyteCommand dotnet @('build', 'build', '-c', 'Release')
-
-      - name: Restore native Cargo compilation
-        uses: ./.github/actions/cache-native
-      - name: Build solution (Windows)
-        shell: powershell
-        run: |
-          . ./tools/setup/activate.ps1
-          Invoke-LumyteCommand dotnet @('run', '--project', 'build', '-c', 'Release', '--no-build', '--no-restore', '--', '--target', 'Compile', '--configuration', 'Release', '--host-only')
-
-      - name: Checkpoint verified native Cargo compilation
-        uses: ./.github/actions/cache-native
-        with:
-          mode: save
-      - name: Run integration tests (Windows)
-        shell: powershell
-        run: |
-          . ./tools/setup/activate.ps1
-          Invoke-LumyteCommand dotnet @('run', '--project', 'build', '-c', 'Release', '--no-build', '--no-restore', '--', '--target', 'Test', '--lane', 'integration', '--configuration', 'Release', '--host-only', '--no-build', '--no-restore')
-          Invoke-LumyteCommand dotnet @('run', '--project', 'build', '-c', 'Release', '--no-build', '--no-restore', '--', '--target', 'Test', '--lane', 'gpu', '--configuration', 'Release', '--host-only', '--no-build', '--no-restore')
-
-      - name: Upload native Parley package assets
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        with:
-          name: parley-native-${{ matrix.platform }}-${{ matrix.arch }}
-          path: artifacts/text-parley/package/
-          if-no-files-found: error
-          retention-days: 7
-
-      - name: Quality / format (Windows)
-        if: matrix.arch == 'x64'
-        shell: powershell
-        run: |
-          . ./tools/setup/activate.ps1
-          Invoke-LumyteCommand dotnet @('run', '--project', 'build', '-c', 'Release', '--no-build', '--no-restore', '--', '--target', 'Quality', '--quality-scope', 'managed', '--configuration', 'Release', '--host-only', '--no-build', '--no-restore')
-      - name: Distribution / Windows window sample
-        shell: powershell
-        run: |
-          . ./tools/setup/activate.ps1
-          Invoke-LumyteCommand dotnet @('run', '--project', 'build', '-c', 'Release', '--no-build', '--no-restore', '--', '--target', 'Distribution', '--distribution-output', 'window-sample', '--configuration', 'Release', '--no-build', '--no-restore')
-
-      - name: Distribution / Windows packages
-        if: matrix.arch == 'x64'
-        shell: powershell
-        run: |
-          . ./tools/setup/activate.ps1
-          foreach ($project in @('src/Platform/Lumyte.Platform.Windows', 'src/Graphics/Lumyte.Graphics.Direct3D12')) {
-            Invoke-LumyteCommand dotnet @('run', '--project', 'build', '-c', 'Release', '--no-build', '--no-restore', '--', '--target', 'Distribution', '--distribution-output', 'packages', '--project', $project, '--configuration', 'Release', '--no-build', '--no-restore')
-          }
-
-      - name: Upload test results
-        if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        with:
-          name: test-results-${{ matrix.platform }}-${{ matrix.arch }}
-          path: artifacts/test-results/
-          if-no-files-found: ignore
-
-  browser:
-    name: Browser (all APIs, Linux x64)
+    - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8
+    - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1
+      with:
+        global-json-file: global.json
+    - name: Cache dependencies
+      uses: ./.github/actions/cache-dependencies
+      with:
+        profile: native
+    - name: Mise setup (Linux)
+      uses: ./.github/actions/setup-linux
+    - name: Prepare Linux validation dependencies
+      shell: bash
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y libopenal1
+    - name: Restore native Cargo compilation
+      uses: ./.github/actions/cache-native
+    - name: Build solution (Linux)
+      shell: bash
+      run: |
+        source tools/setup/activate.sh
+        dotnet run --project build -c Release --no-build --no-restore -- --target Compile --configuration Release --host-only
+    - name: Checkpoint verified native Cargo compilation
+      uses: ./.github/actions/cache-native
+      with:
+        mode: save
+    - name: Upload native Parley package assets
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: parley-native-Linux-x64
+        path: artifacts/text-parley/package/
+        if-no-files-found: error
+        retention-days: 7
+    - name: Upload managed Parley package assets
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: parley-managed
+        path: src/Graphics/Lumyte.Graphics.Text.Parley/bin/Release/net10.0/
+        if-no-files-found: error
+        retention-days: 7
+    - name: Seal immutable build outputs
+      shell: bash
+      run: |-
+        test "$(dotnet --version)" = 10.0.403
+        source tools/setup/activate.sh
+        test "$DOTNET_ROOT" = "$LUMYTE_PREBUILT_SDK_ROOT"
+        mkdir -p "$RUNNER_TEMP/prebuilt"
+        python tools/ci/prebuilt.py create "$RUNNER_TEMP/prebuilt/native-linux-x64.tar" --kind native --rid linux-x64 --configuration Release --sdk 10.0.403 --nuget-root "$GITHUB_WORKSPACE/artifacts/dev-env/nuget-packages"
+    - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: prebuilt-native-linux-x64
+        path: ${{ runner.temp }}/prebuilt/native-linux-x64.tar
+        if-no-files-found: error
+        retention-days: 1
+    env:
+      LUMYTE_PREBUILT_SDK_ROOT: ${{ github.workspace }}/artifacts/dev-env/mise/data/installs/http-dotnet/10.0.403
+  integration-linux-x64:
+    name: Integration (linux-x64)
+    needs:
+    - native-build-linux-x64
     runs-on: ubuntu-24.04
     timeout-minutes: 90
     steps:
-      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
-
-      - name: Cache dependencies
-        uses: ./.github/actions/cache-dependencies
-        with:
-          profile: browser
-
-      - name: Prepare Browser tools
-        uses: ./.github/actions/setup-linux
-      - name: Save prepared dependencies before tests
-        uses: ./.github/actions/cache-dependencies
-        with:
-          profile: browser
-          mode: save
-
-      - name: Install pinned Chrome with bundled SwiftShader
-        id: chrome
-        uses: browser-actions/setup-chrome@48ad923757ca74d66703209fe939badbdf80f2f4 # v2.2.0
-        with:
-          chrome-version: "156.0.8078.47"
-          install-dependencies: true
-
-      - name: Prepare browser runtime dependencies
-        env:
-          CHROME: ${{ steps.chrome.outputs.chrome-path }}
-        run: |
-          source tools/setup/environment.sh
-          source /etc/os-release
-          source tools/setup/ci-apt.sh
-          sudo apt-get "${lumyte_apt_options[@]}" update
-          sudo apt-get "${lumyte_apt_options[@]}" install -y libopenal1
-          "$CHROME" --version
-          # Fail before publishing if this browser has no matching software driver.
-          chrome_directory=$(dirname "$(readlink -f "$CHROME")")
-          test -s "$chrome_directory/libvk_swiftshader.so"
-          test -s "$chrome_directory/vk_swiftshader_icd.json"
-          test -s "$chrome_directory/libvulkan.so.1"
-
-      - name: Discover optional native CPU sampler
-        # Diagnostic availability must not replace the original Browser verdict.
-        run: |
-          mkdir -p artifacts/test-results/browser-flight-recorder
-          if ! timeout 120s sudo apt-get install -y linux-tools-generic > artifacts/test-results/browser-flight-recorder/perf-install.log 2>&1; then
-            echo "Native perf tools unavailable; process telemetry and Chrome tracing remain enabled."
-          fi
-          perf_path=$(find -L /usr/lib/linux-tools -type f -name perf -executable 2>/dev/null | sort -V | tail -n 1 || true)
-          if [ -n "$perf_path" ] && "$perf_path" --version > artifacts/test-results/browser-flight-recorder/perf-version.txt 2>&1; then
-            echo "LUMYTE_BROWSER_PERF=$perf_path" >> "$GITHUB_ENV"
-          fi
-
-      - name: Browser / platform API integration
-        env:
-          CHROME: ${{ steps.chrome.outputs.chrome-path }}
-          LUMYTE_REQUIRE_SOFTWARE_WEBGPU: "1"
-          LUMYTE_BROWSER_FLIGHT_RECORDER: "1"
-          # Continuous bounded recording; artifacts only for failure/slow capture.
-          LUMYTE_BROWSER_FLIGHT_RECORDER_SLOW_MS: "5000"
-          # Temporary: only the verified sequential midpoint PNG deadline becomes a warning.
-          LUMYTE_ALLOW_KNOWN_BROWSER_TIMEOUT: "1"
-          # Issue #172: exact sequential connected-first GPU deadline only, until 2026-12-01 UTC.
-          LUMYTE_QUARANTINE_CONNECTED_PNG_TIMEOUT: "1"
-        run: |
-          source tools/setup/activate.sh
-          dotnet run --project build -c Release --no-build --no-restore -- --target Test --lane integration --platform browser --configuration Release
-
-      - name: Upload browser results / graphics
-        if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        with:
-          name: test-results-browser-graphics
-          path: artifacts/test-results/
-          if-no-files-found: ignore
-      - name: Upload browser results / text
-        if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        with:
-          name: test-results-browser-text
-          path: artifacts/test-results/
-          if-no-files-found: ignore
-      - name: Upload browser results / ui-application
-        if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        with:
-          name: test-results-browser-ui-application
-          path: artifacts/test-results/
-          if-no-files-found: ignore
-      - name: Upload browser results / ui-navigation
-        if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        with:
-          name: test-results-browser-ui-navigation
-          path: artifacts/test-results/
-          if-no-files-found: ignore
-      - name: Upload browser results / ui-pages
-        if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        with:
-          name: test-results-browser-ui-pages
-          path: artifacts/test-results/
-          if-no-files-found: ignore
-      - name: Upload browser results / ui-transitions
-        if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        with:
-          name: test-results-browser-ui-transitions
-          path: artifacts/test-results/
-          if-no-files-found: ignore
-      - name: Upload browser results / audio
-        if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        with:
-          name: test-results-browser-audio
-          path: artifacts/test-results/
-          if-no-files-found: ignore
-
-  aot:
-    name: AOT (all 14, Linux x64)
+    - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8
+    - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1
+      with:
+        global-json-file: global.json
+    - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0
+      with:
+        name: prebuilt-native-linux-x64
+        path: ${{ runner.temp }}/prebuilt
+    - name: Verify and extract immutable build outputs
+      shell: bash
+      run: |-
+        test "$(dotnet --version)" = 10.0.403
+        python tools/ci/prebuilt.py extract "$RUNNER_TEMP/prebuilt/native-linux-x64.tar" --kind native --rid linux-x64 --configuration Release --sdk 10.0.403 --nuget-root "$GITHUB_WORKSPACE/artifacts/dev-env/nuget-packages"
+    - name: Provision tools and runtime only (no product compilation)
+      shell: bash
+      run: |
+        LUMYTE_SETUP_TOOLS_ONLY=1 bash tools/setup/setup.sh
+        source tools/setup/activate.sh
+        test "$DOTNET_ROOT" = "$LUMYTE_PREBUILT_SDK_ROOT"
+        python tools/ci/prebuilt.py verify "$RUNNER_TEMP/prebuilt/native-linux-x64.tar" --kind native --rid linux-x64 --configuration Release --sdk 10.0.403 --nuget-root "$GITHUB_WORKSPACE/artifacts/dev-env/nuget-packages"
+        sudo apt-get install -y libopenal1 xvfb xauth
+    - name: Run integration tests (Linux)
+      shell: bash
+      run: |
+        source tools/setup/activate.sh
+        if [[ "x64" == 'x64' ]]; then
+          export LUMYTE_OPENAL_TESTS=1
+          export ALSOFT_DRIVERS=null
+        fi
+        dotnet run --project build -c Release --no-build --no-restore -- --target Test --lane integration --configuration Release --host-only --no-build --no-restore
+    - name: Host-side browser bridge contracts (Node mocks, no browser)
+      run: |
+        source tools/setup/activate.sh
+        dotnet run --project build -c Release --no-build --no-restore -- --target Test --suite browser-contracts --no-build --no-restore
+    - name: Native / X11 windowing
+      shell: bash
+      run: |
+        source tools/setup/activate.sh
+        if ! command -v xvfb-run >/dev/null || ! command -v xauth >/dev/null; then
+          sudo apt-get update
+          sudo apt-get install -y xvfb xauth
+        fi
+        dotnet run --project build -c Release --no-build --no-restore -- --target Test --suite windowing --configuration Release --no-build --no-restore
+    - name: Distribution / samples and packages
+      shell: bash
+      run: |
+        source tools/setup/activate.sh
+        dotnet run --project build -c Release --no-build --no-restore -- --target Distribution --configuration Release --host-only --no-build --no-restore --skip-parley-package --skip-wgpu-package
+    - name: Verify diagnostic server and game processes
+      shell: bash
+      run: |
+        source tools/setup/activate.sh
+        dotnet run --project build -c Release --no-build --no-restore -- --target Test --suite diagnostics-processes --configuration Release --no-build --no-restore
+    - name: Install pinned Chrome for diagnostic UI
+      id: diagnostics-chrome
+      uses: browser-actions/setup-chrome@48ad923757ca74d66703209fe939badbdf80f2f4
+      with:
+        chrome-version: 156.0.8078.47
+        install-dependencies: true
+    - name: Verify server-hosted diagnostic UI
+      shell: bash
+      env:
+        CHROME: ${{ steps.diagnostics-chrome.outputs.chrome-path }}
+      run: |
+        source tools/setup/activate.sh
+        "$CHROME" --version
+        dotnet run --project build -c Release --no-build --no-restore -- --target Test --suite diagnostics-ui --configuration Release --no-build --no-restore
+    - name: Generate diagnostic gallery
+      shell: bash
+      env:
+        PREVIEW_COMMIT: ${{ github.sha }}
+        PREVIEW_HEAD_COMMIT: ${{ github.event.pull_request.head.sha || github.sha }}
+        PREVIEW_LABEL: '${{ github.event_name == ''pull_request'' && format(''PR #{0}'', github.event.pull_request.number)
+          || github.ref_name }}'
+      run: |
+        source tools/setup/activate.sh
+        dotnet run --project build -c Release --no-build --no-restore -- --target Distribution --distribution-output diagnostic-gallery --no-build --no-restore
+    - name: Upload diagnostic gallery
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: diagnostics-gallery
+        path: artifacts/diagnostics-gallery/
+        if-no-files-found: error
+        retention-days: 30
+    - name: Upload test results
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: test-results-Linux-x64
+        path: artifacts/test-results/
+        if-no-files-found: ignore
+      if: always()
+    env:
+      LUMYTE_PREBUILT_CONSUMER: '1'
+      LUMYTE_PREBUILT_SDK_ROOT: ${{ github.workspace }}/artifacts/dev-env/mise/data/installs/http-dotnet/10.0.403
+      LumyteBuildParleyNative: 'false'
+      LumyteBuildWgpuNative: 'false'
+      LumyteBuildUsvgNative: 'false'
+  cpu-linux-x64:
+    name: Cpu (linux-x64)
+    needs:
+    - native-build-linux-x64
     runs-on: ubuntu-24.04
     timeout-minutes: 90
     steps:
-      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
-
-      - name: Cache dependencies
-        uses: ./.github/actions/cache-dependencies
-        with:
-          profile: native
-
-      - name: Mise setup (AOT)
-        uses: ./.github/actions/setup-linux
-
-      - name: Prepare AOT audio dependencies
-        run: |
+    - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8
+    - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1
+      with:
+        global-json-file: global.json
+    - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0
+      with:
+        name: prebuilt-native-linux-x64
+        path: ${{ runner.temp }}/prebuilt
+    - name: Verify and extract immutable build outputs
+      shell: bash
+      run: |-
+        test "$(dotnet --version)" = 10.0.403
+        python tools/ci/prebuilt.py extract "$RUNNER_TEMP/prebuilt/native-linux-x64.tar" --kind native --rid linux-x64 --configuration Release --sdk 10.0.403 --nuget-root "$GITHUB_WORKSPACE/artifacts/dev-env/nuget-packages"
+    - name: Provision tools and runtime only (no product compilation)
+      shell: bash
+      run: |
+        LUMYTE_SETUP_TOOLS_ONLY=1 bash tools/setup/setup.sh
+        source tools/setup/activate.sh
+        test "$DOTNET_ROOT" = "$LUMYTE_PREBUILT_SDK_ROOT"
+        python tools/ci/prebuilt.py verify "$RUNNER_TEMP/prebuilt/native-linux-x64.tar" --kind native --rid linux-x64 --configuration Release --sdk 10.0.403 --nuget-root "$GITHUB_WORKSPACE/artifacts/dev-env/nuget-packages"
+        sudo apt-get install -y libopenal1 xvfb xauth
+    - name: Run CPU tests
+      run: |
+        source tools/setup/activate.sh
+        dotnet run --project build -c Release --no-build --no-restore -- --target Test --lane cpu --host-only --test-concurrency 4 --no-build --no-restore
+    - name: Upload cpu results
+      if: always()
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: test-results-cpu-linux-x64
+        path: artifacts/test-results/
+        if-no-files-found: ignore
+    env:
+      LUMYTE_PREBUILT_CONSUMER: '1'
+      LUMYTE_PREBUILT_SDK_ROOT: ${{ github.workspace }}/artifacts/dev-env/mise/data/installs/http-dotnet/10.0.403
+      LumyteBuildParleyNative: 'false'
+      LumyteBuildWgpuNative: 'false'
+      LumyteBuildUsvgNative: 'false'
+  gpu-linux-x64:
+    name: Gpu (linux-x64)
+    needs:
+    - native-build-linux-x64
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+    - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8
+    - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1
+      with:
+        global-json-file: global.json
+    - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0
+      with:
+        name: prebuilt-native-linux-x64
+        path: ${{ runner.temp }}/prebuilt
+    - name: Verify and extract immutable build outputs
+      shell: bash
+      run: |-
+        test "$(dotnet --version)" = 10.0.403
+        python tools/ci/prebuilt.py extract "$RUNNER_TEMP/prebuilt/native-linux-x64.tar" --kind native --rid linux-x64 --configuration Release --sdk 10.0.403 --nuget-root "$GITHUB_WORKSPACE/artifacts/dev-env/nuget-packages"
+    - name: Provision tools and runtime only (no product compilation)
+      shell: bash
+      run: |
+        LUMYTE_SETUP_TOOLS_ONLY=1 bash tools/setup/setup.sh
+        source tools/setup/activate.sh
+        test "$DOTNET_ROOT" = "$LUMYTE_PREBUILT_SDK_ROOT"
+        python tools/ci/prebuilt.py verify "$RUNNER_TEMP/prebuilt/native-linux-x64.tar" --kind native --rid linux-x64 --configuration Release --sdk 10.0.403 --nuget-root "$GITHUB_WORKSPACE/artifacts/dev-env/nuget-packages"
+        sudo apt-get install -y libopenal1 xvfb xauth
+    - name: Native / cold-cache maximum drawing program
+      shell: bash
+      run: |
+        source tools/setup/activate.sh
+        export LUMYTE_GRAPHICS_GPU_TESTS=1
+        export VK_DRIVER_FILES="$LUMYTE_LAVAPIPE_ICD"
+        # A unique empty driver cache prevents a previous shader binary from hiding the regression.
+        export MESA_SHADER_CACHE_DIR="$(mktemp -d "$RUNNER_TEMP/lumyte-capacity-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-XXXXXX")"
+        dotnet test tests/Graphics/Lumyte.Graphics.Tests -c Release --no-build --no-restore --filter FullyQualifiedName~VulkanProgramCapacitiesAsync --logger "trx;LogFileName=graphics-cold-capacity.trx" --results-directory artifacts/test-results
+    - name: Fingerprint software GPU compiler and driver
+      id: gpu-cache
+      shell: bash
+      run: |
+        source tools/setup/activate.sh
+        # Driver closure changes invalidate every cached compiled shader.
+        driver_hash=$(find /usr/lib/x86_64-linux-gnu -maxdepth 1 -type f \( -name 'libvulkan*' -o -name 'libLLVM*' -o -name 'libgallium*' \) -print0 | sort -z | xargs -0 sha256sum | sha256sum | cut -d ' ' -f 1)
+        echo "driver=$driver_hash" >> "$GITHUB_OUTPUT"
+        source_hash=$(git ls-files -z -- src tests native build tools .github global.json mise.toml mise.lock Directory.Build.props | sort -z | xargs -0 sha256sum | sha256sum | cut -d ' ' -f 1)
+        echo "source=$source_hash" >> "$GITHUB_OUTPUT"
+        dpkg-query -W > artifacts/gpu-package-versions.txt
+        package_hash=$(sha256sum artifacts/gpu-package-versions.txt | cut -d ' ' -f 1)
+        echo "packages=$package_hash" >> "$GITHUB_OUTPUT"
+        slangc -version
+        VK_DRIVER_FILES="$LUMYTE_LAVAPIPE_ICD" vulkaninfo --summary
+    - name: Cache ordinary GPU compiled shaders
+      uses: actions/cache@0400d5f644dc74513175e3cd8d07132dd4860809
+      with:
+        path: artifacts/dev-env/mesa-cache
+        key: gpu-shaders-v1-ubuntu24-${{ runner.arch }}-${{ steps.gpu-cache.outputs.driver }}-${{ steps.gpu-cache.outputs.packages
+          }}-${{ steps.gpu-cache.outputs.source }}
+    - name: GPU backend and pixel contracts
+      run: |
+        source tools/setup/activate.sh
+        export LUMYTE_GRAPHICS_GPU_TESTS=1
+        export VK_DRIVER_FILES="$LUMYTE_LAVAPIPE_ICD"
+        dotnet run --project build -c Release --no-build --no-restore -- --target Test --lane gpu --host-only --no-build --no-restore --pipeline-validation
+    - name: Upload gpu results
+      if: always()
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: test-results-gpu-linux-x64
+        path: artifacts/test-results/
+        if-no-files-found: ignore
+    env:
+      LUMYTE_PREBUILT_CONSUMER: '1'
+      LUMYTE_PREBUILT_SDK_ROOT: ${{ github.workspace }}/artifacts/dev-env/mise/data/installs/http-dotnet/10.0.403
+      LumyteBuildParleyNative: 'false'
+      LumyteBuildWgpuNative: 'false'
+      LumyteBuildUsvgNative: 'false'
+  quality-linux-x64:
+    name: Quality (linux-x64)
+    needs:
+    - native-build-linux-x64
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+    - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8
+    - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1
+      with:
+        global-json-file: global.json
+    - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0
+      with:
+        name: prebuilt-native-linux-x64
+        path: ${{ runner.temp }}/prebuilt
+    - name: Verify and extract immutable build outputs
+      shell: bash
+      run: |-
+        test "$(dotnet --version)" = 10.0.403
+        python tools/ci/prebuilt.py extract "$RUNNER_TEMP/prebuilt/native-linux-x64.tar" --kind native --rid linux-x64 --configuration Release --sdk 10.0.403 --nuget-root "$GITHUB_WORKSPACE/artifacts/dev-env/nuget-packages"
+    - name: Provision tools and runtime only (no product compilation)
+      shell: bash
+      run: |
+        LUMYTE_SETUP_TOOLS_ONLY=1 bash tools/setup/setup.sh
+        source tools/setup/activate.sh
+        test "$DOTNET_ROOT" = "$LUMYTE_PREBUILT_SDK_ROOT"
+        python tools/ci/prebuilt.py verify "$RUNNER_TEMP/prebuilt/native-linux-x64.tar" --kind native --rid linux-x64 --configuration Release --sdk 10.0.403 --nuget-root "$GITHUB_WORKSPACE/artifacts/dev-env/nuget-packages"
+        sudo apt-get install -y libopenal1 xvfb xauth
+    - name: Quality / format and lint (Linux)
+      shell: bash
+      run: |
+        source tools/setup/activate.sh
+        dotnet run --project build -c Release --no-build --no-restore -- --target Quality --configuration Release --host-only --no-build --no-restore
+    - name: Upload quality results
+      if: always()
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: test-results-quality-linux-x64
+        path: artifacts/test-results/
+        if-no-files-found: ignore
+    env:
+      LUMYTE_PREBUILT_CONSUMER: '1'
+      LUMYTE_PREBUILT_SDK_ROOT: ${{ github.workspace }}/artifacts/dev-env/mise/data/installs/http-dotnet/10.0.403
+      LumyteBuildParleyNative: 'false'
+      LumyteBuildWgpuNative: 'false'
+      LumyteBuildUsvgNative: 'false'
+  native-build-linux-arm64:
+    name: Native build (linux-arm64, Release)
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 120
+    steps:
+    - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8
+    - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1
+      with:
+        global-json-file: global.json
+    - name: Cache dependencies
+      uses: ./.github/actions/cache-dependencies
+      with:
+        profile: native
+    - name: Mise setup (Linux)
+      uses: ./.github/actions/setup-linux
+    - name: Restore native Cargo compilation
+      uses: ./.github/actions/cache-native
+    - name: Build solution (Linux)
+      shell: bash
+      run: |
+        source tools/setup/activate.sh
+        dotnet run --project build -c Release --no-build --no-restore -- --target Compile --configuration Release --host-only
+    - name: Checkpoint verified native Cargo compilation
+      uses: ./.github/actions/cache-native
+      with:
+        mode: save
+    - name: Upload native Parley package assets
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: parley-native-Linux-aarch64
+        path: artifacts/text-parley/package/
+        if-no-files-found: error
+        retention-days: 7
+    - name: Seal immutable build outputs
+      shell: bash
+      run: |-
+        test "$(dotnet --version)" = 10.0.403
+        source tools/setup/activate.sh
+        test "$DOTNET_ROOT" = "$LUMYTE_PREBUILT_SDK_ROOT"
+        mkdir -p "$RUNNER_TEMP/prebuilt"
+        python tools/ci/prebuilt.py create "$RUNNER_TEMP/prebuilt/native-linux-arm64.tar" --kind native --rid linux-arm64 --configuration Release --sdk 10.0.403 --nuget-root "$GITHUB_WORKSPACE/artifacts/dev-env/nuget-packages"
+    - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: prebuilt-native-linux-arm64
+        path: ${{ runner.temp }}/prebuilt/native-linux-arm64.tar
+        if-no-files-found: error
+        retention-days: 1
+    env:
+      LUMYTE_PREBUILT_SDK_ROOT: ${{ github.workspace }}/artifacts/dev-env/mise/data/installs/http-dotnet/10.0.403
+  integration-linux-arm64:
+    name: Integration (linux-arm64)
+    needs:
+    - native-build-linux-arm64
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 90
+    steps:
+    - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8
+    - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1
+      with:
+        global-json-file: global.json
+    - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0
+      with:
+        name: prebuilt-native-linux-arm64
+        path: ${{ runner.temp }}/prebuilt
+    - name: Verify and extract immutable build outputs
+      shell: bash
+      run: |-
+        test "$(dotnet --version)" = 10.0.403
+        python tools/ci/prebuilt.py extract "$RUNNER_TEMP/prebuilt/native-linux-arm64.tar" --kind native --rid linux-arm64 --configuration Release --sdk 10.0.403 --nuget-root "$GITHUB_WORKSPACE/artifacts/dev-env/nuget-packages"
+    - name: Provision tools and runtime only (no product compilation)
+      shell: bash
+      run: |
+        LUMYTE_SETUP_TOOLS_ONLY=1 bash tools/setup/setup.sh
+        source tools/setup/activate.sh
+        test "$DOTNET_ROOT" = "$LUMYTE_PREBUILT_SDK_ROOT"
+        python tools/ci/prebuilt.py verify "$RUNNER_TEMP/prebuilt/native-linux-arm64.tar" --kind native --rid linux-arm64 --configuration Release --sdk 10.0.403 --nuget-root "$GITHUB_WORKSPACE/artifacts/dev-env/nuget-packages"
+        sudo apt-get install -y libopenal1 xvfb xauth
+    - name: Run integration tests (Linux)
+      shell: bash
+      run: |
+        source tools/setup/activate.sh
+        if [[ "aarch64" == 'x64' ]]; then
+          export LUMYTE_OPENAL_TESTS=1
+          export ALSOFT_DRIVERS=null
+        fi
+        dotnet run --project build -c Release --no-build --no-restore -- --target Test --lane integration --configuration Release --host-only --no-build --no-restore
+    - name: Native / X11 windowing
+      shell: bash
+      run: |
+        source tools/setup/activate.sh
+        if ! command -v xvfb-run >/dev/null || ! command -v xauth >/dev/null; then
           sudo apt-get update
-          sudo apt-get install -y libopenal1
-
-      - name: Distribution / AOT publish and execution
-        run: |
-          source tools/setup/activate.sh
-          # Each AOT publish restores and builds its own project references.
-          dotnet run --project build -c Release --no-build --no-restore -- --target Test --suite aot --configuration Release --host-only --no-build --no-restore
-      - name: Upload AOT results
-        if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        with:
-          name: test-results-aot
-          path: artifacts/test-results/
-          if-no-files-found: ignore
-
+          sudo apt-get install -y xvfb xauth
+        fi
+        dotnet run --project build -c Release --no-build --no-restore -- --target Test --suite windowing --configuration Release --no-build --no-restore
+    - name: Verify diagnostic server and game processes
+      shell: bash
+      run: |
+        source tools/setup/activate.sh
+        dotnet run --project build -c Release --no-build --no-restore -- --target Test --suite diagnostics-processes --configuration Release --no-build --no-restore
+    - name: Upload test results
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: test-results-Linux-aarch64
+        path: artifacts/test-results/
+        if-no-files-found: ignore
+      if: always()
+    env:
+      LUMYTE_PREBUILT_CONSUMER: '1'
+      LUMYTE_PREBUILT_SDK_ROOT: ${{ github.workspace }}/artifacts/dev-env/mise/data/installs/http-dotnet/10.0.403
+      LumyteBuildParleyNative: 'false'
+      LumyteBuildWgpuNative: 'false'
+      LumyteBuildUsvgNative: 'false'
+  native-build-windows-x64:
+    name: Native build (win-x64, Release)
+    runs-on: windows-2022
+    timeout-minutes: 120
+    steps:
+    - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8
+    - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1
+      with:
+        global-json-file: global.json
+    - name: Cache dependencies
+      uses: ./.github/actions/cache-dependencies
+      with:
+        profile: native
+    - name: Mise setup (Windows)
+      shell: powershell
+      run: |
+        .\tools\setup\setup.ps1
+        . ./tools/setup/activate.ps1
+        Invoke-LumyteCommand dotnet @('build', 'build', '-c', 'Release')
+    - name: Restore native Cargo compilation
+      uses: ./.github/actions/cache-native
+    - name: Build solution (Windows)
+      shell: powershell
+      run: |
+        . ./tools/setup/activate.ps1
+        Invoke-LumyteCommand dotnet @('run', '--project', 'build', '-c', 'Release', '--no-build', '--no-restore', '--', '--target', 'Compile', '--configuration', 'Release', '--host-only')
+    - name: Checkpoint verified native Cargo compilation
+      uses: ./.github/actions/cache-native
+      with:
+        mode: save
+    - name: Upload native Parley package assets
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: parley-native-Windows-x64
+        path: artifacts/text-parley/package/
+        if-no-files-found: error
+        retention-days: 7
+    - name: Seal immutable build outputs
+      shell: powershell
+      run: |-
+        if ((dotnet --version).Trim() -ne '10.0.403') { throw 'SDK mismatch' }
+        . ./tools/setup/activate.ps1
+        if ([IO.Path]::GetFullPath($env:DOTNET_ROOT) -ne [IO.Path]::GetFullPath($env:LUMYTE_PREBUILT_SDK_ROOT)) { throw "SDK root mismatch" }
+        New-Item -ItemType Directory -Force "$env:RUNNER_TEMP/prebuilt" | Out-Null
+        Invoke-LumyteCommand python @('tools/ci/prebuilt.py', 'create', "$env:RUNNER_TEMP/prebuilt/native-win-x64.tar", '--rid', 'win-x64', '--configuration', 'Release', '--sdk', '10.0.403', '--kind', 'native')
+    - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: prebuilt-native-win-x64
+        path: ${{ runner.temp }}/prebuilt/native-win-x64.tar
+        if-no-files-found: error
+        retention-days: 1
+    env:
+      LUMYTE_PREBUILT_SDK_ROOT: ${{ github.workspace }}/artifacts/dev-env/mise/data/installs/http-dotnet/10.0.403
+  integration-windows-x64:
+    name: Integration (win-x64)
+    needs:
+    - native-build-windows-x64
+    runs-on: windows-2022
+    timeout-minutes: 90
+    steps:
+    - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8
+    - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1
+      with:
+        global-json-file: global.json
+    - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0
+      with:
+        name: prebuilt-native-win-x64
+        path: ${{ runner.temp }}/prebuilt
+    - name: Verify and extract immutable build outputs
+      shell: bash
+      run: |-
+        test "$(dotnet --version)" = 10.0.403
+        python tools/ci/prebuilt.py extract "$RUNNER_TEMP/prebuilt/native-win-x64.tar" --kind native --rid win-x64 --configuration Release --sdk 10.0.403 --nuget-root "$GITHUB_WORKSPACE/artifacts/dev-env/nuget-packages"
+    - name: Provision tools only (never product/bootstrap compilation)
+      shell: powershell
+      run: |-
+        $env:LUMYTE_SETUP_TOOLS_ONLY='1'
+        .\tools\setup\setup.ps1
+        . ./tools/setup/activate.ps1
+        if ([IO.Path]::GetFullPath($env:DOTNET_ROOT) -ne [IO.Path]::GetFullPath($env:LUMYTE_PREBUILT_SDK_ROOT)) { throw "SDK root mismatch" }
+        Invoke-LumyteCommand python @('tools/ci/prebuilt.py', 'verify', "$env:RUNNER_TEMP/prebuilt/native-win-x64.tar", '--rid', 'win-x64', '--configuration', 'Release', '--sdk', '10.0.403', '--kind', 'native')
+    - name: Run integration tests (Windows)
+      shell: powershell
+      run: |
+        . ./tools/setup/activate.ps1
+        Invoke-LumyteCommand dotnet @('run', '--project', 'build', '-c', 'Release', '--no-build', '--no-restore', '--', '--target', 'Test', '--lane', 'integration', '--configuration', 'Release', '--host-only', '--no-build', '--no-restore')
+        Invoke-LumyteCommand dotnet @('run', '--project', 'build', '-c', 'Release', '--no-build', '--no-restore', '--', '--target', 'Test', '--lane', 'gpu', '--configuration', 'Release', '--host-only', '--no-build', '--no-restore')
+    - name: Distribution / Windows window sample
+      shell: powershell
+      run: |
+        . ./tools/setup/activate.ps1
+        Invoke-LumyteCommand dotnet @('run', '--project', 'build', '-c', 'Release', '--no-build', '--no-restore', '--', '--target', 'Distribution', '--distribution-output', 'window-sample', '--configuration', 'Release', '--no-build', '--no-restore')
+    - name: Distribution / Windows packages
+      shell: powershell
+      run: |
+        . ./tools/setup/activate.ps1
+        foreach ($project in @('src/Platform/Lumyte.Platform.Windows', 'src/Graphics/Lumyte.Graphics.Direct3D12')) {
+          Invoke-LumyteCommand dotnet @('run', '--project', 'build', '-c', 'Release', '--no-build', '--no-restore', '--', '--target', 'Distribution', '--distribution-output', 'packages', '--project', $project, '--configuration', 'Release', '--no-build', '--no-restore')
+        }
+    - name: Upload test results
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: test-results-Windows-x64
+        path: artifacts/test-results/
+        if-no-files-found: ignore
+      if: always()
+    env:
+      LUMYTE_PREBUILT_CONSUMER: '1'
+      LUMYTE_PREBUILT_SDK_ROOT: ${{ github.workspace }}/artifacts/dev-env/mise/data/installs/http-dotnet/10.0.403
+      LumyteBuildParleyNative: 'false'
+      LumyteBuildWgpuNative: 'false'
+      LumyteBuildUsvgNative: 'false'
+  quality-windows-x64:
+    name: Quality (win-x64)
+    needs:
+    - native-build-windows-x64
+    runs-on: windows-2022
+    timeout-minutes: 90
+    steps:
+    - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8
+    - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1
+      with:
+        global-json-file: global.json
+    - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0
+      with:
+        name: prebuilt-native-win-x64
+        path: ${{ runner.temp }}/prebuilt
+    - name: Verify and extract immutable build outputs
+      shell: bash
+      run: |-
+        test "$(dotnet --version)" = 10.0.403
+        python tools/ci/prebuilt.py extract "$RUNNER_TEMP/prebuilt/native-win-x64.tar" --kind native --rid win-x64 --configuration Release --sdk 10.0.403 --nuget-root "$GITHUB_WORKSPACE/artifacts/dev-env/nuget-packages"
+    - name: Provision tools only (never product/bootstrap compilation)
+      shell: powershell
+      run: |-
+        $env:LUMYTE_SETUP_TOOLS_ONLY='1'
+        .\tools\setup\setup.ps1
+        . ./tools/setup/activate.ps1
+        if ([IO.Path]::GetFullPath($env:DOTNET_ROOT) -ne [IO.Path]::GetFullPath($env:LUMYTE_PREBUILT_SDK_ROOT)) { throw "SDK root mismatch" }
+        Invoke-LumyteCommand python @('tools/ci/prebuilt.py', 'verify', "$env:RUNNER_TEMP/prebuilt/native-win-x64.tar", '--rid', 'win-x64', '--configuration', 'Release', '--sdk', '10.0.403', '--kind', 'native')
+    - name: Quality / format (Windows)
+      shell: powershell
+      run: |
+        . ./tools/setup/activate.ps1
+        Invoke-LumyteCommand dotnet @('run', '--project', 'build', '-c', 'Release', '--no-build', '--no-restore', '--', '--target', 'Quality', '--quality-scope', 'managed', '--configuration', 'Release', '--host-only', '--no-build', '--no-restore')
+    - name: Upload quality results
+      if: always()
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: test-results-quality-windows-x64
+        path: artifacts/test-results/
+        if-no-files-found: ignore
+    env:
+      LUMYTE_PREBUILT_CONSUMER: '1'
+      LUMYTE_PREBUILT_SDK_ROOT: ${{ github.workspace }}/artifacts/dev-env/mise/data/installs/http-dotnet/10.0.403
+      LumyteBuildParleyNative: 'false'
+      LumyteBuildWgpuNative: 'false'
+      LumyteBuildUsvgNative: 'false'
+  native-build-windows-arm64:
+    name: Native build (win-arm64, Release)
+    runs-on: windows-11-arm
+    timeout-minutes: 120
+    steps:
+    - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8
+    - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1
+      with:
+        global-json-file: global.json
+    - name: Cache dependencies
+      uses: ./.github/actions/cache-dependencies
+      with:
+        profile: native
+    - name: Mise setup (Windows)
+      shell: powershell
+      run: |
+        .\tools\setup\setup.ps1
+        . ./tools/setup/activate.ps1
+        Invoke-LumyteCommand dotnet @('build', 'build', '-c', 'Release')
+    - name: Restore native Cargo compilation
+      uses: ./.github/actions/cache-native
+    - name: Build solution (Windows)
+      shell: powershell
+      run: |
+        . ./tools/setup/activate.ps1
+        Invoke-LumyteCommand dotnet @('run', '--project', 'build', '-c', 'Release', '--no-build', '--no-restore', '--', '--target', 'Compile', '--configuration', 'Release', '--host-only')
+    - name: Checkpoint verified native Cargo compilation
+      uses: ./.github/actions/cache-native
+      with:
+        mode: save
+    - name: Upload native Parley package assets
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: parley-native-Windows-aarch64
+        path: artifacts/text-parley/package/
+        if-no-files-found: error
+        retention-days: 7
+    - name: Seal immutable build outputs
+      shell: powershell
+      run: |-
+        if ((dotnet --version).Trim() -ne '10.0.403') { throw 'SDK mismatch' }
+        . ./tools/setup/activate.ps1
+        if ([IO.Path]::GetFullPath($env:DOTNET_ROOT) -ne [IO.Path]::GetFullPath($env:LUMYTE_PREBUILT_SDK_ROOT)) { throw "SDK root mismatch" }
+        New-Item -ItemType Directory -Force "$env:RUNNER_TEMP/prebuilt" | Out-Null
+        Invoke-LumyteCommand python @('tools/ci/prebuilt.py', 'create', "$env:RUNNER_TEMP/prebuilt/native-win-arm64.tar", '--rid', 'win-arm64', '--configuration', 'Release', '--sdk', '10.0.403', '--kind', 'native')
+    - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: prebuilt-native-win-arm64
+        path: ${{ runner.temp }}/prebuilt/native-win-arm64.tar
+        if-no-files-found: error
+        retention-days: 1
+    env:
+      LUMYTE_PREBUILT_SDK_ROOT: ${{ github.workspace }}/artifacts/dev-env/mise/data/installs/http-dotnet/10.0.403
+  integration-windows-arm64:
+    name: Integration (win-arm64)
+    needs:
+    - native-build-windows-arm64
+    runs-on: windows-11-arm
+    timeout-minutes: 90
+    steps:
+    - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8
+    - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1
+      with:
+        global-json-file: global.json
+    - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0
+      with:
+        name: prebuilt-native-win-arm64
+        path: ${{ runner.temp }}/prebuilt
+    - name: Verify and extract immutable build outputs
+      shell: bash
+      run: |-
+        test "$(dotnet --version)" = 10.0.403
+        python tools/ci/prebuilt.py extract "$RUNNER_TEMP/prebuilt/native-win-arm64.tar" --kind native --rid win-arm64 --configuration Release --sdk 10.0.403 --nuget-root "$GITHUB_WORKSPACE/artifacts/dev-env/nuget-packages"
+    - name: Provision tools only (never product/bootstrap compilation)
+      shell: powershell
+      run: |-
+        $env:LUMYTE_SETUP_TOOLS_ONLY='1'
+        .\tools\setup\setup.ps1
+        . ./tools/setup/activate.ps1
+        if ([IO.Path]::GetFullPath($env:DOTNET_ROOT) -ne [IO.Path]::GetFullPath($env:LUMYTE_PREBUILT_SDK_ROOT)) { throw "SDK root mismatch" }
+        Invoke-LumyteCommand python @('tools/ci/prebuilt.py', 'verify', "$env:RUNNER_TEMP/prebuilt/native-win-arm64.tar", '--rid', 'win-arm64', '--configuration', 'Release', '--sdk', '10.0.403', '--kind', 'native')
+    - name: Run integration tests (Windows)
+      shell: powershell
+      run: |
+        . ./tools/setup/activate.ps1
+        Invoke-LumyteCommand dotnet @('run', '--project', 'build', '-c', 'Release', '--no-build', '--no-restore', '--', '--target', 'Test', '--lane', 'integration', '--configuration', 'Release', '--host-only', '--no-build', '--no-restore')
+        Invoke-LumyteCommand dotnet @('run', '--project', 'build', '-c', 'Release', '--no-build', '--no-restore', '--', '--target', 'Test', '--lane', 'gpu', '--configuration', 'Release', '--host-only', '--no-build', '--no-restore')
+    - name: Distribution / Windows window sample
+      shell: powershell
+      run: |
+        . ./tools/setup/activate.ps1
+        Invoke-LumyteCommand dotnet @('run', '--project', 'build', '-c', 'Release', '--no-build', '--no-restore', '--', '--target', 'Distribution', '--distribution-output', 'window-sample', '--configuration', 'Release', '--no-build', '--no-restore')
+    - name: Upload test results
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: test-results-Windows-aarch64
+        path: artifacts/test-results/
+        if-no-files-found: ignore
+      if: always()
+    env:
+      LUMYTE_PREBUILT_CONSUMER: '1'
+      LUMYTE_PREBUILT_SDK_ROOT: ${{ github.workspace }}/artifacts/dev-env/mise/data/installs/http-dotnet/10.0.403
+      LumyteBuildParleyNative: 'false'
+      LumyteBuildWgpuNative: 'false'
+      LumyteBuildUsvgNative: 'false'
+  browser-build:
+    name: Browser publish (one shared workspace)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+    - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8
+    - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1
+      with:
+        global-json-file: global.json
+    - name: Cache dependencies
+      uses: ./.github/actions/cache-dependencies
+      with:
+        profile: browser
+    - name: Prepare Browser tools
+      uses: ./.github/actions/setup-linux
+    - name: Publish all browser outputs once
+      shell: bash
+      run: |-
+        source tools/setup/activate.sh
+        dotnet run --project build -c Release --no-build --no-restore -- --target Compile --build-kind browser --configuration Release --host-only
+    - name: Seal immutable build outputs
+      shell: bash
+      run: |-
+        test "$(dotnet --version)" = 10.0.403
+        source tools/setup/activate.sh
+        test "$DOTNET_ROOT" = "$LUMYTE_PREBUILT_SDK_ROOT"
+        mkdir -p "$RUNNER_TEMP/prebuilt"
+        python tools/ci/prebuilt.py create "$RUNNER_TEMP/prebuilt/browser-linux-x64.tar" --kind browser --rid linux-x64 --configuration Release --sdk 10.0.403 --nuget-root "$GITHUB_WORKSPACE/artifacts/dev-env/nuget-packages"
+    - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: prebuilt-browser-linux-x64
+        path: ${{ runner.temp }}/prebuilt/browser-linux-x64.tar
+        if-no-files-found: error
+        retention-days: 1
+    env:
+      LUMYTE_PREBUILT_SDK_ROOT: ${{ github.workspace }}/artifacts/dev-env/mise/data/installs/http-dotnet/10.0.403
+  browser-graphics:
+    name: Browser (graphics)
+    needs:
+    - browser-build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+    - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8
+    - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1
+      with:
+        global-json-file: global.json
+    - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0
+      with:
+        name: prebuilt-browser-linux-x64
+        path: ${{ runner.temp }}/prebuilt
+    - name: Verify and extract immutable build outputs
+      shell: bash
+      run: |-
+        test "$(dotnet --version)" = 10.0.403
+        python tools/ci/prebuilt.py extract "$RUNNER_TEMP/prebuilt/browser-linux-x64.tar" --kind browser --rid linux-x64 --configuration Release --sdk 10.0.403 --nuget-root "$GITHUB_WORKSPACE/artifacts/dev-env/nuget-packages"
+    - name: Provision tools and runtime only (no product compilation)
+      shell: bash
+      run: |
+        LUMYTE_SETUP_TOOLS_ONLY=1 bash tools/setup/setup.sh
+        source tools/setup/activate.sh
+        test "$DOTNET_ROOT" = "$LUMYTE_PREBUILT_SDK_ROOT"
+        python tools/ci/prebuilt.py verify "$RUNNER_TEMP/prebuilt/browser-linux-x64.tar" --kind browser --rid linux-x64 --configuration Release --sdk 10.0.403 --nuget-root "$GITHUB_WORKSPACE/artifacts/dev-env/nuget-packages"
+        sudo apt-get install -y libopenal1 xvfb xauth
+    - name: Install pinned Chrome with bundled SwiftShader
+      id: chrome
+      uses: browser-actions/setup-chrome@48ad923757ca74d66703209fe939badbdf80f2f4
+      with:
+        chrome-version: 156.0.8078.47
+        install-dependencies: true
+    - name: Prepare browser runtime dependencies
+      env:
+        CHROME: ${{ steps.chrome.outputs.chrome-path }}
+      run: |
+        source tools/setup/environment.sh
+        source /etc/os-release
+        source tools/setup/ci-apt.sh
+        sudo apt-get "${lumyte_apt_options[@]}" update
+        sudo apt-get "${lumyte_apt_options[@]}" install -y libopenal1
+        "$CHROME" --version
+        # Fail before publishing if this browser has no matching software driver.
+        chrome_directory=$(dirname "$(readlink -f "$CHROME")")
+        test -s "$chrome_directory/libvk_swiftshader.so"
+        test -s "$chrome_directory/vk_swiftshader_icd.json"
+        test -s "$chrome_directory/libvulkan.so.1"
+    - name: Browser / platform API integration
+      env:
+        CHROME: ${{ steps.chrome.outputs.chrome-path }}
+        LUMYTE_REQUIRE_SOFTWARE_WEBGPU: '1'
+        LUMYTE_BROWSER_FLIGHT_RECORDER: '1'
+        LUMYTE_BROWSER_FLIGHT_RECORDER_SLOW_MS: '5000'
+        LUMYTE_ALLOW_KNOWN_BROWSER_TIMEOUT: '1'
+        LUMYTE_QUARANTINE_CONNECTED_PNG_TIMEOUT: '1'
+      run: |
+        source tools/setup/activate.sh
+        dotnet run --project build -c Release --no-build --no-restore -- --target Test --lane integration --platform browser --configuration Release --browser-case graphics --no-build --no-restore
+    - name: Upload results
+      if: always()
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: test-results-browser-graphics
+        path: artifacts/test-results/
+        if-no-files-found: ignore
+    env:
+      LUMYTE_PREBUILT_CONSUMER: '1'
+      LUMYTE_PREBUILT_SDK_ROOT: ${{ github.workspace }}/artifacts/dev-env/mise/data/installs/http-dotnet/10.0.403
+      LumyteBuildParleyNative: 'false'
+      LumyteBuildWgpuNative: 'false'
+      LumyteBuildUsvgNative: 'false'
+  browser-text:
+    name: Browser (text)
+    needs:
+    - browser-build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+    - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8
+    - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1
+      with:
+        global-json-file: global.json
+    - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0
+      with:
+        name: prebuilt-browser-linux-x64
+        path: ${{ runner.temp }}/prebuilt
+    - name: Verify and extract immutable build outputs
+      shell: bash
+      run: |-
+        test "$(dotnet --version)" = 10.0.403
+        python tools/ci/prebuilt.py extract "$RUNNER_TEMP/prebuilt/browser-linux-x64.tar" --kind browser --rid linux-x64 --configuration Release --sdk 10.0.403 --nuget-root "$GITHUB_WORKSPACE/artifacts/dev-env/nuget-packages"
+    - name: Provision tools and runtime only (no product compilation)
+      shell: bash
+      run: |
+        LUMYTE_SETUP_TOOLS_ONLY=1 bash tools/setup/setup.sh
+        source tools/setup/activate.sh
+        test "$DOTNET_ROOT" = "$LUMYTE_PREBUILT_SDK_ROOT"
+        python tools/ci/prebuilt.py verify "$RUNNER_TEMP/prebuilt/browser-linux-x64.tar" --kind browser --rid linux-x64 --configuration Release --sdk 10.0.403 --nuget-root "$GITHUB_WORKSPACE/artifacts/dev-env/nuget-packages"
+        sudo apt-get install -y libopenal1 xvfb xauth
+    - name: Install pinned Chrome with bundled SwiftShader
+      id: chrome
+      uses: browser-actions/setup-chrome@48ad923757ca74d66703209fe939badbdf80f2f4
+      with:
+        chrome-version: 156.0.8078.47
+        install-dependencies: true
+    - name: Prepare browser runtime dependencies
+      env:
+        CHROME: ${{ steps.chrome.outputs.chrome-path }}
+      run: |
+        source tools/setup/environment.sh
+        source /etc/os-release
+        source tools/setup/ci-apt.sh
+        sudo apt-get "${lumyte_apt_options[@]}" update
+        sudo apt-get "${lumyte_apt_options[@]}" install -y libopenal1
+        "$CHROME" --version
+        # Fail before publishing if this browser has no matching software driver.
+        chrome_directory=$(dirname "$(readlink -f "$CHROME")")
+        test -s "$chrome_directory/libvk_swiftshader.so"
+        test -s "$chrome_directory/vk_swiftshader_icd.json"
+        test -s "$chrome_directory/libvulkan.so.1"
+    - name: Browser / platform API integration
+      env:
+        CHROME: ${{ steps.chrome.outputs.chrome-path }}
+        LUMYTE_REQUIRE_SOFTWARE_WEBGPU: '1'
+        LUMYTE_BROWSER_FLIGHT_RECORDER: '1'
+        LUMYTE_BROWSER_FLIGHT_RECORDER_SLOW_MS: '5000'
+        LUMYTE_ALLOW_KNOWN_BROWSER_TIMEOUT: '1'
+        LUMYTE_QUARANTINE_CONNECTED_PNG_TIMEOUT: '1'
+      run: |
+        source tools/setup/activate.sh
+        dotnet run --project build -c Release --no-build --no-restore -- --target Test --lane integration --platform browser --configuration Release --browser-case text --no-build --no-restore
+    - name: Upload results
+      if: always()
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: test-results-browser-text
+        path: artifacts/test-results/
+        if-no-files-found: ignore
+    env:
+      LUMYTE_PREBUILT_CONSUMER: '1'
+      LUMYTE_PREBUILT_SDK_ROOT: ${{ github.workspace }}/artifacts/dev-env/mise/data/installs/http-dotnet/10.0.403
+      LumyteBuildParleyNative: 'false'
+      LumyteBuildWgpuNative: 'false'
+      LumyteBuildUsvgNative: 'false'
+  browser-ui-application:
+    name: Browser (ui-application)
+    needs:
+    - browser-build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+    - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8
+    - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1
+      with:
+        global-json-file: global.json
+    - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0
+      with:
+        name: prebuilt-browser-linux-x64
+        path: ${{ runner.temp }}/prebuilt
+    - name: Verify and extract immutable build outputs
+      shell: bash
+      run: |-
+        test "$(dotnet --version)" = 10.0.403
+        python tools/ci/prebuilt.py extract "$RUNNER_TEMP/prebuilt/browser-linux-x64.tar" --kind browser --rid linux-x64 --configuration Release --sdk 10.0.403 --nuget-root "$GITHUB_WORKSPACE/artifacts/dev-env/nuget-packages"
+    - name: Provision tools and runtime only (no product compilation)
+      shell: bash
+      run: |
+        LUMYTE_SETUP_TOOLS_ONLY=1 bash tools/setup/setup.sh
+        source tools/setup/activate.sh
+        test "$DOTNET_ROOT" = "$LUMYTE_PREBUILT_SDK_ROOT"
+        python tools/ci/prebuilt.py verify "$RUNNER_TEMP/prebuilt/browser-linux-x64.tar" --kind browser --rid linux-x64 --configuration Release --sdk 10.0.403 --nuget-root "$GITHUB_WORKSPACE/artifacts/dev-env/nuget-packages"
+        sudo apt-get install -y libopenal1 xvfb xauth
+    - name: Install pinned Chrome with bundled SwiftShader
+      id: chrome
+      uses: browser-actions/setup-chrome@48ad923757ca74d66703209fe939badbdf80f2f4
+      with:
+        chrome-version: 156.0.8078.47
+        install-dependencies: true
+    - name: Prepare browser runtime dependencies
+      env:
+        CHROME: ${{ steps.chrome.outputs.chrome-path }}
+      run: |
+        source tools/setup/environment.sh
+        source /etc/os-release
+        source tools/setup/ci-apt.sh
+        sudo apt-get "${lumyte_apt_options[@]}" update
+        sudo apt-get "${lumyte_apt_options[@]}" install -y libopenal1
+        "$CHROME" --version
+        # Fail before publishing if this browser has no matching software driver.
+        chrome_directory=$(dirname "$(readlink -f "$CHROME")")
+        test -s "$chrome_directory/libvk_swiftshader.so"
+        test -s "$chrome_directory/vk_swiftshader_icd.json"
+        test -s "$chrome_directory/libvulkan.so.1"
+    - name: Browser / platform API integration
+      env:
+        CHROME: ${{ steps.chrome.outputs.chrome-path }}
+        LUMYTE_REQUIRE_SOFTWARE_WEBGPU: '1'
+        LUMYTE_BROWSER_FLIGHT_RECORDER: '1'
+        LUMYTE_BROWSER_FLIGHT_RECORDER_SLOW_MS: '5000'
+        LUMYTE_ALLOW_KNOWN_BROWSER_TIMEOUT: '1'
+        LUMYTE_QUARANTINE_CONNECTED_PNG_TIMEOUT: '1'
+      run: |
+        source tools/setup/activate.sh
+        dotnet run --project build -c Release --no-build --no-restore -- --target Test --lane integration --platform browser --configuration Release --browser-case ui-application --no-build --no-restore
+    - name: Upload results
+      if: always()
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: test-results-browser-ui-application
+        path: artifacts/test-results/
+        if-no-files-found: ignore
+    env:
+      LUMYTE_PREBUILT_CONSUMER: '1'
+      LUMYTE_PREBUILT_SDK_ROOT: ${{ github.workspace }}/artifacts/dev-env/mise/data/installs/http-dotnet/10.0.403
+      LumyteBuildParleyNative: 'false'
+      LumyteBuildWgpuNative: 'false'
+      LumyteBuildUsvgNative: 'false'
+  browser-ui-navigation:
+    name: Browser (ui-navigation)
+    needs:
+    - browser-build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+    - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8
+    - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1
+      with:
+        global-json-file: global.json
+    - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0
+      with:
+        name: prebuilt-browser-linux-x64
+        path: ${{ runner.temp }}/prebuilt
+    - name: Verify and extract immutable build outputs
+      shell: bash
+      run: |-
+        test "$(dotnet --version)" = 10.0.403
+        python tools/ci/prebuilt.py extract "$RUNNER_TEMP/prebuilt/browser-linux-x64.tar" --kind browser --rid linux-x64 --configuration Release --sdk 10.0.403 --nuget-root "$GITHUB_WORKSPACE/artifacts/dev-env/nuget-packages"
+    - name: Provision tools and runtime only (no product compilation)
+      shell: bash
+      run: |
+        LUMYTE_SETUP_TOOLS_ONLY=1 bash tools/setup/setup.sh
+        source tools/setup/activate.sh
+        test "$DOTNET_ROOT" = "$LUMYTE_PREBUILT_SDK_ROOT"
+        python tools/ci/prebuilt.py verify "$RUNNER_TEMP/prebuilt/browser-linux-x64.tar" --kind browser --rid linux-x64 --configuration Release --sdk 10.0.403 --nuget-root "$GITHUB_WORKSPACE/artifacts/dev-env/nuget-packages"
+        sudo apt-get install -y libopenal1 xvfb xauth
+    - name: Install pinned Chrome with bundled SwiftShader
+      id: chrome
+      uses: browser-actions/setup-chrome@48ad923757ca74d66703209fe939badbdf80f2f4
+      with:
+        chrome-version: 156.0.8078.47
+        install-dependencies: true
+    - name: Prepare browser runtime dependencies
+      env:
+        CHROME: ${{ steps.chrome.outputs.chrome-path }}
+      run: |
+        source tools/setup/environment.sh
+        source /etc/os-release
+        source tools/setup/ci-apt.sh
+        sudo apt-get "${lumyte_apt_options[@]}" update
+        sudo apt-get "${lumyte_apt_options[@]}" install -y libopenal1
+        "$CHROME" --version
+        # Fail before publishing if this browser has no matching software driver.
+        chrome_directory=$(dirname "$(readlink -f "$CHROME")")
+        test -s "$chrome_directory/libvk_swiftshader.so"
+        test -s "$chrome_directory/vk_swiftshader_icd.json"
+        test -s "$chrome_directory/libvulkan.so.1"
+    - name: Browser / platform API integration
+      env:
+        CHROME: ${{ steps.chrome.outputs.chrome-path }}
+        LUMYTE_REQUIRE_SOFTWARE_WEBGPU: '1'
+        LUMYTE_BROWSER_FLIGHT_RECORDER: '1'
+        LUMYTE_BROWSER_FLIGHT_RECORDER_SLOW_MS: '5000'
+        LUMYTE_ALLOW_KNOWN_BROWSER_TIMEOUT: '1'
+        LUMYTE_QUARANTINE_CONNECTED_PNG_TIMEOUT: '1'
+      run: |
+        source tools/setup/activate.sh
+        dotnet run --project build -c Release --no-build --no-restore -- --target Test --lane integration --platform browser --configuration Release --browser-case ui-navigation --no-build --no-restore
+    - name: Upload results
+      if: always()
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: test-results-browser-ui-navigation
+        path: artifacts/test-results/
+        if-no-files-found: ignore
+    env:
+      LUMYTE_PREBUILT_CONSUMER: '1'
+      LUMYTE_PREBUILT_SDK_ROOT: ${{ github.workspace }}/artifacts/dev-env/mise/data/installs/http-dotnet/10.0.403
+      LumyteBuildParleyNative: 'false'
+      LumyteBuildWgpuNative: 'false'
+      LumyteBuildUsvgNative: 'false'
+  browser-ui-pages:
+    name: Browser (ui-pages)
+    needs:
+    - browser-build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+    - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8
+    - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1
+      with:
+        global-json-file: global.json
+    - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0
+      with:
+        name: prebuilt-browser-linux-x64
+        path: ${{ runner.temp }}/prebuilt
+    - name: Verify and extract immutable build outputs
+      shell: bash
+      run: |-
+        test "$(dotnet --version)" = 10.0.403
+        python tools/ci/prebuilt.py extract "$RUNNER_TEMP/prebuilt/browser-linux-x64.tar" --kind browser --rid linux-x64 --configuration Release --sdk 10.0.403 --nuget-root "$GITHUB_WORKSPACE/artifacts/dev-env/nuget-packages"
+    - name: Provision tools and runtime only (no product compilation)
+      shell: bash
+      run: |
+        LUMYTE_SETUP_TOOLS_ONLY=1 bash tools/setup/setup.sh
+        source tools/setup/activate.sh
+        test "$DOTNET_ROOT" = "$LUMYTE_PREBUILT_SDK_ROOT"
+        python tools/ci/prebuilt.py verify "$RUNNER_TEMP/prebuilt/browser-linux-x64.tar" --kind browser --rid linux-x64 --configuration Release --sdk 10.0.403 --nuget-root "$GITHUB_WORKSPACE/artifacts/dev-env/nuget-packages"
+        sudo apt-get install -y libopenal1 xvfb xauth
+    - name: Install pinned Chrome with bundled SwiftShader
+      id: chrome
+      uses: browser-actions/setup-chrome@48ad923757ca74d66703209fe939badbdf80f2f4
+      with:
+        chrome-version: 156.0.8078.47
+        install-dependencies: true
+    - name: Prepare browser runtime dependencies
+      env:
+        CHROME: ${{ steps.chrome.outputs.chrome-path }}
+      run: |
+        source tools/setup/environment.sh
+        source /etc/os-release
+        source tools/setup/ci-apt.sh
+        sudo apt-get "${lumyte_apt_options[@]}" update
+        sudo apt-get "${lumyte_apt_options[@]}" install -y libopenal1
+        "$CHROME" --version
+        # Fail before publishing if this browser has no matching software driver.
+        chrome_directory=$(dirname "$(readlink -f "$CHROME")")
+        test -s "$chrome_directory/libvk_swiftshader.so"
+        test -s "$chrome_directory/vk_swiftshader_icd.json"
+        test -s "$chrome_directory/libvulkan.so.1"
+    - name: Browser / platform API integration
+      env:
+        CHROME: ${{ steps.chrome.outputs.chrome-path }}
+        LUMYTE_REQUIRE_SOFTWARE_WEBGPU: '1'
+        LUMYTE_BROWSER_FLIGHT_RECORDER: '1'
+        LUMYTE_BROWSER_FLIGHT_RECORDER_SLOW_MS: '5000'
+        LUMYTE_ALLOW_KNOWN_BROWSER_TIMEOUT: '1'
+        LUMYTE_QUARANTINE_CONNECTED_PNG_TIMEOUT: '1'
+      run: |
+        source tools/setup/activate.sh
+        dotnet run --project build -c Release --no-build --no-restore -- --target Test --lane integration --platform browser --configuration Release --browser-case ui-pages --no-build --no-restore
+    - name: Upload results
+      if: always()
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: test-results-browser-ui-pages
+        path: artifacts/test-results/
+        if-no-files-found: ignore
+    env:
+      LUMYTE_PREBUILT_CONSUMER: '1'
+      LUMYTE_PREBUILT_SDK_ROOT: ${{ github.workspace }}/artifacts/dev-env/mise/data/installs/http-dotnet/10.0.403
+      LumyteBuildParleyNative: 'false'
+      LumyteBuildWgpuNative: 'false'
+      LumyteBuildUsvgNative: 'false'
+  browser-ui-transitions:
+    name: Browser (ui-transitions)
+    needs:
+    - browser-build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+    - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8
+    - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1
+      with:
+        global-json-file: global.json
+    - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0
+      with:
+        name: prebuilt-browser-linux-x64
+        path: ${{ runner.temp }}/prebuilt
+    - name: Verify and extract immutable build outputs
+      shell: bash
+      run: |-
+        test "$(dotnet --version)" = 10.0.403
+        python tools/ci/prebuilt.py extract "$RUNNER_TEMP/prebuilt/browser-linux-x64.tar" --kind browser --rid linux-x64 --configuration Release --sdk 10.0.403 --nuget-root "$GITHUB_WORKSPACE/artifacts/dev-env/nuget-packages"
+    - name: Provision tools and runtime only (no product compilation)
+      shell: bash
+      run: |
+        LUMYTE_SETUP_TOOLS_ONLY=1 bash tools/setup/setup.sh
+        source tools/setup/activate.sh
+        test "$DOTNET_ROOT" = "$LUMYTE_PREBUILT_SDK_ROOT"
+        python tools/ci/prebuilt.py verify "$RUNNER_TEMP/prebuilt/browser-linux-x64.tar" --kind browser --rid linux-x64 --configuration Release --sdk 10.0.403 --nuget-root "$GITHUB_WORKSPACE/artifacts/dev-env/nuget-packages"
+        sudo apt-get install -y libopenal1 xvfb xauth
+    - name: Install pinned Chrome with bundled SwiftShader
+      id: chrome
+      uses: browser-actions/setup-chrome@48ad923757ca74d66703209fe939badbdf80f2f4
+      with:
+        chrome-version: 156.0.8078.47
+        install-dependencies: true
+    - name: Prepare browser runtime dependencies
+      env:
+        CHROME: ${{ steps.chrome.outputs.chrome-path }}
+      run: |
+        source tools/setup/environment.sh
+        source /etc/os-release
+        source tools/setup/ci-apt.sh
+        sudo apt-get "${lumyte_apt_options[@]}" update
+        sudo apt-get "${lumyte_apt_options[@]}" install -y libopenal1
+        "$CHROME" --version
+        # Fail before publishing if this browser has no matching software driver.
+        chrome_directory=$(dirname "$(readlink -f "$CHROME")")
+        test -s "$chrome_directory/libvk_swiftshader.so"
+        test -s "$chrome_directory/vk_swiftshader_icd.json"
+        test -s "$chrome_directory/libvulkan.so.1"
+    - name: Discover optional native CPU sampler
+      run: |
+        mkdir -p artifacts/test-results/browser-flight-recorder
+        if ! timeout 120s sudo apt-get install -y linux-tools-generic > artifacts/test-results/browser-flight-recorder/perf-install.log 2>&1; then
+          echo "Native perf tools unavailable; process telemetry and Chrome tracing remain enabled."
+        fi
+        perf_path=$(find -L /usr/lib/linux-tools -type f -name perf -executable 2>/dev/null | sort -V | tail -n 1 || true)
+        if [ -n "$perf_path" ] && "$perf_path" --version > artifacts/test-results/browser-flight-recorder/perf-version.txt 2>&1; then
+          echo "LUMYTE_BROWSER_PERF=$perf_path" >> "$GITHUB_ENV"
+        fi
+    - name: Browser / platform API integration
+      env:
+        CHROME: ${{ steps.chrome.outputs.chrome-path }}
+        LUMYTE_REQUIRE_SOFTWARE_WEBGPU: '1'
+        LUMYTE_BROWSER_FLIGHT_RECORDER: '1'
+        LUMYTE_BROWSER_FLIGHT_RECORDER_SLOW_MS: '5000'
+        LUMYTE_ALLOW_KNOWN_BROWSER_TIMEOUT: '1'
+        LUMYTE_QUARANTINE_CONNECTED_PNG_TIMEOUT: '1'
+      run: |
+        source tools/setup/activate.sh
+        dotnet run --project build -c Release --no-build --no-restore -- --target Test --lane integration --platform browser --configuration Release --browser-case ui-transitions --no-build --no-restore
+    - name: Upload results
+      if: always()
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: test-results-browser-ui-transitions
+        path: artifacts/test-results/
+        if-no-files-found: ignore
+    env:
+      LUMYTE_PREBUILT_CONSUMER: '1'
+      LUMYTE_PREBUILT_SDK_ROOT: ${{ github.workspace }}/artifacts/dev-env/mise/data/installs/http-dotnet/10.0.403
+      LumyteBuildParleyNative: 'false'
+      LumyteBuildWgpuNative: 'false'
+      LumyteBuildUsvgNative: 'false'
+  browser-audio:
+    name: Browser (audio)
+    needs:
+    - browser-build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+    - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8
+    - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1
+      with:
+        global-json-file: global.json
+    - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0
+      with:
+        name: prebuilt-browser-linux-x64
+        path: ${{ runner.temp }}/prebuilt
+    - name: Verify and extract immutable build outputs
+      shell: bash
+      run: |-
+        test "$(dotnet --version)" = 10.0.403
+        python tools/ci/prebuilt.py extract "$RUNNER_TEMP/prebuilt/browser-linux-x64.tar" --kind browser --rid linux-x64 --configuration Release --sdk 10.0.403 --nuget-root "$GITHUB_WORKSPACE/artifacts/dev-env/nuget-packages"
+    - name: Provision tools and runtime only (no product compilation)
+      shell: bash
+      run: |
+        LUMYTE_SETUP_TOOLS_ONLY=1 bash tools/setup/setup.sh
+        source tools/setup/activate.sh
+        test "$DOTNET_ROOT" = "$LUMYTE_PREBUILT_SDK_ROOT"
+        python tools/ci/prebuilt.py verify "$RUNNER_TEMP/prebuilt/browser-linux-x64.tar" --kind browser --rid linux-x64 --configuration Release --sdk 10.0.403 --nuget-root "$GITHUB_WORKSPACE/artifacts/dev-env/nuget-packages"
+        sudo apt-get install -y libopenal1 xvfb xauth
+    - name: Install pinned Chrome with bundled SwiftShader
+      id: chrome
+      uses: browser-actions/setup-chrome@48ad923757ca74d66703209fe939badbdf80f2f4
+      with:
+        chrome-version: 156.0.8078.47
+        install-dependencies: true
+    - name: Prepare browser runtime dependencies
+      env:
+        CHROME: ${{ steps.chrome.outputs.chrome-path }}
+      run: |
+        source tools/setup/environment.sh
+        source /etc/os-release
+        source tools/setup/ci-apt.sh
+        sudo apt-get "${lumyte_apt_options[@]}" update
+        sudo apt-get "${lumyte_apt_options[@]}" install -y libopenal1
+        "$CHROME" --version
+        # Fail before publishing if this browser has no matching software driver.
+        chrome_directory=$(dirname "$(readlink -f "$CHROME")")
+        test -s "$chrome_directory/libvk_swiftshader.so"
+        test -s "$chrome_directory/vk_swiftshader_icd.json"
+        test -s "$chrome_directory/libvulkan.so.1"
+    - name: Browser / platform API integration
+      env:
+        CHROME: ${{ steps.chrome.outputs.chrome-path }}
+        LUMYTE_REQUIRE_SOFTWARE_WEBGPU: '1'
+        LUMYTE_BROWSER_FLIGHT_RECORDER: '1'
+        LUMYTE_BROWSER_FLIGHT_RECORDER_SLOW_MS: '5000'
+        LUMYTE_ALLOW_KNOWN_BROWSER_TIMEOUT: '1'
+        LUMYTE_QUARANTINE_CONNECTED_PNG_TIMEOUT: '1'
+      run: |
+        source tools/setup/activate.sh
+        dotnet run --project build -c Release --no-build --no-restore -- --target Test --lane integration --platform browser --configuration Release --browser-case audio --no-build --no-restore
+    - name: Upload results
+      if: always()
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: test-results-browser-audio
+        path: artifacts/test-results/
+        if-no-files-found: ignore
+    env:
+      LUMYTE_PREBUILT_CONSUMER: '1'
+      LUMYTE_PREBUILT_SDK_ROOT: ${{ github.workspace }}/artifacts/dev-env/mise/data/installs/http-dotnet/10.0.403
+      LumyteBuildParleyNative: 'false'
+      LumyteBuildWgpuNative: 'false'
+      LumyteBuildUsvgNative: 'false'
+  aot-build:
+    name: Aot publish (one shared workspace)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+    - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8
+    - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1
+      with:
+        global-json-file: global.json
+    - name: Cache dependencies
+      uses: ./.github/actions/cache-dependencies
+      with:
+        profile: native
+    - name: Mise setup (AOT)
+      uses: ./.github/actions/setup-linux
+    - name: Publish all aot outputs once
+      shell: bash
+      run: |-
+        source tools/setup/activate.sh
+        dotnet run --project build -c Release --no-build --no-restore -- --target Compile --build-kind aot --configuration Release --host-only
+    - name: Seal immutable build outputs
+      shell: bash
+      run: |-
+        test "$(dotnet --version)" = 10.0.403
+        source tools/setup/activate.sh
+        test "$DOTNET_ROOT" = "$LUMYTE_PREBUILT_SDK_ROOT"
+        mkdir -p "$RUNNER_TEMP/prebuilt"
+        python tools/ci/prebuilt.py create "$RUNNER_TEMP/prebuilt/aot-linux-x64.tar" --kind aot --rid linux-x64 --configuration Release --sdk 10.0.403 --nuget-root "$GITHUB_WORKSPACE/artifacts/dev-env/nuget-packages"
+    - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: prebuilt-aot-linux-x64
+        path: ${{ runner.temp }}/prebuilt/aot-linux-x64.tar
+        if-no-files-found: error
+        retention-days: 1
+    env:
+      LUMYTE_PREBUILT_SDK_ROOT: ${{ github.workspace }}/artifacts/dev-env/mise/data/installs/http-dotnet/10.0.403
+  aot-balanced-1:
+    name: Aot (balanced-1)
+    needs:
+    - aot-build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+    - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8
+    - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1
+      with:
+        global-json-file: global.json
+    - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0
+      with:
+        name: prebuilt-aot-linux-x64
+        path: ${{ runner.temp }}/prebuilt
+    - name: Verify and extract immutable build outputs
+      shell: bash
+      run: |-
+        test "$(dotnet --version)" = 10.0.403
+        python tools/ci/prebuilt.py extract "$RUNNER_TEMP/prebuilt/aot-linux-x64.tar" --kind aot --rid linux-x64 --configuration Release --sdk 10.0.403 --nuget-root "$GITHUB_WORKSPACE/artifacts/dev-env/nuget-packages"
+    - name: Provision tools and runtime only (no product compilation)
+      shell: bash
+      run: |
+        LUMYTE_SETUP_TOOLS_ONLY=1 bash tools/setup/setup.sh
+        source tools/setup/activate.sh
+        test "$DOTNET_ROOT" = "$LUMYTE_PREBUILT_SDK_ROOT"
+        python tools/ci/prebuilt.py verify "$RUNNER_TEMP/prebuilt/aot-linux-x64.tar" --kind aot --rid linux-x64 --configuration Release --sdk 10.0.403 --nuget-root "$GITHUB_WORKSPACE/artifacts/dev-env/nuget-packages"
+        sudo apt-get install -y libopenal1 xvfb xauth
+    - name: Execute prebuilt AOT outputs
+      run: |-
+        source tools/setup/activate.sh
+        dotnet run --project build -c Release --no-build --no-restore -- --target Test --suite aot --aot-group balanced-1 --configuration Release --host-only --no-build --no-restore
+    - name: Upload results
+      if: always()
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: test-results-aot-balanced-1
+        path: artifacts/test-results/
+        if-no-files-found: ignore
+    env:
+      LUMYTE_PREBUILT_CONSUMER: '1'
+      LUMYTE_PREBUILT_SDK_ROOT: ${{ github.workspace }}/artifacts/dev-env/mise/data/installs/http-dotnet/10.0.403
+      LumyteBuildParleyNative: 'false'
+      LumyteBuildWgpuNative: 'false'
+      LumyteBuildUsvgNative: 'false'
+  aot-balanced-2:
+    name: Aot (balanced-2)
+    needs:
+    - aot-build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+    - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8
+    - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1
+      with:
+        global-json-file: global.json
+    - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0
+      with:
+        name: prebuilt-aot-linux-x64
+        path: ${{ runner.temp }}/prebuilt
+    - name: Verify and extract immutable build outputs
+      shell: bash
+      run: |-
+        test "$(dotnet --version)" = 10.0.403
+        python tools/ci/prebuilt.py extract "$RUNNER_TEMP/prebuilt/aot-linux-x64.tar" --kind aot --rid linux-x64 --configuration Release --sdk 10.0.403 --nuget-root "$GITHUB_WORKSPACE/artifacts/dev-env/nuget-packages"
+    - name: Provision tools and runtime only (no product compilation)
+      shell: bash
+      run: |
+        LUMYTE_SETUP_TOOLS_ONLY=1 bash tools/setup/setup.sh
+        source tools/setup/activate.sh
+        test "$DOTNET_ROOT" = "$LUMYTE_PREBUILT_SDK_ROOT"
+        python tools/ci/prebuilt.py verify "$RUNNER_TEMP/prebuilt/aot-linux-x64.tar" --kind aot --rid linux-x64 --configuration Release --sdk 10.0.403 --nuget-root "$GITHUB_WORKSPACE/artifacts/dev-env/nuget-packages"
+        sudo apt-get install -y libopenal1 xvfb xauth
+    - name: Execute prebuilt AOT outputs
+      run: |-
+        source tools/setup/activate.sh
+        dotnet run --project build -c Release --no-build --no-restore -- --target Test --suite aot --aot-group balanced-2 --configuration Release --host-only --no-build --no-restore
+    - name: Upload results
+      if: always()
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: test-results-aot-balanced-2
+        path: artifacts/test-results/
+        if-no-files-found: ignore
+    env:
+      LUMYTE_PREBUILT_CONSUMER: '1'
+      LUMYTE_PREBUILT_SDK_ROOT: ${{ github.workspace }}/artifacts/dev-env/mise/data/installs/http-dotnet/10.0.403
+      LumyteBuildParleyNative: 'false'
+      LumyteBuildWgpuNative: 'false'
+      LumyteBuildUsvgNative: 'false'
   package:
     name: Parley native NuGet package
-    needs: [linux, windows, browser, aot]
+    needs:
+    - integration-linux-x64
+    - cpu-linux-x64
+    - gpu-linux-x64
+    - quality-linux-x64
+    - integration-linux-arm64
+    - integration-windows-x64
+    - quality-windows-x64
+    - integration-windows-arm64
+    - browser-graphics
+    - browser-text
+    - browser-ui-application
+    - browser-ui-navigation
+    - browser-ui-pages
+    - browser-ui-transitions
+    - browser-audio
+    - aot-balanced-1
+    - aot-balanced-2
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
-
-      - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5
-        with:
-          global-json-file: global.json
-
-      - name: Collect all native runtime assets
-        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
-        with:
-          pattern: parley-native-*
-          merge-multiple: true
-          path: artifacts/text-parley/package/
-
-      - name: Restore managed package outputs
-        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
-        with:
-          name: parley-managed
-          path: src/Graphics/Lumyte.Graphics.Text.Parley/bin/Release/net10.0/
-
-      - name: Package validated runtime assets
-        run: |
-          # NuGet.config registers the local feed; it must exist before dotnet run restores the runner.
-          mkdir -p artifacts/nuget
-          dotnet run --project build -c Release -- --target Distribution --distribution-output packages --project src/Graphics/Lumyte.Graphics.Text.Parley --no-build --restore-metadata
-
-      - name: Upload package
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        with:
-          name: parley-nuget
-          path: artifacts/nuget/*.nupkg
-          if-no-files-found: error
-          retention-days: 30
+    - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8
+    - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1
+      with:
+        global-json-file: global.json
+    - name: Collect all native runtime assets
+      uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0
+      with:
+        pattern: parley-native-*
+        merge-multiple: true
+        path: artifacts/text-parley/package/
+    - name: Restore managed package outputs
+      uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0
+      with:
+        name: parley-managed
+        path: src/Graphics/Lumyte.Graphics.Text.Parley/bin/Release/net10.0/
+    - name: Package validated runtime assets
+      run: |
+        # NuGet.config registers the local feed; it must exist before dotnet run restores the runner.
+        mkdir -p artifacts/nuget
+        dotnet run --project build -c Release -- --target Distribution --distribution-output packages --project src/Graphics/Lumyte.Graphics.Text.Parley --no-build --restore-metadata
+    - name: Upload package
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: parley-nuget
+        path: artifacts/nuget/*.nupkg
+        if-no-files-found: error
+        retention-days: 30
+'on':
+  push:
+    branches:
+    - main
+  pull_request: null
+  workflow_dispatch: null

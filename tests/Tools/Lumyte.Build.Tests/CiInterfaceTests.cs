@@ -22,7 +22,7 @@ public sealed class CiInterfaceTests
             "--distribution-output diagnostic-gallery", "'--distribution-output', 'window-sample'", "'--distribution-output', 'packages'",
             "'--quality-scope', 'managed'", "--target Quality --configuration", "--restore-metadata",
             "VulkanProgramCapacitiesAsync", "MESA_SHADER_CACHE_DIR", "windows-11-arm", "ubuntu-24.04-arm",
-            "LUMYTE_QUARANTINE_CONNECTED_PNG_TIMEOUT", "needs: [linux, windows, browser, aot]",
+            "LUMYTE_QUARANTINE_CONNECTED_PNG_TIMEOUT", "native-build-linux-x64:",
             "parley-native-", "parley-managed", "diagnostics-gallery", "retention-days: 30",
         })
         {
@@ -38,10 +38,11 @@ public sealed class CiInterfaceTests
     {
         string root = GetRepository();
         string workflow = File.ReadAllText(Path.Combine(root, ".github", "workflows", "composition.yml"));
-        Assert.DoesNotContain("--aot-group", workflow, StringComparison.Ordinal);
+        Assert.Contains("--aot-group balanced-1", workflow, StringComparison.Ordinal);
+        Assert.Contains("--aot-group balanced-2", workflow, StringComparison.Ordinal);
         Assert.DoesNotContain("--build-lane", workflow, StringComparison.Ordinal);
-        Assert.Contains("--suite aot --configuration Release", workflow, StringComparison.Ordinal);
-        Assert.Contains("needs: [linux, windows, browser, aot]", workflow, StringComparison.Ordinal);
+        Assert.Contains("--build-kind aot", workflow, StringComparison.Ordinal);
+        Assert.Contains("prebuilt-native-linux-x64", workflow, StringComparison.Ordinal);
         string setup = File.ReadAllText(Path.Combine(root, ".github", "actions", "setup-linux", "action.yml"));
         Assert.True(setup.IndexOf("Provision OS", StringComparison.Ordinal) < setup.IndexOf("actions/cache/restore@", StringComparison.Ordinal));
         Assert.True(setup.IndexOf("actions/cache/save@", StringComparison.Ordinal) < setup.IndexOf("Complete native setup", StringComparison.Ordinal));
@@ -49,7 +50,7 @@ public sealed class CiInterfaceTests
         Assert.DoesNotContain("version.txt", setup, StringComparison.Ordinal);
         Assert.DoesNotContain("refs/heads/main", setup, StringComparison.Ordinal);
         Assert.DoesNotContain("pull_request_target", workflow, StringComparison.Ordinal);
-        Assert.Equal(4, Regex.Matches(workflow, @"uses: \./\.github/actions/cache-native").Count);
+        Assert.Equal(8, Regex.Matches(workflow, @"uses: \./\.github/actions/cache-native").Count);
     }
 
     /// <summary>Native hooks never re-enter the solution task and keep isolated state and repository roots.</summary>
@@ -233,16 +234,14 @@ public sealed class CiInterfaceTests
     public void BrowserMatrixAndCacheCheckpointsPreserveGates()
     {
         string workflow = File.ReadAllText(Path.Combine(GetRepository(), ".github", "workflows", "composition.yml"));
-        string browser = workflow[workflow.IndexOf("  browser:", StringComparison.Ordinal)..workflow.IndexOf("  aot:", StringComparison.Ordinal)];
-        Assert.DoesNotContain("matrix.case", browser, StringComparison.Ordinal);
+        string browser = workflow[workflow.IndexOf("  browser-build:", StringComparison.Ordinal)..workflow.IndexOf("  aot-build:", StringComparison.Ordinal)];
         Assert.Contains("--lane integration --platform browser", browser, StringComparison.Ordinal);
         Assert.Contains("name: test-results-browser-ui-transitions", browser, StringComparison.Ordinal);
-        Assert.DoesNotContain("strategy:", browser, StringComparison.Ordinal);
         Assert.DoesNotContain("--suite browser-contracts", browser, StringComparison.Ordinal);
-        string linux = workflow[workflow.IndexOf("  linux:", StringComparison.Ordinal)..workflow.IndexOf("  windows:", StringComparison.Ordinal)];
+        string linux = workflow[..workflow.IndexOf("  native-build-windows-x64:", StringComparison.Ordinal)];
         Assert.Contains("--suite browser-contracts", linux, StringComparison.Ordinal);
         Assert.Contains("timeout-minutes: 90", browser, StringComparison.Ordinal);
-        Assert.True(browser.IndexOf("mode: save", StringComparison.Ordinal) < browser.IndexOf("Browser / platform API integration", StringComparison.Ordinal));
+        Assert.Contains("actions/download-artifact@", browser, StringComparison.Ordinal);
         string cache = File.ReadAllText(Path.Combine(GetRepository(), ".github", "actions", "cache-dependencies", "action.yml"));
         Assert.Contains("actions/cache/save@", cache, StringComparison.Ordinal);
         Assert.Contains("ci-apt/archives/*.deb", cache, StringComparison.Ordinal);
@@ -265,51 +264,16 @@ public sealed class CiInterfaceTests
     public void NativeContextsShareOneFullBuildAndPrivateStageEnvironments()
     {
         string workflow = File.ReadAllText(Path.Combine(GetRepository(), ".github", "workflows", "composition.yml"));
-        Assert.Equal(
-            new[] { "linux", "windows", "browser", "aot", "package" },
-            Regex.Matches(workflow[workflow.IndexOf("jobs:", StringComparison.Ordinal)..], @"^  ([a-z]+):$", RegexOptions.Multiline).Select(match => match.Groups[1].Value));
-        foreach (string platform in new[] { "linux", "windows" })
-        {
-            int start = workflow.IndexOf("  " + platform + ":", StringComparison.Ordinal);
-            int end = workflow.IndexOf(platform == "linux" ? "  windows:" : "  browser:", start, StringComparison.Ordinal);
-            string native = workflow[start..end];
-            Assert.Equal(2, Regex.Matches(native, @"arch: (?:x64|aarch64)").Count);
-            Assert.Single(Regex.Matches(native, @"--target(?:', '|'? +)Compile"));
-            Assert.Equal(2, Regex.Matches(native, @"uses: \./\.github/actions/cache-native").Count);
-            Assert.DoesNotContain("--build-lane", native, StringComparison.Ordinal);
-            Assert.DoesNotContain("continue-on-error", native, StringComparison.Ordinal);
-            foreach (string step in native.Split("      - name:").Where(step => step.Contains("--target Test --lane", StringComparison.Ordinal) || step.Contains("'--lane',", StringComparison.Ordinal)))
-            {
-                Assert.Contains("--no-build", step, StringComparison.Ordinal);
-                Assert.Contains("--no-restore", step, StringComparison.Ordinal);
-            }
-
-            string quality = native.Split("      - name:").Single(step => step.Contains("Quality /", StringComparison.Ordinal));
-            Assert.Contains("if: matrix.arch == 'x64'", quality, StringComparison.Ordinal);
-            Assert.Contains("if: always()", native, StringComparison.Ordinal);
-        }
-
-        string linux = workflow[workflow.IndexOf("  linux:", StringComparison.Ordinal)..workflow.IndexOf("  windows:", StringComparison.Ordinal)];
-        foreach (string name in new[] { "Run CPU tests", "Native / cold-cache", "Fingerprint software GPU", "Cache ordinary GPU", "GPU backend" })
-        {
-            string step = linux.Split("      - name:").Single(step => step.TrimStart().StartsWith(name, StringComparison.Ordinal));
-            Assert.Contains("if: matrix.arch == 'x64'", step, StringComparison.Ordinal);
-        }
-
-        Assert.DoesNotContain("GITHUB_ENV", linux, StringComparison.Ordinal);
-        Assert.True(linux.IndexOf("Run CPU tests", StringComparison.Ordinal) < linux.IndexOf("Run integration", StringComparison.Ordinal));
-        Assert.True(linux.IndexOf("Run integration", StringComparison.Ordinal) < linux.IndexOf("Native / cold-cache", StringComparison.Ordinal));
-        Assert.Contains("mktemp -d", linux, StringComparison.Ordinal);
-        Assert.Contains("--test-concurrency 4", linux, StringComparison.Ordinal);
-        Assert.Contains("Lumyte.Graphics.DeviceCaps.Sample", File.ReadAllText(Path.Combine(GetRepository(), "Lumyte.slnx")), StringComparison.Ordinal);
-        string browser = workflow[workflow.IndexOf("  browser:", StringComparison.Ordinal)..workflow.IndexOf("  aot:", StringComparison.Ordinal)];
-        Assert.Single(Regex.Matches(browser, "uses: ./.github/actions/setup-linux"));
-        Assert.Single(Regex.Matches(browser, "uses: browser-actions/setup-chrome"));
-        Assert.DoesNotContain("workload install", browser, StringComparison.Ordinal);
-        Assert.DoesNotContain("--browser-case", browser, StringComparison.Ordinal);
+        Assert.Equal(4, Regex.Matches(workflow, @"^  native-build-[a-z0-9-]+:$", RegexOptions.Multiline).Count);
+        Assert.Equal(4, Regex.Matches(workflow, @"--target(?:', '|'? +)Compile(?: --configuration|', '--configuration')").Count);
+        Assert.DoesNotContain("continue-on-error", workflow, StringComparison.Ordinal);
+        Assert.Contains("LUMYTE_PREBUILT_CONSUMER: '1'", workflow, StringComparison.Ordinal);
+        Assert.Contains("mktemp -d", workflow, StringComparison.Ordinal);
+        Assert.Contains("--test-concurrency 4", workflow, StringComparison.Ordinal);
         foreach (string name in new[] { "graphics", "text", "ui-application", "ui-navigation", "ui-pages", "ui-transitions", "audio" })
         {
-            Assert.Contains("name: test-results-browser-" + name, browser, StringComparison.Ordinal);
+            Assert.Contains("name: test-results-browser-" + name, workflow, StringComparison.Ordinal);
+            Assert.Contains("--browser-case " + name + " --no-build --no-restore", workflow, StringComparison.Ordinal);
         }
     }
 

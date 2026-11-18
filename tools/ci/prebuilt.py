@@ -1,0 +1,351 @@
+#!/usr/bin/env python3
+"""Same-run/path tar transport; no SDK/build/restore tools are invoked.
+
+Usage: prebuilt.py {create,verify,extract} FILE --rid linux-x64
+       --configuration Release --sdk 10.0.403 [--workspace PATH] [--nuget-root PATH]
+SDK is the caller's resolved setup-dotnet identity. Use trusted same-run artifact
+storage: hashes detect corruption, not malicious replacement. Exclusive workspace
+required. Existing files must be identical; no existing file is overwritten.
+"""
+import argparse
+import hashlib
+import io
+import json
+import os
+from pathlib import Path, PurePosixPath
+import platform
+import re
+import stat
+import subprocess
+import tarfile
+
+
+class Invalid(ValueError):
+    pass
+
+
+def require(ok, message):
+    if not ok:
+        raise Invalid(message)
+
+
+def digest(data):
+    return hashlib.sha256(data).hexdigest()
+
+
+def canonical(value):
+    return json.dumps(value, sort_keys=True, separators=(',', ':')).encode()
+
+
+def clean(name):
+    require(isinstance(name, str) and name and chr(92) not in name and ':' not in name
+            and all(ord(c) >= 32 for c in name),
+            'unsafe path')
+    p = PurePosixPath(name)
+    require(not p.is_absolute() and all(x not in ('', '.', '..') for x in name.split('/')),
+            'unsafe path: ' + name)
+    return p.parts
+
+
+TREES = ('artifacts/text-parley/native', 'artifacts/text-parley/package',
+         'artifacts/text-parley/wasm', 'artifacts/wgpu-native/package',
+         'artifacts/nuget', 'artifacts/dev-env/dxc/bin', 'artifacts/dev-env/dxc/lib',
+         'artifacts/dev-env/sysroot/usr/lib', 'artifacts/dev-env/sysroot/lib',
+         'artifacts/dev-env/sysroot/usr/share/vulkan', 'artifacts/dev-env/mesa',
+         'artifacts/svg-usvg/native', 'artifacts/single-window-sample',
+         'artifacts/diagnostics-ui-server', 'artifacts/browser',
+         'artifacts/audio-execution-browser', 'artifacts/audio-browser')
+WGPU = {'liblumyte_wgpu_native.so', 'liblumyte_wgpu_native.dylib',
+        'lumyte_wgpu_native.dll', 'provenance.json', 'WGPU-THIRD-PARTY-NOTICES.txt',
+        'RUST-STANDARD-LIBRARY-NOTICES.html', 'webgpu.h'}
+
+
+def allowed(name):
+    p = clean(name)
+    require(not any(part.endswith((' ', '.')) or part.split('.')[0].upper() in
+                    {'CON', 'PRN', 'AUX', 'NUL', *(f'COM{i}' for i in range(1, 10)),
+                     *(f'LPT{i}' for i in range(1, 10))} for part in p), 'unsafe Windows path')
+    if p[0] == 'nuget':
+        return len(p) >= 4 and all(re.fullmatch(r'[a-z0-9_.+-]+', x) for x in p[1:3])
+    if p[0] != 'workspace':
+        return False
+    q = p[1:]
+    rel = '/'.join(q)
+    if q and q[0] in ('build', 'src', 'tests', 'samples', 'benchmarks'):
+        return any(x in ('bin', 'obj') for x in q[1:-1])
+    if len(q) >= 5 and q[:2] == ('artifacts', 'build') and q[2] not in ('tools', 'invocations'):
+        return q[3] in ('bin', 'obj')
+    return (any(rel.startswith(t + '/') for t in TREES)
+            or (len(q) >= 3 and q[0] == 'artifacts' and q[1].endswith('-aot'))
+            or (len(q) >= 6 and q[:2] == ('artifacts', 'direct3d12') and q[-1] == 'lumyte_graphics_d3d12.dll')
+            or (len(q) >= 4 and q[:2] == ('artifacts', 'dev-env') and re.fullmatch(r'mesa-[0-9.]+(?:-arm64)?', q[2]))
+            or (len(q) == 3 and q[:2] == ('artifacts', 'wgpu-native') and q[2] in WGPU)
+            or (rel.startswith('artifacts/dev-env/dxc/LICENSE') and len(q) == 4)
+            or rel in ('artifacts/dev-env/lavapipe.json', 'artifacts/dev-env/dxc/provenance.json'))
+
+
+def git(root, *args):
+    return subprocess.check_output(['git', '-C', str(root), *args])
+
+
+def identity(root, nuget, rid, configuration, sdk):
+    closure = []
+    for name in sorted(filter(None, git(root, 'ls-files', '-z').decode().split(chr(0)))):
+        p = root / name
+        require(p.exists() or p.is_symlink(), 'missing tracked source: ' + name)
+        require(not p.is_dir(), 'submodules unsupported: ' + name)
+        no_link_parents(p.parent)
+        closure.append([name, 'link' if p.is_symlink() else 'file',
+                        digest(os.readlink(p).encode() if p.is_symlink() else p.read_bytes()),
+                        bool(p.lstat().st_mode & 0o111)])
+    run = [os.environ.get(k, '') for k in ('GITHUB_RUN_ID', 'GITHUB_RUN_ATTEMPT')]
+    require(all(run), 'GITHUB_RUN_ID and GITHUB_RUN_ATTEMPT are required')
+    require(all((rid, configuration, sdk)), 'RID/configuration/SDK required')
+    return dict(head=git(root, 'rev-parse', 'HEAD').decode().strip(),
+                source_sha256=digest(canonical(closure)), workspace=str(root),
+                nuget_root=str(nuget), os=platform.system(), architecture=platform.machine(),
+                rid=rid, configuration=configuration, sdk=sdk, run=run,
+                sdk_root=os.environ.get('LUMYTE_PREBUILT_SDK_ROOT', os.environ.get('DOTNET_ROOT', '')),
+                abi=list(platform.libc_ver()))
+
+
+def no_link_parents(path):
+    for parent in (path, *path.parents):
+        require(not parent.is_symlink(), 'symlink destination ancestor: ' + str(parent))
+
+
+def target(name, root, nuget):
+    parts = clean(name)
+    require(allowed(name), 'path outside transport allowlist: ' + name)
+    return (root if parts[0] == 'workspace' else nuget).joinpath(*parts[1:])
+
+
+def describe(path, name):
+    s = path.lstat()
+    require(stat.S_ISREG(s.st_mode) or stat.S_ISLNK(s.st_mode), 'unsupported file: ' + name)
+    mode = stat.S_IMODE(s.st_mode)
+    require(not mode & ~0o777, 'special permission bits: ' + name)
+    if path.is_symlink():
+        link = os.readlink(path)
+        require(not link.startswith('/') and chr(92) not in link and ':' not in link, 'unsafe link')
+        return dict(kind='link', mode=mode, link=link)
+    return dict(kind='file', mode=mode, size=s.st_size, sha256=digest(path.read_bytes()))
+
+
+def validate_links(entries):
+    for name, entry in entries.items():
+        if entry['kind'] != 'link':
+            continue
+        seen = {name}
+        current = name
+        while entries[current]['kind'] == 'link':
+            parts = current.split('/')[:-1]
+            for bit in entries[current]['link'].split('/'):
+                if bit == '..':
+                    require(len(parts) > 1, 'escaping symlink')
+                    parts.pop()
+                elif bit not in ('', '.'):
+                    parts.append(bit)
+            current = '/'.join(parts)
+            require(current in entries and current not in seen, 'dangling/cyclic symlink')
+            seen.add(current)
+
+
+def collect(root, nuget):
+    paths = {}
+    for base in ('build', 'src', 'tests', 'samples', 'benchmarks', 'artifacts'):
+        for directory, dirs, files in os.walk(root / base, followlinks=False):
+            rel = Path(directory).relative_to(root).as_posix()
+            if base == 'artifacts':
+                candidates = (*TREES, *(p.relative_to(root).as_posix() for p in (root / 'artifacts').glob('*-aot')), *(p.relative_to(root).as_posix() for p in (root / 'artifacts/dev-env').glob('mesa-*') if p.is_dir()), 'artifacts/build', 'artifacts/wgpu-native', 'artifacts/direct3d12', 'artifacts/dev-env')
+                dirs[:] = [d for d in dirs if any(
+                    (rel + '/' + d).startswith(t + '/') or t.startswith(rel + '/' + d + '/')
+                    or rel + '/' + d == t for t in candidates)
+                    and d not in ('tools', 'invocations', 'target', 'cargo', 'dotnet-home')]
+                if rel.startswith('artifacts/build/') and len(Path(rel).parts) == 3:
+                    dirs[:] = [d for d in dirs if d in ('bin', 'obj')]
+            for name in files + [d for d in dirs if (Path(directory) / d).is_symlink()]:
+                p = Path(directory) / name
+                archive = 'workspace/' + p.relative_to(root).as_posix()
+                if allowed(archive):
+                    no_link_parents(p.parent)
+                    paths[archive] = p
+    packages = set()
+    for name, p in list(paths.items()):
+        if p.name != 'project.assets.json':
+            continue
+        data = json.loads(p.read_text())
+        require({str(Path(folder).absolute()) for folder in data.get('packageFolders', {})} == {str(nuget)},
+                'assets packageFolders must match exact NuGet root: ' + name)
+        for key, library in data.get('libraries', {}).items():
+            if library.get('type') == 'package':
+                package = library.get('path', key.lower())
+                require(len(clean(package)) == 2, 'invalid package path')
+                packages.add(package)
+    for package in sorted(packages):
+        base = nuget / package
+        require(base.is_dir(), 'missing NuGet package: ' + package)
+        no_link_parents(base)
+        for directory, dirs, files in os.walk(base, followlinks=False):
+            for name in files + [d for d in dirs if (Path(directory) / d).is_symlink()]:
+                p = Path(directory) / name
+                no_link_parents(p.parent)
+                paths['nuget/' + p.relative_to(nuget).as_posix()] = p
+    require(any('/bin/' in n for n in paths), 'missing prebuilt bin outputs')
+    require(any(n.endswith('/project.assets.json') for n in paths), 'missing restore assets')
+    return paths
+
+
+def create(archive, root, nuget, expected):
+    paths = collect(root, nuget)
+    tracked = set(git(root, 'ls-files', '-z').decode().split(chr(0)))
+    entries = {}
+    for name, p in sorted(paths.items()):
+        require(allowed(name), 'disallowed payload: ' + name)
+        require(not (name.startswith('workspace/') and name[10:] in tracked), 'tracked payload')
+        entries[name] = describe(p, name)
+    validate_links(entries)
+    manifest = dict(version=1, identity=expected, entries=entries)
+    with archive.open('xb') as output, tarfile.open(fileobj=output, mode='w', format=tarfile.PAX_FORMAT) as tf:
+        data = canonical(manifest)
+        info = tarfile.TarInfo('manifest.json')
+        info.size, info.mode = len(data), 0o644
+        tf.addfile(info, io.BytesIO(data))
+        for name, entry in entries.items():
+            info = tarfile.TarInfo(name)
+            info.mode = entry['mode']
+            if entry['kind'] == 'link':
+                info.type, info.linkname = tarfile.SYMTYPE, entry['link']
+                tf.addfile(info)
+            else:
+                info.size = entry['size']
+                with paths[name].open('rb') as stream:
+                    tf.addfile(info, stream)
+    verify(archive, root, nuget, expected)
+
+
+def verify(archive, root, nuget, expected, extract=False):
+    tracked = set(git(root, 'ls-files', '-z').decode().split(chr(0)))
+    with tarfile.open(archive, 'r:') as tf:
+        members = tf.getmembers()
+        require(members and members[0].name == 'manifest.json' and members[0].isfile()
+                and members[0].size <= 64 * 1024 * 1024, 'missing/oversized manifest')
+        manifest = json.load(tf.extractfile(members[0]))
+        require(manifest.get('version') == 1, 'unsupported manifest')
+        require(manifest.get('identity') == expected, 'prebuilt identity mismatch')
+        require(expected['rid'].startswith('win-') == (platform.system() == 'Windows'), 'RID/OS mismatch')
+        machine = platform.machine().lower()
+        require(expected['rid'].endswith('-arm64') == (machine in ('aarch64', 'arm64')), 'RID/architecture mismatch')
+        entries = manifest['entries']
+        require(isinstance(entries, dict) and entries, 'empty payload')
+        require(len(members) == len(entries) + 1, 'archive closure mismatch')
+        seen = set()
+        folded = set()
+        for info in members[1:]:
+            name = info.name
+            require(name.casefold() not in folded, 'case-colliding archive member')
+            folded.add(name.casefold())
+            require(name not in seen and name in entries, 'duplicate/unknown archive member')
+            seen.add(name)
+            destination = target(name, root, nuget)
+            require(not (name.startswith('workspace/') and name[10:] in tracked), 'tracked source payload')
+            entry = entries[name]
+            require(entry['mode'] == info.mode and not info.mode & ~0o777, 'invalid mode')
+            if entry['kind'] == 'file':
+                require(info.isfile() and info.size == entry['size'], 'invalid file type/size')
+                stream = tf.extractfile(info)
+                h = hashlib.sha256()
+                for block in iter(lambda: stream.read(1024 * 1024), b''):
+                    h.update(block)
+                require(h.hexdigest() == entry['sha256'], 'payload hash mismatch: ' + name)
+            else:
+                require(entry['kind'] == 'link' and info.issym() and info.linkname == entry['link'], 'invalid symlink')
+                require(not info.linkname.startswith('/') and chr(92) not in info.linkname and ':' not in info.linkname,
+                        'unsafe symlink')
+            no_link_parents(destination.parent)
+            if destination.exists() or destination.is_symlink():
+                require(describe(destination, name) == entry, 'refusing to overwrite existing path: ' + name)
+        validate_links(entries)
+        required_packages = set()
+        for info in members[1:]:
+            if info.name.endswith('/project.assets.json'):
+                require(info.isfile(), 'restore assets must be regular files')
+                assets = json.load(tf.extractfile(info))
+                require({str(Path(folder).absolute()) for folder in assets.get('packageFolders', {})} == {str(nuget)},
+                        'restore assets NuGet root mismatch')
+                for key, library in assets.get('libraries', {}).items():
+                    if library.get('type') == 'package':
+                        package = library.get('path', key.lower())
+                        require(len(clean(package)) == 2, 'invalid package path')
+                        required_packages.add(package)
+        for info in members[1:]:
+            if info.name == 'workspace/artifacts/dev-env/lavapipe.json':
+                driver = json.load(tf.extractfile(info))['ICD']['library_path']
+                if Path(driver).is_absolute():
+                    path = Path(driver)
+                    if root in path.parents:
+                        require('workspace/' + path.relative_to(root).as_posix() in entries,
+                                'missing absolute lavapipe library closure')
+                    else:
+                        require(path.is_file(), 'missing system lavapipe library')
+        actual_packages = {'/'.join(clean(n)[1:3]) for n in entries if n.startswith('nuget/')}
+        require(actual_packages == required_packages, 'NuGet package closure mismatch')
+        require(any('/bin/' in n for n in entries), 'missing bin closure')
+        require(any(n.endswith('/project.assets.json') for n in entries), 'missing restore closure')
+        for name in entries:
+            require(not any('/'.join(name.split('/')[:i]) in entries
+                            for i in range(1, len(name.split('/')))), 'payload ancestor collision')
+        require(seen == set(entries), 'missing payload member')
+        if extract:
+            # NuGet.config declares this source even when no local packages exist.
+            (root / 'artifacts/nuget').mkdir(parents=True, exist_ok=True)
+            for info in members[1:]:
+                destination = target(info.name, root, nuget)
+                if destination.exists() or destination.is_symlink():
+                    continue
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                no_link_parents(destination.parent)
+                if info.issym():
+                    os.symlink(info.linkname, destination)
+                else:
+                    with destination.open('xb') as output:
+                        stream = tf.extractfile(info)
+                        for block in iter(lambda: stream.read(1024 * 1024), b''):
+                            output.write(block)
+                    destination.chmod(info.mode)
+    return manifest
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('command', choices=('create', 'verify', 'extract'))
+    parser.add_argument('archive', type=Path)
+    parser.add_argument('--workspace', type=Path, default=Path.cwd())
+    parser.add_argument('--nuget-root', type=Path,
+                        default=Path(os.environ.get('NUGET_PACKAGES', str(Path.home() / '.nuget/packages'))))
+    parser.add_argument('--kind', choices=('native', 'browser', 'aot'), default='native')
+    for option in ('rid', 'configuration', 'sdk'):
+        parser.add_argument('--' + option, required=True)
+    args = parser.parse_args()
+    try:
+        root, nuget = args.workspace.absolute(), args.nuget_root.absolute()
+        no_link_parents(root)
+        no_link_parents(nuget)
+        require(root != nuget and nuget not in root.parents, 'invalid NuGet root')
+        if root in nuget.parents:
+            require(nuget == root / 'artifacts/dev-env/nuget-packages', 'unsupported internal NuGet root')
+        expected = identity(root, nuget, args.rid, args.configuration, args.sdk)
+        expected['kind'] = args.kind
+        require(json.loads((root / 'global.json').read_text())['sdk']['version'] == args.sdk, 'SDK differs from source pin')
+        if args.command == 'create':
+            create(args.archive, root, nuget, expected)
+        else:
+            verify(args.archive, root, nuget, expected, args.command == 'extract')
+        print('prebuilt ' + args.command + ': verified')
+    except (Invalid, OSError, ValueError, KeyError, TypeError, tarfile.TarError,
+            subprocess.CalledProcessError) as error:
+        parser.exit(1, 'prebuilt: ' + str(error) + chr(10))
+
+
+if __name__ == '__main__':
+    main()

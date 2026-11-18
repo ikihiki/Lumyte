@@ -1,97 +1,124 @@
 # Required CI runtime budget
 
-## Current design: consolidate compatible work (2026-11-18)
+## Current design: build once, test in parallel (2026-11-18)
 
-The latest priority supersedes the earlier ten-minute target and split-job
-experiments below: avoid repeated builds even if serial wall time grows.
-Required CI now expands to **7 jobs**, not 18: four native OS/RID contexts,
-one Browser context, one AOT context, and the final package gate. Linux and
-Windows retain separate two-entry matrices for their existing shell and setup
-contracts. Each native context performs exactly one setup and one full-host
-Compile, then consumes the same Release workspace without restore/build.
-CPU/integration/GPU remain separate category SDK test commands; sharing outputs
-does not combine their discovery, filters, concurrency or result directories.
+The serial co-location experiment is superseded. Required CI has six producer
+contexts and seventeen independent consumers, followed by the package gate
+(**24 expanded jobs**). Consumers wait only for their matching producer, never
+an unrelated ARM build. No shared mutable workspace crosses jobs.
 
-### Before / after stage coverage
+```text
+native-build-linux-x64 -> verified tar -> CPU | Integration | GPU | Quality
+native-build-linux-arm64 -> verified tar -> Integration
+native-build-windows-x64 -> verified tar -> Integration | Quality
+native-build-windows-arm64 -> verified tar -> Integration
+browser-build -> verified tar -> graphics | text | application | navigation
+                              | pages | transitions | audio
+aot-build -> verified tar -> balanced-1 | balanced-2
+all seventeen successful test/quality consumers -> final package
+```
 
-| Previous owner | Consolidated owner | Retained work |
-| --- | --- | --- |
-| CPU Linux x64 | Linux x64 | CPU category once; bounded method concurrency 4 |
-| GPU Linux x64 | Linux x64, after integration | Unique-empty cold capacity guard, then exact ordinary shader cache, serial GPU category and DeviceCaps pipeline validation |
-| Linux x64 | Linux x64 | Native integration, Node host mocks, X11, samples/packages, diagnostics processes/UI/gallery and native/managed package assets |
-| Linux ARM64 | Linux ARM64 | Original integration, X11, diagnostics processes and native assets; no CPU, GPU opt-in, new Quality or distribution sample coverage |
-| Windows x64 | Windows x64 | Integration and existing GPU opt-ins, window sample/packages, native assets |
-| Windows ARM64 | Windows ARM64 | Original integration/GPU opt-in behavior, window sample/native assets; no CPU or new Quality |
-| Format Linux/Windows x64 | Corresponding native x64 | Full Linux managed/native/Markdown Quality; Windows managed Quality |
-| Browser seven API jobs | Browser once, serial | All seven cases / eight publications; graphics, text, application, navigation, pages, transitions normal/sequential/same-content, both audio cases |
-| AOT balanced-1 + balanced-2 | AOT once, serial | Exact disjoint union: all 14 publications, strict flags and every executable/mode/OpenAL invocation unchanged |
-| Package | Package, needs all six producer jobs | Four-RID asset/provenance/license validation and downloaded-managed-output metadata restore/pack |
+### Build counts, not timing claims
 
-Full-host Compile contains the canonical DeviceCaps sample. Pipeline validation,
-diagnostics UI publication, window publication, managed sample runs and package
-checks use existing outputs; no hidden auxiliary Compile replaces a removed job.
-GPU opt-ins are process/step-local, never job-wide or written to GITHUB_ENV.
-The cold guard creates a fresh mktemp directory; the ordinary Mesa cache is
-restored strictly afterwards. CPU still clears inherited test/GPU/benchmark
-opt-ins. No GPU test command is parallelized with another category.
+- Native: **four** full-host Compile invocations, once per OS/RID/Release context;
+  no per-lane product builds. Setup/bootstrap runner and native compiler smoke
+  remain producer work and are not counted as full-host product builds.
+- Browser: one sequential shared publication context, **eight** distinct app
+  publishes for seven API cases. Audio requires both execution and resource-host
+  applications; claiming seven publishes would silently drop existing coverage.
+- AOT: one sequential shared publication context, **fourteen** strict publishes.
+  The two balanced consumers execute only, preserving every mode/OpenAL check.
+- Consumer product builds, restores, Rust/DXC source builds, WASM workload installs
+  and AOT/Browser publishes: **zero**. Runtime/tool installation is separate;
+  tools-only setup does not run setup-native or compile the build runner.
+  Native diagnostics/window publish commands are no-build/no-restore layout
+  staging, not product compilation; source native hooks remain guarded.
 
-### Observed workflow counts (definitions, not timings)
+Native/Browser/AOT target properties differ; their producer outputs cannot be
+interchanged. Default developer commands still build/publish and test. Explicit
+`--no-build` consumes existing outputs and fails on missing publications.
 
-Compared with pre-consolidation 8ae89728, expanded runner jobs: **18 -> 7**;
-Linux/Windows setup contexts: **17 -> 6** (package uses only setup-dotnet);
-native full/category build contexts: **8 -> 4** (including the previous implicit
-CPU build); explicit Compile command templates: **5 -> 2**, expanded explicit
-Compile invocations **7 -> 4**. Native Cargo restore/checkpoint contexts:
-**6 -> 4**, with one captured identity per native context. Browser Chrome setup:
-**7 -> 1** (the separate diagnostics Chrome remains); Browser workload installs:
-**14 -> 1** (previous workflow plus Test each installed it in seven jobs).
-AOT setup contexts **2 -> 1**. Setup itself still builds/verifies the runner and
-native tools as required; these counts do not pretend those are free or removed.
+### Transfer and trust boundary
 
-Native host, Browser WASM and NativeAOT publications cannot blindly share
-binaries: target runtime, interop/static linkage, trimming and compiler properties
-differ. They retain separate workspaces. Within Browser/AOT, serial publications
-share incremental project dependencies; each distinct sample still publishes and
-executes its own required output. Local --browser-case / --aot-group / --build-lane
-selectors remain available but required CI does not shard/rebuild by them.
+Standard pinned Actions upload/download-artifact transports a standard tar.
+The small stdlib helper validates the entire payload before extraction, retaining
+executable modes and safe relative symlinks. It binds actual checkout HEAD
+(including PR synthetic merge SHA), tracked source contents/modes, OS/architecture,
+RID, configuration, SDK, publication kind, run ID/attempt, absolute workspace and
+NuGet root. Hashes protect integrity, not against replacement by an untrusted
+publisher; normal Actions same-run/ref trust remains essential.
 
-Existing producer artifact names remain, including seven Browser result aliases
-(the aliases contain the shared complete result tree), CPU/GPU results, four-RID
-native assets, managed assets and diagnostics-gallery. Result uploads use always().
-Package has ordinary success dependencies on every retained job; no weakened gate
-or continue-on-error was introduced. Aggregate budgets are native 120 minutes,
-Browser/AOT 90 minutes, package 10 minutes; individual test deadlines, quarantine
-conditions and strict quality/asset rules are unchanged. These are capacity budgets,
-not performance claims. Hosted terminal CI and cache-hit timing remain unverified
-until parent review/push; the old-head run does not validate this composition.
+Strict matching absolute paths are intentional: project.assets.json and NuGet
+imports contain producer paths. The complete exact package/version directories
+referenced by assets travel in the bundle, independently of mutable cache hits.
+No speculative text relocation is applied. Consumers install the pinned SDK and
+check its actual version. Git source paths cannot be extracted or overwritten;
+unknown paths, traversal, hardlinks, escaping symlinks, missing members, corrupt
+files and mismatched identity fail closed without fallback build/restore.
 
-Local regression command: python3 tools/setup/test_ci_consolidation.py
-(requires PyYAML in the operator's test environment; not a new CI bootstrap).
-C# orchestration tests also guard the required task surface and native/Browser
-preparation counts; existing manifest tests exercise the complete Browser/AOT
-union plus selected cases/groups and failure propagation.
+Payload includes project and runner bin/obj, generators/MSBuild metadata, exact
+NuGet imports/adapters, final native binaries/provenance/staged licenses, runtime
+DXC/Mesa libraries and Browser/AOT published outputs. Cargo targets, Rustup,
+download caches, whole user profiles, credentials and source trees are excluded.
+New final-output locations require an explicit allowlist change. Consumer jobs
+are isolated fresh workspaces. MSBuild rejects canonical product CoreCompile,
+restore and native hooks while allowing fixtures outside canonical source roots.
 
-### Local verification of the consolidated composition
+### Retained stage coverage
 
-- Pinned SDK 10.0.403 full-host Compile succeeded, including DeviceCaps;
-  existing native dependency paths supplied by /tmp/lumyte-lanes-env.sh.
-  /tmp/lumyte-consolidation-fullhost.log (1:14; local incremental, not hosted timing).
-- Current-runner full orchestration: **339 passed, zero failures/skips**;
-  /tmp/lumyte-consolidation-orchestration-final.log. This includes the serial
-  one-full-build / three-category / no-build pipeline-helper fixture, exact
-  Browser/AOT manifests, failure propagation, and portable Windows sample paths.
-- Full CPU category: **49 projects, 3,836 passed, zero failures/skips**, one SDK
-  invocation with fresh discovery/results; /tmp/lumyte-consolidation-cpu-authoritative.log
-  (0:46). CPU membership is unchanged except the added CI composition regression.
-- Full host Quality succeeded: managed format, native clang-format and Markdown;
-  /tmp/lumyte-consolidation-quality-final.log (1:28). All Markdown: 370 files.
-- Parsed workflow/action YAML: 7 files; parsed consolidation/shell tests: 2 passed.
-  Browser/setup/diagnostics Node contracts: 257 passed, one existing optional skip.
-  Native Cargo identity/cache tests: 10 passed; gallery collector: 34 passed.
-  Python syntax checks and git diff --check passed.
-- Windows/ARM execution, real Browser/WASM, AOT publication/execution, full GPU
-  execution and remote cache-hit/terminal-CI results are not newly measured here.
-  Existing hosted checks remain required; no remote run was started or cancelled.
+- Linux x64 CPU uses one SDK category solution-filter invocation, method bound 4,
+  fresh nonempty TRX and real discovery guards. Integration remains serial across
+  project/process bodies on all four platforms.
+- Linux GPU retains unique-empty cold maximum drawing guard, then optional exact
+  shader cache, serial GPU SDK invocation and DeviceCaps pipeline validation.
+  Existing Windows GPU opt-ins remain serial within Windows Integration.
+- X11, diagnostics server/game processes, server-hosted diagnostic UI/gallery,
+  samples and package checks remain Integration responsibilities. Node host mocks
+  stay in Linux Integration; Browser consumers run real Browser API checks only.
+- Linux full managed/native/Markdown and Windows managed Quality remain required
+  x64 gates. Final package still validates all four RID native assets and licenses.
+- Per-test deadlines, strict warning gates and quarantine conditions are unchanged.
+  Results are uploaded once per consumer; Browser no longer copies one complete
+  result tree to seven aliases. Existing native asset/gallery names are retained.
+
+### Reproduction and remaining hosted verification
+
+```sh
+python3 -m unittest discover -s tools/ci -p 'test_*.py'
+python3 tools/setup/test_ci_consolidation.py
+bash tools/ci/smoke-prebuilt.sh
+bash tools/ci/smoke-prebuilt.sh product
+```
+
+The smoke creates an owned isolated checkout and private NuGet root, really builds
+an SDK/xUnit producer, removes every producer bin/obj/package directory, transfers
+the archive into the same now-empty paths and executes tests with no build or
+restore. It also proves product compilation is rejected. This validates the
+transport/SDK adapter boundary, not a claim that every native/Windows/Browser/AOT
+runtime has been exercised locally. Full hosted terminal CI, artifact size and
+actual remote product-build counts remain required after parent review/push.
+Old-head CI cannot validate this graph. No old run was cancelled or restarted.
+
+### Local evidence for this graph
+
+- Full-host Compile: SDK 10.0.403, zero warnings/errors; local incremental
+  dependency paths were provided, not a hosted cold-build timing claim.
+- CPU: 49 projects, 3,836 passed, no failures/skips; one SDK invocation with the
+  prebuilt consumer guard enabled and fresh discovery/TRX.
+- Orchestration: **345 passed**, zero failures/skips, including the real
+  producer-to-two-AOT-consumers executable fixture and all no-publish contracts.
+- Relevant Integration orchestration: 227 passed with no-build/no-restore and
+  the consumer guard enabled. Node contracts: 235 passed, one optional skip.
+- Transport: 18 Python security/closure tests; graph/shell contracts: four tests.
+  Seven YAML files and XML/Python syntax parse. Managed/build format and all
+  370 Markdown files pass.
+- Real clean-output product proof: Lumyte.Memory plus its DI library and test
+  assembly compiled in an owned isolated checkout/private NuGet root, then all
+  producer bin/obj/package files were removed. Archive extraction alone restored
+  the consumer; 27 real tests passed with no build/restore. The subsequent
+  forbidden CoreCompile was rejected. Evidence was retained under the owned
+  lumyte-prebuilt-smoke-YqLWKb cache directory. The simpler SDK/adapter fixture
+  likewise passed after removing every producer output and dependency cache.
 
 ## Historical investigations (superseded topology)
 

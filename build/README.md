@@ -7,6 +7,9 @@ Linuxの初期セットアップも利用可能な.NET 10 SDKを前提にし、J
 
 CIの直接入口は`Compile`・`Test`・`Quality`・`Distribution`の4種類です。
 準備工程は内部のasync methodで順序を保ち、独立targetを増やしません。
+CIではOS/RID別の一度のビルド成果物を検証付きtarで配布し、CPU・Integration・GPU・Qualityジョブを並列実行します。
+Browser/AOTもCompileのbuild-kindオプションで一度だけpublishし、テストはno-build/no-restoreで実行します。
+依存グラフ・成果物契約は[CI runtime budget](../docs/ci-runtime-budget.md)を参照してください。
 開発用・MSBuild用を含む全18 targetの責務と移行表は[TASK-MIGRATION.md](TASK-MIGRATION.md)を参照してください。
 
 ## 通常の実行

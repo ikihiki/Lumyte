@@ -12,19 +12,10 @@ internal sealed partial class Build
                 continue;
             }
 
-            (string project, string verifier, string log) = browserCase switch
-            {
-                "graphics" => ("Lumyte.Graphics.Browser.Sample", "tools/graphics/verify-browser.mjs", "browser-webgpu.log"),
-                "text" => ("Lumyte.Graphics.Text.Parley.Browser.Sample", "samples/Lumyte.Graphics.Text.Parley.Browser.Sample/verify-browser.mjs", "browser-text-webgpu.log"),
-                "ui-application" => ("Lumyte.UI.Application.Browser.Sample", "samples/Lumyte.UI.Application.Browser.Sample/verify-browser.mjs", "browser-ui-application.log"),
-                "ui-navigation" => ("Lumyte.UI.Navigation.Browser.Sample", "samples/Lumyte.UI.Navigation.Browser.Sample/verify-browser.mjs", "browser-ui-navigation.log"),
-                "ui-pages" => ("Lumyte.UI.Pages.Browser.Sample", "samples/Lumyte.UI.Pages.Browser.Sample/verify-browser.mjs", "browser-ui-pages.log"),
-                "ui-transitions" => ("Lumyte.UI.Transitions.Browser.Sample", "samples/Lumyte.UI.Transitions.Browser.Sample/verify-browser.mjs", "browser-ui-transitions.log"),
-                _ => throw new InvalidOperationException("Unclassified browser case."),
-            };
-            string output = Path.Combine(ArtifactRoot, "browser", browserCase);
-            await DotNetAsync("publish", "samples/" + project, "-c", Configuration, "-o", output).ConfigureAwait(false);
-            string root = Path.Combine(output, "wwwroot");
+            BrowserPublication publication = _browserPublications.Single(value => value.Case == browserCase);
+            string verifier = publication.Verifier;
+            string log = publication.Log;
+            string root = await PrepareBrowserPublicationAsync(publication).ConfigureAwait(false);
             await CaptureValidationLogAsync(log, () => NodeAsync(verifier, root)).ConfigureAwait(false);
             if (browserCase == "ui-transitions")
             {
@@ -45,6 +36,14 @@ internal sealed partial class Build
 
     private async Task TestBrowserAudioAsync()
     {
+        if (NoBuild)
+        {
+            foreach (BrowserPublication publication in _browserPublications.Where(value => value.Case == "audio"))
+            {
+                RequireBrowserPublication(publication);
+            }
+        }
+
         string environment = Path.Combine(ArtifactRoot, "build-tools", "audio-playwright");
         string python = OperatingSystem.IsWindows() ? Path.Combine(environment, "Scripts", "python.exe") : Path.Combine(environment, "bin", "python");
         if (!File.Exists(python))
@@ -53,15 +52,11 @@ internal sealed partial class Build
         }
 
         await ToolWithEnvironmentAsync(python, _isolatedPythonEnvironment, "-m", "pip", "install", "--disable-pip-version-check", "playwright==1.58.0").ConfigureAwait(false);
-        foreach ((string project, string directory, string log) in new[]
+        foreach (BrowserPublication publication in _browserPublications.Where(value => value.Case == "audio"))
         {
-            ("samples/Lumyte.Audio.Execution.Browser.Sample", "audio-execution-browser", "browser-audio-execution.log"),
-            ("samples/Lumyte.Audio.Browser.Sample", "audio-browser", "browser-audio.log"),
-        })
-        {
-            string output = Path.Combine(ArtifactRoot, directory);
-            await DotNetAsync("publish", project, "-c", Configuration, "-o", output).ConfigureAwait(false);
-            var arguments = new List<string> { "tools/audio/verify_browser.py", Path.Combine(output, "wwwroot") };
+            string root = await PrepareBrowserPublicationAsync(publication).ConfigureAwait(false);
+            string log = publication.Log;
+            var arguments = new List<string> { "tools/audio/verify_browser.py", root };
             if (Environment.GetEnvironmentVariable("CHROME") is string chrome && !string.IsNullOrWhiteSpace(chrome))
             {
                 arguments.AddRange(["--chromium", chrome]);

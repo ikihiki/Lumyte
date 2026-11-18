@@ -54,7 +54,19 @@ internal sealed partial class Build : FalloutBuild
     [Parameter("Optional Compile scope: cpu, gpu, or integration; omit for the full solution.")]
     public string? BuildLane { get; set; }
 
-    private Target Compile => definition => definition.Executes(() => CompileAsync(BuildLane));
+    [Parameter("Compile output kind: native, browser, or aot. Browser/AOT publish once without executing tests.")]
+    public string BuildKind { get; set; } = "native";
+
+    private Target Compile => definition => definition.Executes(async () =>
+    {
+        switch (BuildKind)
+        {
+            case "native": await CompileAsync(BuildLane).ConfigureAwait(false); break;
+            case "browser": await PublishBrowserAsync().ConfigureAwait(false); break;
+            case "aot": await PublishAotAsync().ConfigureAwait(false); break;
+            default: throw new ArgumentException("Invalid --build-kind. Expected native, browser, or aot.");
+        }
+    });
 
     private async Task RestoreAsync(string? buildInput = null)
     {

@@ -60,6 +60,40 @@ internal sealed partial class Build
             "--results-directory", Path.Combine(ArtifactRoot, "test-results", "x11")).ConfigureAwait(false);
     }
 
+    // Test --suite aot routes here; the original sample runner remains available
+    // for developer publish-and-run behavior when --no-build is absent.
+    private async Task TestPublishedAotAsync()
+    {
+        ValidateAotSelection();
+        if (!NoBuild)
+        {
+            await RunAotSamplesAsync().ConfigureAwait(false);
+            return;
+        }
+
+        AotSample[] selected = AotSamples.Where(sample => AotGroup is null || sample.Group == AotGroup).ToArray();
+        // Fail before executing any sample when an artifact download is incomplete.
+        foreach (AotSample sample in selected)
+        {
+            RequireAotPublication(sample);
+        }
+
+        foreach (AotSample sample in selected)
+        {
+            string executable = RequireAotPublication(sample);
+            int invocation = 0;
+            foreach (string[] mode in sample.Modes)
+            {
+                string log = sample.Directory + "-" + (invocation++).ToString(System.Globalization.CultureInfo.InvariantCulture);
+                await CaptureValidationLogAsync(log + ".log", () => ToolAsync(executable, mode)).ConfigureAwait(false);
+                if (sample.OpenAl)
+                {
+                    await CaptureValidationLogAsync(log + "-openal.log", () => ToolWithEnvironmentAsync(executable, _openAlEnvironment, ["--openal", .. mode])).ConfigureAwait(false);
+                }
+            }
+        }
+    }
+
     private async Task CaptureValidationLogAsync(string name, Func<Task<string>> action)
     {
         string path = Path.Combine(ArtifactRoot, "test-results", name);

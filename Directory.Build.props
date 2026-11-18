@@ -11,4 +11,10 @@
     <PackageReference Include="StyleCop.Analyzers" Version="1.2.0-beta.556" PrivateAssets="all" />
     <AdditionalFiles Include="$(MSBuildThisFileDirectory)stylecop.json" />
   </ItemGroup>
+  <!-- Consumers may evaluate metadata and compile isolated fixtures, never the
+       checkout's canonical product projects. This also covers nested dotnet. -->
+  <Target Name="RejectPrebuiltProductCompilation" BeforeTargets="CoreCompile;Restore;BuildLumyteParleyNative;BuildLumyteWgpuNative;BuildLumyteUsvgNative;BuildLumyteDirect3D12Native;BuildLumyteParleyWasm"
+          Condition="'$(LUMYTE_PREBUILT_CONSUMER)' == '1' and ($([System.String]::Copy('$(MSBuildProjectDirectory)').StartsWith('$(MSBuildThisFileDirectory)src')) or $([System.String]::Copy('$(MSBuildProjectDirectory)').StartsWith('$(MSBuildThisFileDirectory)samples')) or $([System.String]::Copy('$(MSBuildProjectDirectory)').StartsWith('$(MSBuildThisFileDirectory)tests')) or $([System.String]::Copy('$(MSBuildProjectDirectory)').StartsWith('$(MSBuildThisFileDirectory)benchmarks')) or '$(MSBuildProjectDirectory)' == '$(MSBuildThisFileDirectory)build')">
+    <Error Text="Prebuilt consumer attempted product compilation or restoration: $(MSBuildProjectFullPath)" />
+  </Target>
 </Project>

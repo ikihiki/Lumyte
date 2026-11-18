@@ -167,6 +167,10 @@
           "type": "string",
           "description": "Independent browser API case: graphics, text, ui-application, ui-navigation, ui-pages, ui-transitions, or audio. Omit for the complete suite"
         },
+        "BuildKind": {
+          "type": "string",
+          "description": "Compile output kind: native, browser, or aot. Browser/AOT publish once without executing tests"
+        },
         "BuildLane": {
           "type": "string",
           "description": "Optional Compile scope: cpu, gpu, or integration; omit for the full solution"

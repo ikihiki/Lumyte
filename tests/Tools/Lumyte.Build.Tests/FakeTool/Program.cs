@@ -71,6 +71,14 @@ internal static class Program
                 Console.WriteLine(project.Descendants("IsPackable").LastOrDefault()?.Value ?? "true");
             }
 
+            if (args.FirstOrDefault() == "publish" && args.Contains("-o", StringComparer.Ordinal) && args.Any(argument => argument.Contains("Browser.Sample", StringComparison.Ordinal)))
+            {
+                string output = args[Array.IndexOf(args, "-o") + 1];
+                Directory.CreateDirectory(Path.Combine(output, "wwwroot", "_framework"));
+                File.WriteAllText(Path.Combine(output, "wwwroot", "index.html"), "browser fixture");
+                File.WriteAllText(Path.Combine(output, "wwwroot", "_framework", "fixture.wasm"), "wasm fixture");
+            }
+
             if (args.FirstOrDefault() == "publish" && args.Contains("-p:PublishAot=true", StringComparer.Ordinal)
                 && Environment.GetEnvironmentVariable("LUMYTE_TEST_STAGE_AOT") == "1")
             {

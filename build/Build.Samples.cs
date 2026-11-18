@@ -131,7 +131,19 @@ internal sealed partial class Build
     private async Task<string> PublishAotSampleAsync(string project, string directory, string executable, bool strict)
     {
         string output = Path.Combine(ArtifactRoot, directory);
+        string publishedExecutable = Path.Combine(output, executable + (OperatingSystem.IsWindows() ? ".exe" : string.Empty));
+        if (NoBuild)
+        {
+            RequirePublishedFile(publishedExecutable, "aot");
+            return publishedExecutable;
+        }
+
         var arguments = new List<string> { "publish", project, "-c", Configuration, "-p:PublishAot=true", "-o", output };
+        if (NoRestore)
+        {
+            arguments.Add("--no-restore");
+        }
+
         if (strict)
         {
             arguments.AddRange(["-p:ILLinkTreatWarningsAsErrors=true", "-p:IlcTreatWarningsAsErrors=true"]);

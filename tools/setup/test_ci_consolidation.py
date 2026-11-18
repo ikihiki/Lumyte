@@ -1,4 +1,4 @@
-"""Parsed required-CI coverage and preparation contracts (no network/tool provisioning)."""
+"""Required CI graph: immutable build artifacts feed independent test jobs."""
 import re
 import subprocess
 import unittest
@@ -10,60 +10,73 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 class ConsolidationTests(unittest.TestCase):
-    """Expand native matrices and verify retained serial gates and trust boundaries."""
+    def setUp(self):
+        self.jobs = yaml.safe_load((ROOT / ".github/workflows/composition.yml").read_text())["jobs"]
 
-    def test_native_contexts(self):
-        jobs = yaml.safe_load((ROOT / ".github/workflows/composition.yml").read_text())["jobs"]
-        self.assertEqual(set(jobs), {"linux", "windows", "browser", "aot", "package"})
-        self.assertEqual(jobs["package"]["needs"], ["linux", "windows", "browser", "aot"])
-        self.assertNotIn("if", jobs["package"])
-        self.assertEqual(sum(len(j.get("strategy", {}).get("matrix", {}).get("include", [None])) for j in jobs.values()), 7)
-        for host in ("linux", "windows"):
-            job = jobs[host]
-            self.assertEqual([m["arch"] for m in job["strategy"]["matrix"]["include"]], ["x64", "aarch64"])
+    def test_native_build_once_matching_dependencies(self):
+        jobs = self.jobs
+        producers = {key for key in jobs if key.startswith("native-build-")}
+        self.assertEqual(len(producers), 4)
+        consumers = set()
+        for key in producers:
+            steps = jobs[key]["steps"]
+            commands = "\n".join(step.get("run", "") for step in steps)
+            self.assertEqual(commands.count("--target Compile") + commands.count("'--target', 'Compile'"), 1)
+            self.assertNotIn("--build-lane", commands)
+            self.assertNotIn("--lane", commands)
+            self.assertIn("--host-only", commands)
+            suffix = key.removeprefix("native-build-")
+            for lane in ("integration", "quality", "cpu", "gpu"):
+                consumer = lane + "-" + suffix
+                if consumer not in jobs:
+                    continue
+                consumers.add(consumer)
+                self.assertEqual(jobs[consumer]["needs"], [key])
+                self.assertEqual(jobs[consumer]["runs-on"], jobs[key]["runs-on"])
+                self.assertEqual(jobs[consumer]["env"]["LUMYTE_PREBUILT_CONSUMER"], "1")
+        self.assertEqual(len(consumers), 8)
+        self.assertIn("cpu-linux-x64", consumers)
+        self.assertIn("gpu-linux-x64", consumers)
+        self.assertNotIn("cpu-windows-x64", consumers)
+
+    def test_consumers_cannot_rebuild_or_depend_on_output_cache(self):
+        for key, job in self.jobs.items():
+            if "needs" not in job or key == "package":
+                continue
             steps = job["steps"]
-            compile_steps = [s for s in steps if re.search(r"--target(?:', '|'? +)Compile", s.get("run", ""))]
-            self.assertEqual(len(compile_steps), 1)
-            self.assertNotIn("--build-lane", compile_steps[0]["run"])
-            self.assertIn("--host-only", compile_steps[0]["run"])
-            self.assertEqual(sum(s.get("uses", "").endswith("/cache-native") for s in steps), 2)
-            self.assertEqual(sum("setup-linux" in s.get("uses", "") or "setup.ps1" in s.get("run", "") for s in steps), 1)
-            self.assertFalse(any(s.get("continue-on-error") for s in steps))
-            for s in steps:
-                if "Quality /" in s.get("name", ""):
-                    self.assertEqual(s["if"], "matrix.arch == 'x64'")
-                if "--lane" in s.get("run", ""):
-                    args = s["run"].split("--target")[-1]
-                    self.assertIn("--no-build", args)
-                    self.assertIn("--no-restore", args)
-                if "test-results" in s.get("with", {}).get("name", ""):
-                    self.assertIn("always()", s["if"])
-        linux = jobs["linux"]["steps"]
-        names = [s.get("name", "") for s in linux]
-        for prefix in ("Run CPU", "Native / cold-cache", "Fingerprint software GPU", "Cache ordinary GPU", "GPU backend"):
-            step = next(s for s in linux if s.get("name", "").startswith(prefix))
-            self.assertEqual(step["if"], "matrix.arch == 'x64'")
-            self.assertNotIn("GITHUB_ENV", step.get("run", ""))
-        self.assertLess(names.index("Native / cold-cache maximum drawing program"), names.index("Cache ordinary GPU compiled shaders"))
-        for host in ("linux", "windows"):
-            for s in jobs[host]["steps"]:
-                self.assertNotIn("LUMYTE_GRAPHICS_GPU_TESTS", s.get("env", {}))
-        self.assertFalse(any("--lane cpu" in s.get("run", "") for s in jobs["windows"]["steps"]))
+            commands = "\n".join(step.get("run", "") for step in steps)
+            self.assertNotIn("--target Compile", commands)
+            self.assertNotIn("'--target', 'Compile'", commands)
+            self.assertNotRegex(commands, r"dotnet (?:build|restore|publish)")
+            self.assertTrue(any("actions/download-artifact@" in step.get("uses", "") for step in steps))
+            self.assertFalse(any("setup-linux" in step.get("uses", "") or "cache-native" in step.get("uses", "") for step in steps))
+            self.assertIn("prebuilt.py extract", commands)
+            self.assertIn("LUMYTE_SETUP_TOOLS_ONLY", commands)
+            self.assertFalse(any(step.get("continue-on-error") for step in steps))
 
-    def test_publish_contexts_and_shell_syntax(self):
-        jobs = yaml.safe_load((ROOT / ".github/workflows/composition.yml").read_text())["jobs"]
-        for name in ("browser", "aot"):
-            job = jobs[name]
-            self.assertNotIn("strategy", job)
-            self.assertEqual(sum("setup-linux" in s.get("uses", "") for s in job["steps"]), 1)
-        browser = jobs["browser"]["steps"]
-        self.assertEqual(sum("setup-chrome" in s.get("uses", "") for s in browser), 1)
-        calls = [s["run"] for s in browser if "--platform browser" in s.get("run", "")]
-        self.assertEqual(len(calls), 1)
-        self.assertNotIn("--browser-case", calls[0])
-        self.assertFalse(any("--suite browser-contracts" in s.get("run", "") for s in browser))
-        self.assertFalse(any("--aot-group" in s.get("run", "") for s in jobs["aot"]["steps"]))
-        for job in jobs.values():
+    def test_browser_aot_and_final_gate(self):
+        jobs = self.jobs
+        browser = {"graphics", "text", "ui-application", "ui-navigation", "ui-pages", "ui-transitions", "audio"}
+        for case in browser:
+            job = jobs["browser-" + case]
+            self.assertEqual(job["needs"], ["browser-build"])
+            commands = "\n".join(step.get("run", "") for step in job["steps"])
+            self.assertIn("--browser-case " + case + " --no-build --no-restore", commands)
+            self.assertNotIn("--suite browser-contracts", commands)
+        for group in ("balanced-1", "balanced-2"):
+            job = jobs["aot-" + group]
+            self.assertEqual(job["needs"], ["aot-build"])
+            self.assertIn("--aot-group " + group, str(job))
+        expected = {key for key in jobs if "needs" in jobs[key] and key != "package"}
+        self.assertEqual(set(jobs["package"]["needs"]), expected)
+        self.assertNotIn("if", jobs["package"])
+        gpu = jobs["gpu-linux-x64"]["steps"]
+        names = [step.get("name") for step in gpu]
+        self.assertLess(names.index("Native / cold-cache maximum drawing program"), names.index("Cache ordinary GPU compiled shaders"))
+        self.assertIn("--pipeline-validation", str(gpu))
+
+    def test_bash_syntax(self):
+        for job in self.jobs.values():
             for step in job["steps"]:
                 if "run" in step and step.get("shell", "bash") == "bash":
                     script = re.sub(r"\$\{\{.*?\}\}", "CI_EXPRESSION", step["run"])
