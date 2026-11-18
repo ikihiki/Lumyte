@@ -43,7 +43,7 @@ CompositionTemplate<Person, Label> personRow = person => new Label(person.Name);
 Label first = personRow(new Person("Ada"));
 ```
 
-関数の分割に専用属性は必要ない。通常の静的メソッド、インスタンスメソッド、ローカル関数、ラムダを、同じ delegate 型へ変換できる。複数の入力は `TArgs` に専用の型やタプルを使い、引数のない処理は ValueTuple を使う。一つのテンプレートは一つの戻り値を返す。複数の子を返す場合は利用側がコレクションなどの結果型と、その取り付け方法を定義する。
+関数の分割に専用属性は必要ない。通常の静的メソッド、インスタンスメソッド、ローカル関数、ラムダを、同じ delegate 型へ変換できる。独立した引数を 1〜16 個受け取る同名の delegate 群を提供し、最後の型引数を結果型とする。2 引数なら `CompositionTemplate<T1, T2, TComposition>` とし、`(value, list) => ...` のように直接記述できる。引数を一つの概念としてまとめる場合は専用型やタプルも使え、引数のない処理には ValueTuple を使う。一つのテンプレートは一つの戻り値を返す。複数の子を返す場合は利用側がコレクションなどの結果型と、その取り付け方法を定義する。
 
 ### テンプレートを型付けする Slot の定義
 
@@ -76,7 +76,7 @@ public static partial class Compose
             [ComposeContent]
             public IReadOnlyList<T> Items { get; set; } = [];
 
-            public CompositionTemplate<T, Widget>? ItemTemplate
+            public CompositionTemplate<T, ListView<T>, Widget>? ItemTemplate
             {
                 get;
                 private set;
@@ -84,7 +84,7 @@ public static partial class Compose
 
             [ComposeSlot]
             private static void Item(
-                ListView<T> target, CompositionTemplate<T, Widget> template)
+                ListView<T> target, CompositionTemplate<T, ListView<T>, Widget> template)
                 => target.ItemTemplate = template;
         }
     }
@@ -98,16 +98,21 @@ using Lumyte.Composition;
 using TemplateExample;
 using static TemplateExample.Compose;
 
-var list = ListView<Person>()[
+var peopleList = ListView<Person>()[
     new Person("Ada"),
     new Person("Grace"),
     ListViewFactory<Person>().Item()[
-        person => Text(content: person.Name)
+        (person, list) => Text(
+            content: $"{person.Name} / 全{list.Items.Count}件")
     ]
 ];
 ```
 
-`Item()[...]` は型付けされたラムダを捕捉した Slot 指定を返す。外側のインデクサーが定義側の Item を呼んで保存するだけで、人物ごとの生成は行わない。利用側のリスト処理が必要な時点で `list.ItemTemplate!(person)` を呼び、返された構成を取り付ける。
+`Item()[...]` は型付けされたラムダを捕捉した Slot 指定を返す。外側のインデクサーが定義側の Item を呼んで保存するだけで、人物ごとの生成は行わない。利用側のリスト処理が必要な時点で `peopleList.ItemTemplate!(person, peopleList)` を呼び、返された構成を取り付ける。
+
+この例の第一引数は項目の値、第二引数は評価時の ListView 宣言そのものである。リスト処理が自分自身を明示的に渡すため、テンプレートは宣言を外側の変数から捕捉する必要がない。Slot 適用時の対象を delegate へ自動注入するのではなく、引数の意味・順序と呼び出しは受け取る部品が定める。
+
+同じ Slot 指定を別のリストへ適用した場合は、それぞれのリストを第二引数に渡す。これは UI の接続先固有の要素や受理状態ではなく宣言への参照であり、Composition は引数のコピー・状態同期・購読を追加しない。ラムダはリストの値を読むだけとし、列挙や構築中の Items の変更などはリスト処理の更新規則に従う。
 
 ### Slider のノブをカスタマイズする利用案
 
@@ -225,6 +230,9 @@ delegate の作成・Slot 指定の作成・Slot 適用では生成関数を呼�
 +    // ラムダ・メソッドグループを型付けする。UI や基底型の制約はない。
 +    // null/default の入力、戻り値、例外は通常の delegate 呼び出しに従う。
 +    public delegate TComposition CompositionTemplate<TArgs, TComposition>(TArgs args);
++    // 2 引数版。引数の名前・順序・型はこの宣言で固定する。
++    public delegate TComposition CompositionTemplate<T1, T2, TComposition>(
++        T1 arg1, T2 arg2);
 +
 +    // 名前付きのテンプレート操作の入口。結果や保存領域は持たない。
 +    public sealed class CompositionTemplateSlot<TTarget, TArgs, TComposition>
@@ -242,10 +250,25 @@ delegate の作成・Slot 指定の作成・Slot 適用では生成関数を呼�
 +        public CompositionSlotAssignment<TTarget> this[
 +            TComposition composition] { get; }
 +    }
++
++    // 2 引数版。受け取る delegate の引数数以外の契約は 1 引数版と同じ。
++    public sealed class CompositionTemplateSlot<TTarget, T1, T2, TComposition>
++        where TTarget : class
++    {
++        // apply が null なら ArgumentNullException。ここでは実行しない。
++        public CompositionTemplateSlot(
++            Action<TTarget, CompositionTemplate<T1, T2, TComposition>> apply);
++        // null を拒否し、実行せずに delegate を捕捉する。
++        public CompositionSlotAssignment<TTarget> this[
++            CompositionTemplate<T1, T2, TComposition> template] { get; }
++        // null を拒否し、両引数を無視して同じ構成を返す delegate へ正規化する。
++        public CompositionSlotAssignment<TTarget> this[
++            TComposition composition] { get; }
++    }
 
 -    // コンポーネントと名前付きの子コレクションを受け取る静的メソッド。
 +    // 第二引数に対応する子コレクション、または
-+    // CompositionTemplate<TArgs, TComposition> を受け取る静的メソッド。
++    // 引数数 1〜16 の CompositionTemplate を受け取る静的メソッド。
      [AttributeUsage(AttributeTargets.Method, AllowMultiple = false, Inherited = false)]
      public sealed class ComposeSlotAttribute : Attribute
      {
@@ -253,7 +276,9 @@ delegate の作成・Slot 指定の作成・Slot 適用では生成関数を呼�
  }
 ```
 
-生成するテンプレート Slot 入口は次の形とし、ジェネリック制約を引き継ぐ。既存の CompositionSlotAssignment とインデクサーを使い、構成の取り付け先や保存辞書は追加しない。入口のインデクサーは一つの delegate または一つの構成を受け取り、複数引数や空指定は受け付けない。
+3〜16 引数の delegate と Slot 入口型も、上記と同じ並びで入力型を増やして提供する。ここでは公開宣言を 1 引数版と 2 引数版に抜粋した。引数数にかかわらず null の拒否、固定構成への正規化、非評価、再適用の契約は同じである。
+
+生成するテンプレート Slot 入口は次の形とし、ジェネリック制約を引き継ぐ。既存の CompositionSlotAssignment とインデクサーを使い、構成の取り付け先や保存辞書は追加しない。入口のインデクサーは一つの delegate または一つの構成を受け取り、複数の delegate や複数の構成、空指定は受け付けない。これはテンプレート自身が受け取る引数の数とは別の制約である。
 
 ```diff
  namespace TemplateExample
@@ -262,14 +287,14 @@ delegate の作成・Slot 指定の作成・Slot 適用では生成関数を呼�
 +    {
 +        // インデクサーが delegate を型付けする入口。評価は行わない。
 +        public static CompositionTemplateSlot<Compose.Definitions.ListView<T>,
-+            T, Compose.Definitions.Widget> Item<T>(
++            T, Compose.Definitions.ListView<T>, Compose.Definitions.Widget> Item<T>(
 +            this Compose.Definitions.ListViewFactory<T> factory)
 +            where T : notnull;
 +    }
  }
 ```
 
-既存の子コレクション Slot は `Name()[children]` のまま維持し、テンプレート Slot は `Name()[args => composition]` とする。生成器は定義側の第二引数が CompositionTemplate の型定義に一致することを確認し、両型引数を入口の型へ引き継ぐ。インデクサーはその閉じた delegate 型を直接受けるため、C# がラムダの引数と結果を検査する。型付き変数やメソッドグループも同じインデクサーへ渡せる。構成を直接指定するオーバーロードは、引数を使わず同じ構成を返す delegate へ正規化し、定義側の Slot メソッドは引き続き CompositionTemplate だけを受け取る。Func や任意の delegate を Slot 定義として自動認識せず、ラッパーへの暗黙変換も必要ない。
+既存の子コレクション Slot は `Name()[children]` のまま維持し、テンプレート Slot は `Name()[args => composition]` とする。生成器は定義側の第二引数が引数数 1〜16 の CompositionTemplate 群の型定義に一致することを確認し、すべての入力型と結果型を同じ順序で入口の型へ引き継ぐ。インデクサーはその閉じた delegate 型を直接受けるため、C# がラムダの引数と結果を検査する。型付き変数やメソッドグループも同じインデクサーへ渡せる。構成を直接指定するオーバーロードは、すべての引数を使わず同じ構成を返す対応引数数の delegate へ正規化し、定義側の Slot メソッドは引き続き CompositionTemplate だけを受け取る。Func や任意の delegate を Slot 定義として自動認識せず、ラッパーへの暗黙変換も必要ない。
 
 Slot 定義の同期・非ジェネリック・static void、対象型を先頭引数にする制約、公開可能な引数型、名前衝突の検査は維持する。第二引数にテンプレートを許可する場合も、非対応宣言は既存の LYC001 で拒否し、実行時のリフレクションや DynamicInvoke を使わない。定義クラス自体の型引数はテンプレート型にも使用できる。
 
@@ -288,10 +313,12 @@ Slot 定義の同期・非ジェネリック・static void、対象型を先頭�
 
 delegate の型引数は不変とし、異なる TComposition 間のテンプレート変換は自動提供しない。必要なら期待する delegate 型にラムダやメソッドグループを代入する。テンプレートは省略可能値や Slot の保存領域そのものではなく、未設定時の表示や再評価条件は受け取る部品が決める。
 
-受け入れ条件は、UI 非依存の型でラムダ・メソッドグループ・ローカル関数・タプル入力をコンパイルできること、作成時には未実行で単一ラムダの呼び出しごとに一回実行されること、入力と結果の null/default および例外が契約どおり扱われることとする。Slot ではラムダの引数と戻り値の推論、構成の直接指定、対象型と両型引数の不一致の拒否、適用順序・再利用・null の拒否・通常内容との併用・LYC001・別アセンブリからの利用を確認する。
+受け入れ条件は、UI 非依存の型でラムダ・メソッドグループ・ローカル関数・タプル入力をコンパイルできること、作成時には未実行で単一ラムダの呼び出しごとに一回実行されること、入力と結果の null/default および例外が契約どおり扱われることとする。Slot ではラムダの引数と戻り値の推論、構成の直接指定、対象型・引数数・各入力型・結果型の不一致の拒否、適用順序・再利用・null の拒否・通常内容との併用・LYC001・別アセンブリからの利用を確認する。
 
 既存の子 Slot、ComposeParameter、引数 adapter、所有コレクション、関数宣言と再構築のテストを維持し、テンプレートの呼び出しが遅延宣言の評価まで進めないことを確認する。NativeAOT と trimming で実行時探索なしに呼び出せることも受け入れ条件とする。
 
 直接指定では構築式が指定時に一回だけ実行されること、delegate の呼び出しや再適用では再構築されず同じ結果を返すこと、型付き null の拒否、既存の所有権制約の維持を確認する。
+
+複数引数では、2 引数・3 引数・上限の16引数を型付きで呼び出せること、引数の順序と参照同一性、誤った引数数・型の拒否、固定構成が全引数を無視することを確認する。ListView では同じ指定を複数対象へ適用し、それぞれの評価で対応する項目とリスト自身が渡されることを確認する。
 
 Slider への適用では、未指定時の既定描画、受理値によるラムダの再評価、描画のみでの非評価、複数画面での所有権の分離、値またはテンプレート変更時の子の更新と切り離し、既存のノブ領域内への配置を確認する。カスタムノブが入力を奪わず、ドラッグ・キーボード・値の制約・通知・自動操作の既存契約を維持することを受け入れ条件とする。
