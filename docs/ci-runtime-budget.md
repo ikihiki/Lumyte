@@ -113,6 +113,74 @@ runtime has been exercised locally. Full hosted terminal CI, artifact size and
 actual remote product-build counts remain required after parent review/push.
 Old-head CI cannot validate this graph. No old run was cancelled or restarted.
 
+### Final Distribution guard correction and downstream preflight
+
+Run 44313219511 on cd3c04cb completed with 22 successes, one failed Linux
+Integration Distribution step and the final package job skipped. It proves the
+intended parallel graph in operation: Linux x64 producer ended at 13:32:35 UTC;
+Integration started at 13:32:37 and CPU/GPU/Quality all started at 13:32:38.
+Observed compressed native artifacts were 2,376,481,827 bytes (Linux x64),
+2,377,653,854 (Linux ARM64), 2,715,403,342 (Windows x64), and 2,476,729,516
+(Windows ARM64); Browser was 1,022,761,238 and AOT 1,239,414,507 bytes.
+
+The exact generated Pack.proj traversal was reproduced with NoBuild=true, binary
+logging and diagnostic output. MSBuild executes a BeforeTargets hook even when
+the destination CompileSlangShaders target would skip its body. The general
+preparation guard therefore rejected a valid no-build metadata hook before its
+NoBuild condition could skip compilation; NoBuild was not lost in the graph.
+
+Restore/native guards remain unchanged. A separate canonical shader-work guard
+now matches actual shader work: declared shader items, NoBuild=false and
+DesignTimeBuild=false. Actual canonical shader compilation is still rejected;
+no-build packaging's inactive hook is allowed. Drawing is not excluded or waived.
+
+The real Drawing Integration regression uses prebuilt bin/obj and shader outputs,
+requires embedded .lshader resources, invokes the actual SDK no-build/no-restore
+pack with compiler/host traps, compares the packaged DLL byte-for-byte, and checks
+product/compiler/pipeline hashes unchanged. A missing prebuilt target in an owned
+fixture fails with NU5026 and zero tool-trap executions, without changing canonical
+outputs or rebuilding anything. Missing intermediate shader files remain valid
+when the final assembly already embeds them, as the existing contract requires.
+The full current orchestration suite passes 348 tests.
+
+On the isolated artifact-restored consumer, full Distribution (all samples plus
+packages, skipping only the existing Parley/Wgpu aggregate packaging gates) passed
+into a fresh output directory and created **96 packages**. Protected product DLL,
+shader compiler DLL and six pipeline file hashes were unchanged; the packaged
+Drawing assembly matched the original embedded payload. Binary logs are retained
+under lumyte-full-producer-k5MwqD/artifacts/distribution-proof/pack-before.binlog
+and pack-after.binlog. Text evidence: /tmp/lumyte-pack-before-diagnostic.log and
+/tmp/lumyte-full-distribution-fresh-output.log.
+
+Later Linux steps were also exercised without product build/restore: diagnostic
+server/game process contracts passed for HTTP and MagicOnion; the no-build server
+publication and real Chrome 156.0.8078.47 UI checks passed all four scenarios with
+zero browser errors; live gallery generation passed and published **17 screenshots**.
+Its generator/assembler Node tests passed 20/36 and Python collector tests 34.
+An inherited local desktop bus initially delayed Page.navigate; an owned CI-like
+process without that bus passed using the same browser and unchanged deadlines.
+No production browser flags, host services or timeout waivers were changed.
+Logs: /tmp/lumyte-diagnostics-processes-preflight.log,
+/tmp/lumyte-diagnostics-ui-headless-preflight.log and
+/tmp/lumyte-diagnostic-gallery-complete.log.
+
+The isolated final four-RID Parley package preflight also **passed** using only
+current run 44313219511's four native artifacts and managed artifact. Initial
+storage HTTP 503 egress-limit errors recovered on a later bounded small-artifact
+attempt over the same authorized route; no giant bundles, substituted inputs or
+relabeled RIDs were used. The exact final workflow command bootstrapped only its
+runner, explicitly restored package metadata and packed with no product build.
+An isolated preflight guard rejected any product CoreCompile/native source work.
+The resulting Lumyte.Graphics.Text.Parley.1.0.0.nupkg contains all four verified
+ELF/PE machine types, all four unchanged Rust notices, static third-party notices,
+and the unchanged managed assembly. All nine downloaded native/managed input
+hashes stayed unchanged and no native source-output directory was created.
+Evidence: lumyte-final-package-e7enJ9/preflight/verified-package.json and
+preflight/package.log. The package SHA-256 is
+d02e566d29e6b2beab1c0d67e8d0f832de3d26a1b3f6e4b7c783975210218704.
+The required final package job still depends on every test consumer; new hosted
+terminal completion remains pending parent publication/review.
+
 ### Final Linux gate corrections after 21 successful hosted jobs
 
 Run 44302480390 on 6b0b7b5b completed with 21 successes, two failures and the
@@ -306,7 +374,7 @@ ARM/Windows/GPU proof.
   dependency paths were provided, not a hosted cold-build timing claim.
 - CPU: 49 projects, 3,836 passed, no failures/skips; one SDK invocation with the
   prebuilt consumer guard enabled and fresh discovery/TRX.
-- Orchestration: **347 passed**, zero failures/skips, including the real
+- Orchestration: **348 passed**, zero failures/skips, including the real
   producer-to-two-AOT-consumers executable fixture and all no-publish contracts.
 - Relevant Integration orchestration: 227 passed with no-build/no-restore and
   the consumer guard enabled. Node contracts: 235 passed, one optional skip.
