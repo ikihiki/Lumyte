@@ -1,6 +1,7 @@
 using Lumyte.Graphics.Abstractions;
 using Lumyte.Graphics.Drawing2D;
 using Lumyte.Graphics.Drawing2D.Pipelines;
+using Lumyte.Graphics.Verification;
 using Lumyte.Graphics.Wgpu;
 using Lumyte.Mathematics.Colors;
 using static Lumyte.Graphics.Drawing2D.Pipelines.DrawingCompose;
@@ -11,7 +12,8 @@ internal static class MembershipSmoke
 {
     internal static async Task RunAsync()
     {
-        using var device = WgpuDevice.Create();
+        using var raw = WgpuDevice.Create();
+        IGraphicDevice device = new MembershipMultipageExercise.RangeDevice(raw);
         using IGraphicsShader vertex = device.CreateShader(DrawingShaders2D.Vertex);
         using IGraphicsShader fragment = device.CreateShader(DrawingShaders2D.Fragment);
         using IGraphicsPipeline pipeline = device.CreateGraphicsPipeline(new() { VertexShader = vertex, FragmentShader = fragment });
@@ -69,6 +71,7 @@ internal static class MembershipSmoke
         CheckPixel(bytes, checked((int)((pitch * 4) + (6 * 8))), 0, 0, 1, 1);
         commands.Dispose();
         prepared.Dispose();
+        await MembershipMultipageExercise.RunAsync(device, renderer);
         Console.WriteLine("Native AOT membership eleven-kind factories, path/stroke compute and strict wgpu pixel checks passed.");
     }
 

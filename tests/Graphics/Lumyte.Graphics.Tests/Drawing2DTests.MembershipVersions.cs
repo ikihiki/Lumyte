@@ -30,12 +30,30 @@ public sealed partial class Drawing2DTests
         await CheckValidatedMembershipVersionsAsync(raw);
     }
 
-    private static async Task CheckValidatedMembershipVersionsAsync(IGraphicDevice raw)
+    /// <summary>Checks all three real submitted multipage versions on Vulkan.</summary>
+    /// <returns>The completed native lifetime proof.</returns>
+    [GpuFact]
+    public async Task VulkanMembershipMultipageThreeVersionsAsync()
+    {
+        using var raw = VulkanDevice.Create();
+        await CheckValidatedMembershipVersionsAsync(raw, multipage: true);
+    }
+
+    /// <summary>Checks all three real submitted multipage versions on wgpu.</summary>
+    /// <returns>The completed native lifetime proof.</returns>
+    [GpuFact]
+    public async Task WgpuMembershipMultipageThreeVersionsAsync()
+    {
+        using var raw = WgpuDevice.Create();
+        await CheckValidatedMembershipVersionsAsync(raw, multipage: true);
+    }
+
+    private static async Task CheckValidatedMembershipVersionsAsync(IGraphicDevice raw, bool multipage = false)
     {
         var device = new ValidationDevice(raw);
         try
         {
-            await CheckMembershipThreeSubmittedVersionsAsync(device);
+            await CheckMembershipThreeSubmittedVersionsAsync(multipage ? BoundedMembershipDevice(device) : device, multipage);
         }
         catch (Exception original)
         {
@@ -54,20 +72,20 @@ public sealed partial class Drawing2DTests
         device.Dispose();
     }
 
-    private static async Task CheckMembershipThreeSubmittedVersionsAsync(IGraphicDevice device)
+    private static async Task CheckMembershipThreeSubmittedVersionsAsync(IGraphicDevice device, bool multipage)
     {
         using IRenderer2D renderer = CreateMembershipOracleRenderer(device);
         using var scene = new DrawingScene2D();
-        DrawingNodeId2D node = scene.Insert(scene.Root, 0, VersionContent(false));
+        DrawingNodeId2D node = scene.Insert(scene.Root, 0, VersionContent(false, multipage));
         using DrawingSnapshot2D old = scene.CaptureSnapshot();
-        using MembershipVersionSlot first = await MembershipVersionSlot.PrepareAsync(device, renderer, old, 0);
-        scene.SetTransform(node, Matrix3x2.CreateTranslation(6, 0));
+        using MembershipVersionSlot first = await MembershipVersionSlot.PrepareAsync(device, renderer, old, 0, multipage);
+        scene.SetTransform(node, Matrix3x2.CreateTranslation(multipage ? 2 : 6, 0));
         using DrawingSnapshot2D moved = scene.CaptureSnapshot();
-        using MembershipVersionSlot second = await MembershipVersionSlot.PrepareAsync(device, renderer, moved, 1);
+        using MembershipVersionSlot second = await MembershipVersionSlot.PrepareAsync(device, renderer, moved, 1, multipage);
         scene.SetTransform(node, Matrix3x2.Identity);
-        scene.ReplaceContent(node, VersionContent(true));
+        scene.ReplaceContent(node, VersionContent(true, multipage));
         using DrawingSnapshot2D replaced = scene.CaptureSnapshot();
-        using MembershipVersionSlot third = await MembershipVersionSlot.PrepareAsync(device, renderer, replaced, 2);
+        using MembershipVersionSlot third = await MembershipVersionSlot.PrepareAsync(device, renderer, replaced, 2, multipage);
         Assert.Equal(3, renderer.RetentionStatistics.ActiveFrames);
         old.Dispose();
         moved.Dispose();
@@ -80,6 +98,8 @@ public sealed partial class Drawing2DTests
         Assert.NotSame(first.Output, second.Output);
         Assert.NotSame(second.Output, third.Output);
         Assert.NotSame(first.Output, third.Output);
+        object[] outputs = first.Outputs.Concat(second.Outputs).Concat(third.Outputs).ToArray();
+        Assert.Equal(multipage ? 6 : 3, outputs.Distinct(ReferenceEqualityComparer.Instance).Count());
         Assert.Equal(3, renderer.RetentionStatistics.ActiveFrames);
 
         // Every actual Queue.Submit and AttachSubmission has happened before this first wait.
@@ -89,8 +109,17 @@ public sealed partial class Drawing2DTests
         Assert.Equal(0, renderer.RetentionStatistics.ActiveFrames);
     }
 
-    private static DrawList2D VersionContent(bool green)
+    private static DrawList2D VersionContent(bool green, bool multipage)
     {
+        if (multipage)
+        {
+            var pages = new Canvas2D();
+            pages.Begin();
+            pages.FillPath(MultipageBox(0), new SRgba<float>(green ? 0 : 1, green ? 1 : 0, 0, 0.5f));
+            pages.FillPath(MultipageBox(20), new SRgba<float>(green ? 1 : 0, green ? 0 : 1, 0, 0.5f));
+            return pages.End();
+        }
+
         var path = new PathBuilder2D();
         path.MoveTo(new(2, 2));
         path.LineTo(new(6, 2));
@@ -111,25 +140,33 @@ public sealed partial class Drawing2DTests
         private readonly IGraphicsCommandBuffer _commands;
         private readonly uint _pitch;
         private readonly int _version;
+        private readonly bool _multipage;
+        private readonly uint _width;
+        private readonly uint _height;
         private PreparedDrawingFrame2D _frame = null!;
         private IGraphicsSubmission? _submission;
         private bool _recordAttempted;
         private bool _submitAttempted;
         private bool _retired;
         private PartitionCommands? _observed;
-        private IShaderReference? _computeOutput;
+        private IShaderReference[] _computeOutputs = [];
 
-        private MembershipVersionSlot(IGraphicDevice device, int version)
+        private MembershipVersionSlot(IGraphicDevice device, int version, bool multipage)
         {
             _version = version;
-            _texture = device.CreateTexture(new() { Width = 16, Height = 8, Format = TextureFormat.Rgba16Float, Usage = TextureUsage.RenderAttachment | TextureUsage.CopySource });
+            _multipage = multipage;
+            _width = multipage ? 128u : 16u;
+            _height = multipage ? 128u : 8u;
+            _texture = device.CreateTexture(new() { Width = _width, Height = _height, Format = TextureFormat.Rgba16Float, Usage = TextureUsage.RenderAttachment | TextureUsage.CopySource });
             _view = _texture.CreateView();
-            _pitch = OracleRowPitch(device, 16);
-            _readback = device.CreateBuffer<byte>(new() { Count = _pitch * 8, Usage = BufferUsage.CopyDestination, Memory = MemoryPreference.Readback });
+            _pitch = OracleRowPitch(device, _width);
+            _readback = device.CreateBuffer<byte>(new() { Count = _pitch * _height, Usage = BufferUsage.CopyDestination, Memory = MemoryPreference.Readback });
             _commands = device.CreateCommandBuffer(new());
         }
 
         internal object Output { get; private set; } = null!;
+
+        internal IEnumerable<object> Outputs => _computeOutputs.Select(output => output.Resource);
 
         public void Dispose()
         {
@@ -155,9 +192,9 @@ public sealed partial class Drawing2DTests
             _texture.Dispose();
         }
 
-        internal static async Task<MembershipVersionSlot> PrepareAsync(IGraphicDevice device, IRenderer2D renderer, DrawingSnapshot2D snapshot, int version)
+        internal static async Task<MembershipVersionSlot> PrepareAsync(IGraphicDevice device, IRenderer2D renderer, DrawingSnapshot2D snapshot, int version, bool multipage)
         {
-            var slot = new MembershipVersionSlot(device, version);
+            var slot = new MembershipVersionSlot(device, version, multipage);
             slot._frame = await renderer.PrepareAsync(snapshot, new() { View = slot._view, LoadOp = AttachmentLoadOp.Load });
             return slot;
         }
@@ -173,15 +210,20 @@ public sealed partial class Drawing2DTests
             _observed = observed;
             _recordAttempted = true;
             _frame.Record(observed);
-            Assert.Equal(1, observed.ComputePasses);
-            Assert.Equal(1, observed.ComputeDispatches);
-            ShaderValueSnapshot compute = Assert.Single(observed.ComputeRoots);
-            IShaderReference output = Assert.Single(compute.Values.Select(value => Assert.IsAssignableFrom<IShaderReference>(value.Reference)), reference => reference.Resource is IGraphicsBuffer<uint>);
-            Assert.Equal(ShaderBufferAccess.ReadWrite, output.BufferAccess);
-            Output = output.Resource;
-            _computeOutput = output;
+            Assert.Equal(_multipage ? 2 : 1, observed.ComputePasses);
+            Assert.Equal(_multipage ? 2 : 1, observed.ComputeDispatches);
+            Assert.Equal(_multipage ? 2 : 1, observed.ComputeRoots.Count);
+            _computeOutputs = observed.ComputeRoots.Select(root => Assert.Single(root.Values.Select(value => Assert.IsAssignableFrom<IShaderReference>(value.Reference)), reference => reference.Resource is IGraphicsBuffer<uint>)).ToArray();
+            Assert.All(_computeOutputs, output => Assert.Equal(ShaderBufferAccess.ReadWrite, output.BufferAccess));
+            if (_multipage)
+            {
+                Assert.NotSame(_computeOutputs[0].Resource, _computeOutputs[1].Resource);
+                Assert.All(_computeOutputs, output => Assert.InRange(output.SizeInBytes, 40000UL, 65536UL));
+            }
+
+            Output = _computeOutputs[0].Resource;
             _commands.Barrier(new TextureBarrierDesc { Texture = _texture, Range = new(0, 1, 0, 1), BeforeState = TextureState.ColorAttachment, AfterState = TextureState.CopySource, Before = color, After = _copyRead });
-            _commands.CopyTextureToBuffer(new() { Texture = _texture, Width = 16, Height = 8 }, new() { Buffer = _readback.SliceElements(0, _readback.Count), BytesPerRow = _pitch, RowsPerImage = 8 });
+            _commands.CopyTextureToBuffer(new() { Texture = _texture, Width = _width, Height = _height }, new() { Buffer = _readback.SliceElements(0, _readback.Count), BytesPerRow = _pitch, RowsPerImage = _height });
             _commands.Barrier(new BufferBarrierDesc<byte> { Buffer = _readback.SliceElements(0, _readback.Count), Before = _copyWrite, After = new(PipelineStage.Host, ResourceAccess.HostRead) });
             _commands.Finish();
             _submitAttempted = true;
@@ -197,16 +239,16 @@ public sealed partial class Drawing2DTests
             _commands.Dispose();
             _frame.Retire();
             _retired = true;
-            Vector4[] pixels = await DecodeMembershipOraclePixelsAsync(_readback, 16, 8, _pitch);
+            Vector4[] pixels = await DecodeMembershipOraclePixelsAsync(_readback, _width, _height, _pitch);
             int left = _version == 1 ? 8 : 2;
-            for (int y = 0; y < 8; y++)
+            for (int y = 0; y < _height; y++)
             {
-                for (int x = 0; x < 16; x++)
+                for (int x = 0; x < _width; x++)
                 {
-                    Vector4 expected = x >= left && x < left + 4 && y >= 2 && y < 6
+                    Vector4 expected = _multipage ? MultipagePixel(x, y, _version == 1 ? 2 : 0, _version == 2, blue: true) : x >= left && x < left + 4 && y >= 2 && y < 6
                         ? _version == 2 ? new(0, 0.5f, 0.5f, 1) : new(0.5f, 0, 0.5f, 1)
                         : new(0, 0, 1, 1);
-                    AssertPixel(pixels, 16, x, y, expected);
+                    AssertPixel(pixels, (int)_width, x, y, expected);
                 }
             }
         }
@@ -221,17 +263,18 @@ public sealed partial class Drawing2DTests
             }
 
             Assert.NotEmpty(raster);
+            Assert.All(_computeOutputs, output => Assert.Contains(raster, reference => ReferenceEquals(reference.Resource, output.Resource)));
             Assert.All(raster, reference =>
             {
                 Assert.Equal(ShaderBufferAccess.ReadOnly, reference.BufferAccess);
-                Assert.NotSame(_computeOutput!.Table, reference.Table);
+                Assert.NotSame(_computeOutputs.Single(output => ReferenceEquals(output.Resource, reference.Resource)).Table, reference.Table);
             });
 
             void Visit(IEnumerable<IShaderReference> references)
             {
                 foreach (IShaderReference reference in references)
                 {
-                    if (ReferenceEquals(reference.Resource, Output))
+                    if (_computeOutputs.Any(output => ReferenceEquals(reference.Resource, output.Resource)))
                     {
                         raster.Add(reference);
                     }
