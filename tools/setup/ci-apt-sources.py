@@ -168,6 +168,12 @@ def install(packages, run=subprocess.run):
         changed, main, parts, hosts = prepare(source_list, source_parts, Path(directory))
         if changed:
             validate_origin_pins(config, hosts)
+        # Only report a bounded decision enum, never source text or config data.
+        # Failure of diagnostic I/O must not change the actual APT result.
+        try:
+            os.write(2, b'APT acquisition sources: rewrite=' + (b'applied' if changed else b'none') + b'\n')
+        except (OSError, ValueError):
+            pass
         options = ['-o', 'Dir::Etc::sourcelist=' + str(main), '-o', 'Dir::Etc::sourceparts=' + str(parts)] if changed else []
         # Native config still supplies all keys, pins, proxies, TLS and version policy.
         run(['apt-get', 'update', '-o', 'APT::Update::Error-Mode=any', *options], check=True)
