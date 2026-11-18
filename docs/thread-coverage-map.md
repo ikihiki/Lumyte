@@ -18,7 +18,7 @@ Integration means actual worker execution, not async, a task-shaped return, a se
 Source-enumerated facts/InlineData rows, not expanded MemberData discovery counts. MemberData theories count as one declaration. Runtime discovery is authoritative for expanded totals.
 
 Non-Tools catalog totals: Cpu 4094 → 3676; Integration 314 → 732; Gpu 158 → 158.
-Projects advertising Integration: 13 → 31 for this non-Tools change; parent runner integration brings the final catalog to 32. CPU remains 50 projects, GPU 10 (host selectors exclude unsupported OS projects).
+Projects advertising Integration: 13 → 31 for this non-Tools change; parent runner integration brings the final catalog to 32. After runner-proof consolidation CPU has 49 projects, GPU 10 (host selectors exclude unsupported OS projects).
 
 | Project | Cpu before → after | Integration before → after |
 | --- | ---: | ---: |
@@ -654,3 +654,18 @@ Projects advertising Integration: 13 → 31 for this non-Tools change; parent ru
 - Runtime verified with pinned .NET 10.0.403: Execution Cpu 72/72 and Integration 27/27; Resources Integration 136/136; Memory full project 27/27; Signals full project 52/52.
 - Child-only direct builds initially lacked dxc/libdxcompiler. The final parent verification used the existing native paths and DXC library directory from /tmp/lumyte-lanes-env.sh; full host compilation succeeded. Final authoritative lane counts and TRX/discovery evidence are recorded in build/TASK-VERIFICATION.md.
 - Workflow foreign-result tests are Integration despite cooperative fixtures: WorkflowContinuation deliberately bridges different runtimes through ThreadPool before posting to the target workflow.
+
+## Runner proof consolidation after parent review
+
+- Removed CpuLaneOverlapTests.FirstMethod and SecondMethod from discovery. Their
+  original two-party barrier assertion is represented by the existing single
+  Integration case MethodRunnerTests.SameClassMethodsOverlapAndPreserveLifetimesAsync:
+  it invokes the real CPU collection runner on two private same-class probes,
+  asserts both meet the barrier, and checks output, async instance disposal and
+  shared-fixture creation/disposal. No environment-absent no-op remains.
+- Removed the duplicate CpuMethodSchedulerOverlapsMethodsAsync alias. The runner
+  project now contains seven meaningful Integration cases and no CPU cases.
+- Final runtime CPU inventory: 49 projects / 3,815 passed. The 428 baseline CPU
+  rows removed by old name reconcile as 422 Integration executions, four theory
+  renames, and two explicitly consolidated runner rows. No dummy arithmetic
+  facts or artificially preserved names count as retained behavior.

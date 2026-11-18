@@ -256,3 +256,45 @@ The optional all-GPU lavapipe run is longer than the host lanes: its native
 Graphics.Tests process was still executing at ~5 minutes after the extracted
 pixel fixture passed. This is not a terminal GPU verdict; existing CI cold-cache
 capacity guards, deadlines and opt-ins remain unchanged.
+
+## Parent-review correction: consolidate runner proof (2026-11-18)
+
+The two original CpuLaneOverlapTests.FirstMethod/SecondMethod rows are **not**
+retained as trivial arithmetic CPU tests. Their shared barrier contract is
+consolidated into the existing Integration fixture
+MethodRunnerTests.SameClassMethodsOverlapAndPreserveLifetimesAsync, which
+executes two same-class methods through the real CpuMethodCollectionRunner and
+checks their barrier, output and async/shared fixture lifetime. The duplicate
+CpuMethodSchedulerOverlapsMethodsAsync alias is removed. Assembly serialization
+attributes reside with this meaningful integration fixture; no CPU override is
+needed in an integration-only project. CPU catalog membership is therefore
+49 projects (previous 50); the integration catalog remains 32. The prior counts
+3,817 CPU / 911 integration refer to the pre-review checkpoint; final counts
+below supersede them. Coverage reconciliation explicitly lists the two old
+barrier rows as consolidated, rather than matching preserved dummy names.
+
+Review-final CPU run: **49 projects, 3,815 passed, zero failures/skips**
+(`/tmp/lumyte-cpu-review-final.log`). Runner project: **7 meaningful integration
+contracts passed**, including the single real same-class barrier proof; zero
+CPU payload tests. Baseline multiset reconciliation now identifies 428 old CPU
+rows removed by name: 422 executed Integration rows, four explicit theory
+renames (two cooperative CPU and two ThreadPool Integration), and two old
+top-level overlap rows consolidated into that single real Integration proof.
+The accounting is 4,240 − 428 + 3 = 3,815, not dummy name preservation.
+
+Terminal software-GPU receipt supersedes the running status above:
+**9 Linux projects, 156 passed, 7 existing opt-in/presentation skips, zero
+failures/empty TRX**, full category and discovery accepted in 10:01, exit 0.
+`/tmp/lumyte-reclassification-gpu-lavapipe.log`; explicit
+VK_DRIVER_FILES=/usr/share/vulkan/icd.d/lvp_icd.json. No GPU test restarted or
+excluded while this run was active.
+
+Review-final full Integration receipt: **30 projects, 910 passed, 16 existing
+opt-in skips, zero failures/empty TRX**, exit 0 in 4:07
+(`/tmp/lumyte-integration-review-final.log`). The one-row reduction from 911 is
+the removed duplicate runner-proof alias, not lost behavior. All baseline
+multiset transfers/renames/consolidations were rechecked against the final
+CPU + Integration TRX. Full Markdown lint (368 files), runner whitespace and
+`git diff --check` passed. Independent audit window-host and resource-worker
+findings were checked against the moved-method map; all identified host
+WindowTests and ResourceExecutionHost consumers are classified Integration.

@@ -45,12 +45,12 @@ An explicit exact-identical-circle guard now returns transparent before quadrati
 contraction. The unchanged oracle failed before the guard and passed after it;
 no pixel tolerance or expected value changed. The fixture remains GPU coverage.
 
-## Local evidence (2026-11-18)
+## Historical provisional child evidence (superseded, 2026-11-18)
 
 - node --check: both modified verifiers passed; scoped git diff --check passed.
 - Pinned SDK 10.0.403 Compile target with BuildProjectReferences=false: all
   three new test fixtures compiled with analyzers enabled. The normal build
-  cannot complete in this checkout: artifacts/nuget is missing and Slang cannot
+  could not complete in the child environment: artifacts/nuget is missing and Slang cannot
   load libdxcompiler. Existing dependency outputs were used only for the
   following explicitly provisional executions.
 - Compiled navigation CPU fixture: 1 passed, 0 failed, 0 skipped.
@@ -62,3 +62,16 @@ no pixel tolerance or expected value changed. The fixture remains GPU coverage.
   Rebuild native shaders/dependencies through the parent verification path
   before deciding whether this is stale-output or actual native-backend drift.
 - Full browser execution is not claimed here.
+
+## Authoritative final verification
+
+The parent supplied the existing DXC/native environment and completed the full
+host solution build with analyzers. Native shaping and CPU transition fixtures
+each passed. The unchanged native paint oracle first reproduced the radial
+regression after a full shader rebuild, then passed with the exact-circle guard
+described above. Fresh Pages and Parley WASM publications and real browser API
+verifiers passed, including WebGPU readback and DOM ImageData capture at the
+reduced 900×1000 text extent. Real diagnostics HTTP/MagicOnion/Blazor browser
+integration also passed with zero browser errors. See build/TASK-VERIFICATION.md
+for exact logs and full lane receipts; the provisional failures above are not
+the final verdict.

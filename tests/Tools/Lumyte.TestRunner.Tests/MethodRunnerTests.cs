@@ -7,6 +7,9 @@ using Xunit;
 using Xunit.Abstractions;
 using Xunit.Sdk;
 
+// Runner fixtures own their real concurrency inside Integration, never a CPU payload.
+[assembly: CollectionBehavior(DisableTestParallelization = true)]
+
 namespace Lumyte.TestRunner.Tests;
 
 /// <summary>Exercises the real xUnit method/case runners without spawning per-method processes.</summary>
@@ -35,11 +38,6 @@ public sealed class MethodRunnerTests
         Assert.Equal(1, SharedFixture.Disposed);
         Assert.Equal(new[] { "First output" + Environment.NewLine, "Second output" + Environment.NewLine }, messages.Output.Order());
     }
-
-    /// <summary>Proves the CPU scheduling policy from an integration fixture, not a CPU test body.</summary>
-    /// <returns>The real nested runner execution.</returns>
-    [Fact]
-    public Task CpuMethodSchedulerOverlapsMethodsAsync() => SameClassMethodsOverlapAndPreserveLifetimesAsync();
 
     /// <summary>The bound includes async methods suspended at an await, not just active threads.</summary>
     /// <returns>The bounded execution.</returns>
