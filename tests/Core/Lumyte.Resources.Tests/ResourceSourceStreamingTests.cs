@@ -15,6 +15,7 @@ public sealed class ResourceSourceStreamingTests
     /// <summary>Resident descriptors survive trimming and supply independent, seekable session cursors.</summary>
     /// <param name="embedded">Whether the input is embedded rather than a file.</param>
     /// <returns>Completion of source, session and memory lifetime checks.</returns>
+    [Trait("Execution", "Integration")]
     [Theory]
     [InlineData(false)]
     [InlineData(true)]

@@ -629,6 +629,7 @@ public sealed class PointerTests : UiElementTestBase
 
     /// <summary>Checks dispatch preserves sequential cross-thread use and surface-local pointer identities.</summary>
     /// <returns>The asynchronous sequential input verification.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task DispatchHasNoCreatorThreadAffinityAndCapturesAreSurfaceLocalAsync()
     {

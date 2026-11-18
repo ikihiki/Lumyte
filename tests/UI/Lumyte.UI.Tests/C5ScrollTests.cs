@@ -190,6 +190,7 @@ public sealed class C5ScrollTests
     }
 
     /// <summary>Checks synchronous reentry, disposal and foreign-thread rejection.</summary>
+    [Trait("Execution", "Integration")]
     [Fact]
     public void ControllerReentryDisposalAndOwnerThread()
     {

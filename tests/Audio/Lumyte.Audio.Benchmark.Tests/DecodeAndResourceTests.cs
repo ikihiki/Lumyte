@@ -147,6 +147,7 @@ public sealed class DecodeAndResourceTests
     }
 
     /// <summary>The CPU control rejects invalid shape, nonfinite input, premature device release and foreign owners.</summary>
+    [Trait("Execution", "Integration")]
     [Fact]
     public void CpuStorageControlEnforcesContract()
     {

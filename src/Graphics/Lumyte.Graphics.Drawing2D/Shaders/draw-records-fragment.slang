@@ -248,6 +248,9 @@ float4 gradient(EvaluationNode n,float2 p,GpuBufferRef<float4> data)
         }
         else if(n.Kind==7)
         {
+            // Identical circles have no valid interpolation parameter. Guard
+            // before backend contraction/fast-math can perturb the zero quadratic.
+            if(all(n.B.xyz==n.A.xyz)) return float4(0);
             float2 delta=n.B.xy-n.A.xy, point=p-n.A.xy;
             // Rescale the equation before squaring so tiny gradients retain their
             // geometry and large finite design coordinates do not overflow.

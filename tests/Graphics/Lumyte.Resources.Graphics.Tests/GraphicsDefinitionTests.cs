@@ -19,6 +19,7 @@ public sealed class GraphicsDefinitionTests
 
     /// <summary>Checks multiple keys, last registration wins, shader sharing and all compile settings.</summary>
     /// <returns>The asynchronous check.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task KeyedPipelinesShareShadersAndPreserveCompilationSettingsAsync()
     {
@@ -69,6 +70,7 @@ public sealed class GraphicsDefinitionTests
 
     /// <summary>Checks reusable definitions support arbitrary composite assets and retain dependencies through cleanup retry.</summary>
     /// <returns>The asynchronous check.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task CustomAssetRetainsDependenciesUntilCleanupSucceedsAsync()
     {
@@ -98,6 +100,7 @@ public sealed class GraphicsDefinitionTests
 
     /// <summary>Checks graphics resource definitions rebuild against a new device while retaining shader CPU inputs.</summary>
     /// <returns>The asynchronous check.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task RebuildUsesTheSameLogicalKeyAndCpuArtifactsAsync()
     {
@@ -128,6 +131,7 @@ public sealed class GraphicsDefinitionTests
 
     /// <summary>Checks compute dependencies, shared views and allocations use the same keyed definition mechanism.</summary>
     /// <returns>The asynchronous check.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task ComputeAndTextureViewsRetainTheirSharedDependenciesAsync()
     {

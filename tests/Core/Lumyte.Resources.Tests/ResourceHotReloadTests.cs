@@ -16,6 +16,7 @@ public sealed class ResourceHotReloadTests
 
     /// <summary>A burst of repeated hints produces one reload while its original lease remains valid.</summary>
     /// <returns>Completion of the coalesced reload.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task DuplicateHintsAreDebouncedAsync()
     {
@@ -45,6 +46,7 @@ public sealed class ResourceHotReloadTests
 
     /// <summary>Continuous notifications cannot postpone a reload beyond the maximum aggregation period.</summary>
     /// <returns>Completion of a reload while the source is still sending hints.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task ContinuousHintsReachMaximumBatchDelayAsync()
     {
@@ -78,6 +80,7 @@ public sealed class ResourceHotReloadTests
 
     /// <summary>A source producing synchronously forever cannot prevent the reload worker from starting.</summary>
     /// <returns>Completion of publication and cancellation of the synchronous source.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task SynchronousContinuousSourceDoesNotStarveReloadAsync()
     {
@@ -107,6 +110,7 @@ public sealed class ResourceHotReloadTests
 
     /// <summary>Initial publications can request input checks while source notifications continuously wake the same consumer.</summary>
     /// <returns>Completion of concurrent publication, a subsequent reload and clean shutdown.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task InitialPublicationAndSourceHintsShareOneNotificationSignalAsync()
     {
@@ -160,6 +164,7 @@ public sealed class ResourceHotReloadTests
 
     /// <summary>A hint arriving during a blocked build survives the current batch and its conflict.</summary>
     /// <returns>Completion of the subsequent graph publication.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task NotificationDuringReloadIsRetainedAsync()
     {
@@ -202,6 +207,7 @@ public sealed class ResourceHotReloadTests
 
     /// <summary>Transient build failures retry without publishing a partial graph.</summary>
     /// <returns>Completion of the failed and successful attempts.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task FailedReloadRetriesAndKeepsPreviousGraphAsync()
     {
@@ -246,6 +252,7 @@ public sealed class ResourceHotReloadTests
 
     /// <summary>Exhausting a batch's retries does not stop subsequent change notifications.</summary>
     /// <returns>Completion of publication triggered by a later hint.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task ExhaustedRetryAllowsFutureNotificationAsync()
     {
@@ -283,6 +290,7 @@ public sealed class ResourceHotReloadTests
 
     /// <summary>A conflicting source revision is retried even without another notification.</summary>
     /// <returns>Completion of the successful retry.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task ConflictRetriesLatestRevisionAsync()
     {
@@ -319,6 +327,7 @@ public sealed class ResourceHotReloadTests
     /// <summary>Explicit rescans and bounded-queue overflow both revalidate all tracked input identifiers.</summary>
     /// <param name="overflow">Whether to trigger a rescan by overflowing the identifier limit.</param>
     /// <returns>Completion of the tracked source's publication.</returns>
+    [Trait("Execution", "Integration")]
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
@@ -382,6 +391,7 @@ public sealed class ResourceHotReloadTests
 
     /// <summary>Watcher failures remain observable while ordinary resource loading remains available.</summary>
     /// <returns>Completion of the faulted service and continued manager use.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task WatcherFailureFaultsCompletionAsync()
     {
@@ -396,6 +406,7 @@ public sealed class ResourceHotReloadTests
 
     /// <summary>Observer exceptions stop both workers and remain visible through completion.</summary>
     /// <returns>Completion of the worker failure and joined watcher.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task ObserverFailureStopsWatcherAsync()
     {
@@ -413,6 +424,7 @@ public sealed class ResourceHotReloadTests
 
     /// <summary>Throwing cancellation callbacks cannot bypass joining the watcher during disposal.</summary>
     /// <returns>Completion of manager disposal and observation of the cancellation failure.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task CancellationCallbackFailureStillJoinsWorkersAsync()
     {
@@ -428,6 +440,7 @@ public sealed class ResourceHotReloadTests
 
     /// <summary>Initial publication checks each new input without rescanning previously loaded inputs.</summary>
     /// <returns>Completion of independent initial publications and their bounded revision checks.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task InitialPublicationChecksOnlyNewInputsAsync()
     {
@@ -457,6 +470,7 @@ public sealed class ResourceHotReloadTests
 
     /// <summary>A change consumed before the first publication is rechecked after its input provenance becomes visible.</summary>
     /// <returns>Completion of publication of the changed input without another external notification.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task InitialPublicationRechecksAnAlreadyConsumedChangeAsync()
     {
@@ -499,6 +513,7 @@ public sealed class ResourceHotReloadTests
 
     /// <summary>Newly published inputs cannot continually extend the deadline of a pending change batch.</summary>
     /// <returns>Completion of a changed input's reload while new resources continue loading.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task InitialPublicationsPreservePendingBatchDeadlineAsync()
     {

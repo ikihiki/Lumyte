@@ -11,6 +11,7 @@ public sealed class VulkanCompletionTests
 {
     /// <summary>Checks that queued waits share one non-pool worker and idle disposal drains publication.</summary>
     /// <returns>The asynchronous verification.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task DispatcherSharesOneSleepingWorkerAsync()
     {
@@ -51,6 +52,7 @@ public sealed class VulkanCompletionTests
 
     /// <summary>Checks caller cancellation cannot consume or cancel shared native completion.</summary>
     /// <returns>The asynchronous verification.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task CancellationLeavesNativeWaitRunningAsync()
     {
@@ -133,6 +135,7 @@ public sealed class VulkanCompletionTests
 
     /// <summary>Checks that loss subscribers can stop and join the native worker without self-joining.</summary>
     /// <returns>The asynchronous verification.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task LossSubscriberCanDisposeDispatcherAsync()
     {
@@ -222,6 +225,7 @@ public sealed class VulkanCompletionTests
 
     /// <summary>Checks a native wait error does not authorize destroying still-pending GPU work.</summary>
     /// <returns>The asynchronous verification.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task FailedNativeWaitKeepsRetirementGuardAsync()
     {
