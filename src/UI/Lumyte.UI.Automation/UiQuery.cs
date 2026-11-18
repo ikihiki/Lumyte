@@ -1,6 +1,6 @@
 namespace Lumyte.UI.Automation;
 
-internal sealed record UiQuery(string? TestId, UiRole? Role, string? Name, bool IncludeHidden)
+internal sealed record UiQuery(string? TestId, UiRole? Role, string? Name, bool IncludeHidden, string? ItemKey = null)
 {
     internal static UiQuery ByTestId(string testId)
     {
@@ -22,5 +22,6 @@ internal sealed record UiQuery(string? TestId, UiRole? Role, string? Name, bool 
         (TestId is null || string.Equals(TestId, node.TestId, StringComparison.Ordinal))
         && (Role is null || node.Role == Role)
         && (Name is null || string.Equals(Name, node.Name, StringComparison.Ordinal))
+        && (ItemKey is null || string.Equals(ItemKey, node.OptionKey, StringComparison.Ordinal))
         && (IncludeHidden || node.IsVisible);
 }

@@ -24,6 +24,20 @@ public sealed partial class UiLocator
     /// <returns>A new locator.</returns>
     public UiLocator GetByTestId(string testId) => new(Page, [.. _queries, UiQuery.ByTestId(testId)]);
 
+    /// <summary>Finds a realized item belonging to the currently matched selection owner, not a test identity.</summary>
+    /// <param name="key">The nonempty ordinal model key, at most 256 characters.</param>
+    /// <returns>A lazy owner-scoped locator; observations count realized items only.</returns>
+    public UiLocator GetByItemKey(string key)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(key);
+        if (key.Length > 256 || _queries.Any(query => query.ItemKey is not null))
+        {
+            throw new ArgumentException("An item locator requires one bounded item key.", nameof(key));
+        }
+
+        return new(Page, [.. _queries, new UiQuery(null, null, null, true, key)]);
+    }
+
     /// <summary>Adds a role/name query restricted to descendants of current matches.</summary>
     /// <param name="role">The non-None semantic role.</param>
     /// <param name="name">The optional exact name.</param>
@@ -47,14 +61,28 @@ public sealed partial class UiLocator
             throw new ArgumentException("Position must be finite and nonnegative.", nameof(options));
         }
 
-        return Page.ExecuteAsync(run => ClickAsync(run, options), options, cancellationToken);
+        return Page.ExecuteAsync(
+            async run =>
+            {
+                await PrepareItemTargetAsync(run);
+                return await ClickAsync(run, options);
+            },
+            options,
+            cancellationToken);
     }
 
     /// <summary>Acquires focus through ordinary Tab Down/Up, sharing one deadline and input lease.</summary>
     /// <param name="options">Optional deadline.</param>
     /// <param name="cancellationToken">Cancels waiting.</param>
     /// <returns>Completion when the latest target has focus.</returns>
-    public Task FocusAsync(UiWaitOptions? options = null, CancellationToken cancellationToken = default) => Page.ExecuteAsync(run => run.WithInputAsync(lease => FocusAsync(run, lease)), options, cancellationToken);
+    public Task FocusAsync(UiWaitOptions? options = null, CancellationToken cancellationToken = default) => Page.ExecuteAsync(
+        async run =>
+        {
+            await PrepareItemTargetAsync(run);
+            return await run.WithInputAsync(lease => FocusAsync(run, lease));
+        },
+        options,
+        cancellationToken);
 
     /// <summary>Focuses through Tab and dispatches physical modifier and key Down/Up without callback shortcuts.</summary>
     /// <param name="key">The ordinary input key.</param>
@@ -69,7 +97,14 @@ public sealed partial class UiLocator
             throw new ArgumentException("Unknown modifier bits.", nameof(modifiers));
         }
 
-        return Page.ExecuteAsync(run => PressAsync(run, key, modifiers), options, cancellationToken);
+        return Page.ExecuteAsync(
+            async run =>
+            {
+                await PrepareItemTargetAsync(run);
+                return await PressAsync(run, key, modifiers);
+            },
+            options,
+            cancellationToken);
     }
 
     internal List<UiAutomationNode> Resolve(UiAutomationSnapshot snapshot)
@@ -79,7 +114,8 @@ public sealed partial class UiLocator
         HashSet<UiAutomationId>? scopes = null;
         foreach (UiQuery query in _queries)
         {
-            current = snapshot.Nodes.Where(node => query.Matches(node) && (scopes is null || IsDescendant(node, scopes, parents))).ToArray();
+            current = snapshot.Nodes.Where(node => query.Matches(node) && (scopes is null || (query.ItemKey is not null
+                ? node.SelectionGroup is { } group && scopes.Contains(group) : IsDescendant(node, scopes, parents)))).ToArray();
             scopes = current.Select(node => node.Id).ToHashSet();
         }
 

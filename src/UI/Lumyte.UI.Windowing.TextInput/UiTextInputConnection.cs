@@ -108,6 +108,11 @@ public sealed class UiTextInputConnection : IUiTextInputHandler, IDisposable, IT
     /// <returns>The matching focused editor.</returns>
     public TextBox? GetFocusedEditor(UiAutomationId id) => _surface.FocusedElement is TextBox editor && editor.AutomationId == id && ReferenceEquals(editor.InputHandler, this) ? editor : null;
 
+    /// <summary>Reports the active or retiring platform session borrowing this editor.</summary>
+    /// <param name="editor">The existing editor realization.</param>
+    /// <returns>Whether release must drain before virtualization can retire the editor.</returns>
+    public bool HasPendingSession(TextBox editor) => ReferenceEquals(_editor, editor) && _session is { IsReleased: false };
+
     /// <summary>Handle Input.</summary>
     /// <param name = "editor">The editor.</param>
     /// <param name = "context">The context.</param>

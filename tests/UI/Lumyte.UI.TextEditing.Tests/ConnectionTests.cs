@@ -752,6 +752,96 @@ public sealed class ConnectionTests
         Assert.DoesNotContain(fixture.Surface.CaptureAutomationSnapshot().Nodes, node => node.Id == fixture.Editor.AutomationId && node.IsVisible);
     }
 
+    /// <summary>A focused composing editor is one clipped pin, not destroyed by programmatic scrolling.</summary>
+    [Fact]
+    public void VirtualizedScrollPinsActualComposingEditor()
+    {
+        using var fixture = new Fixture(virtualized: true);
+        Assert.True(fixture.Surface.TryFocus(fixture.Editor));
+        fixture.Pump();
+        Session session = fixture.Service.Current!;
+        using (TextDocumentTransaction edit = fixture.Document.BeginEdit(TextEditOrigin.Platform))
+        {
+            edit.SetComposition(new(Guid.NewGuid(), new(0, 0), []));
+            edit.Commit();
+        }
+
+        fixture.Pump();
+        UiAutomationId identity = fixture.Editor.AutomationId;
+        ScrollViewElement scroll = Assert.IsType<ScrollViewElement>(fixture.Surface.RootElement.Children[0]);
+        scroll.Controller.ScrollTo(1000);
+        fixture.Pump();
+        Assert.Same(fixture.Editor, fixture.Surface.FocusedElement);
+        Assert.Equal(identity, fixture.Editor.AutomationId);
+        Assert.True(fixture.Editor.IsMounted);
+        Assert.False(session.IsReleased);
+        Assert.NotNull(fixture.Document.CaptureSnapshot().Composition);
+        Assert.Equal((int)Math.Ceiling(scroll.Controller.Viewport / 20) + 1, scroll.Children[0].Children.Count);
+        UiAutomationNode editor = fixture.Surface.CaptureAutomationSnapshot().Nodes.Single(node => node.Id == identity);
+        Assert.Equal(0, editor.ClippedBounds.Height);
+        fixture.Surface.TryFocus(null);
+        fixture.Pump();
+        Assert.True(session.IsReleased);
+        Assert.Null(fixture.Document.CaptureSnapshot().Composition);
+        Assert.False(fixture.Editor.IsMounted);
+    }
+
+    /// <summary>The one editor pin remains mounted while the normal IME release drains asynchronously.</summary>
+    [Fact]
+    public void VirtualizedEditorWaitsForPendingImeRelease()
+    {
+        using var fixture = new Fixture(virtualized: true);
+        fixture.Surface.TryFocus(fixture.Editor);
+        fixture.Pump();
+        Session session = fixture.Service.Current!;
+        ScrollViewElement scroll = Assert.IsType<ScrollViewElement>(fixture.Surface.RootElement.Children[0]);
+        scroll.Controller.ScrollTo(1000);
+        fixture.Pump();
+        session.DelayRelease = true;
+        try
+        {
+            fixture.Surface.TryFocus(null);
+            fixture.Pump();
+            Assert.False(session.IsReleased);
+            Assert.True(fixture.Editor.IsMounted);
+        }
+        finally
+        {
+            session.DelayRelease = false;
+            fixture.Pump();
+        }
+
+        Assert.True(session.IsReleased);
+        Assert.False(fixture.Editor.IsMounted);
+    }
+
+    /// <summary>A validated model reset waits for the normal active editor session to retire.</summary>
+    [Fact]
+    public void VirtualizedModelResetWaitsForImeDrain()
+    {
+        using var fixture = new Fixture(virtualized: true);
+        fixture.Surface.TryFocus(fixture.Editor);
+        fixture.Pump();
+        Session session = fixture.Service.Current!;
+        session.DelayRelease = true;
+        try
+        {
+            fixture.Surface.Rebuild(Collections.Compose.ListBox<int>(items: new[] { 5, 6, 7 }, keySelector: item => item.ToString(CultureInfo.InvariantCulture), itemTemplate: _ => Lumyte.UI.Compose.SizedBox(height: 20), height: 60, virtualization: new Collections.UiItemVirtualization(20, 0)));
+            fixture.Pump();
+            Assert.False(session.IsReleased);
+            Assert.True(fixture.Editor.IsMounted);
+        }
+        finally
+        {
+            session.DelayRelease = false;
+            fixture.Pump();
+        }
+
+        Assert.True(session.IsReleased);
+        Assert.False(fixture.Editor.IsMounted);
+        Assert.Equal(3, Assert.IsType<Collections.ListBoxElement<int>>(fixture.Surface.RootElement).Items.Count);
+    }
+
     private static TextBoxElement Element(UiSurface surface, Lumyte.UI.Compose.Definitions.Widget declaration)
     {
         var pending = new Stack<UiElement>();
@@ -785,7 +875,8 @@ public sealed class ConnectionTests
         /// <param name="scrolled">Whether to wrap the editor in a real viewport.</param>
         /// <param name="numeric">An optional actual numeric editor declaration.</param>
         /// <param name="panel">Zero for none, one for Expander, two for tabs.</param>
-        public Fixture(bool multipleEditors = false, bool decorated = false, bool scrolled = false, Compose.Definitions.NumericBox? numeric = null, int panel = 0)
+        /// <param name="virtualized">Whether to place the editor in a bounded virtual item range.</param>
+        public Fixture(bool multipleEditors = false, bool decorated = false, bool scrolled = false, Compose.Definitions.NumericBox? numeric = null, int panel = 0, bool virtualized = false)
         {
             using Stream font = File.OpenRead(Path.Combine(AppContext.BaseDirectory, "Fonts/DejaVuSans.ttf"));
             string family = _engine.AddFont(font);
@@ -810,13 +901,19 @@ public sealed class ConnectionTests
                 Lumyte.UI.Compose.Border.Stroke(new(1, 0, 0, 1), 0)(editor);
             }
 
-            Surface = new(scrolled ? Lumyte.UI.Compose.ScrollView(controller: Scroll)[Lumyte.UI.Compose.Stack()[editor, Lumyte.UI.Compose.SizedBox(height: 600)]] : multipleEditors ? Lumyte.UI.Compose.Stack()[editor, other] : editor);
+            Surface = new(virtualized ? Collections.Compose.ListBox<int>(items: Enumerable.Range(0, 1000).ToArray(), keySelector: item => item.ToString(CultureInfo.InvariantCulture), itemTemplate: item => item == 0 ? editor : Lumyte.UI.Compose.SizedBox(height: 20), height: 60, virtualization: new Collections.UiItemVirtualization(20, 0)) : scrolled ? Lumyte.UI.Compose.ScrollView(controller: Scroll)[Lumyte.UI.Compose.Stack()[editor, Lumyte.UI.Compose.SizedBox(height: 600)]] : multipleEditors ? Lumyte.UI.Compose.Stack()[editor, other] : editor);
             if (panel != 0)
             {
                 Surface.Dispose();
                 Surface = new(panel == 1
                     ? Controls.Compose.Expander(isExpanded: true)[Controls.Compose.Expander.Content()[editor]]
                     : Controls.Compose.TabView(selectedKey: "a")[Controls.Compose.TabItem(key: "a")[Controls.Compose.TabItem.Content()[editor]], Controls.Compose.TabItem(key: "b")]);
+            }
+
+            if (virtualized)
+            {
+                Surface.SetViewport(Source.Size);
+                Surface.UpdateLayout();
             }
 
             Editor = Element(Surface, editor);

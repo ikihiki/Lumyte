@@ -13,7 +13,7 @@ internal sealed partial class Build
     [Parameter("Test suite: managed, ui, aot, browser, wasm, browser-contracts, browser-audio, diagnostics-processes, diagnostics-ui, signals, text, windowing, rust.")]
     public string Suite { get; set; } = "managed";
 
-    [Parameter("UI feature: layout, controls, media, scroll, menus, tabs, collections, numeric, application, navigation, or pages.")]
+    [Parameter("UI feature: layout, controls, media, scroll, menus, tabs, collections, virtualization, numeric, application, navigation, or pages.")]
     public string? Feature { get; set; }
 
     [Parameter("Publish and execute the selected UI feature using strict NativeAOT.")]

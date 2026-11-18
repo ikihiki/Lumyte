@@ -33,6 +33,7 @@ public sealed partial class UiLocator
 
     private async ValueTask<bool> SetExpansionAsync(UiAutomationRun run, bool desired)
     {
+        await PrepareItemTargetAsync(run);
         UiAutomationNode? previous = null;
         while (true)
         {

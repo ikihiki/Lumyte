@@ -34,6 +34,7 @@ public sealed partial class UiLocator
 
     private async ValueTask<bool> SetNumericAsync(UiAutomationRun run, double value, double? upper)
     {
+        await PrepareItemTargetAsync(run);
         UiAutomationNode? previous = null;
         UiAutomationActions capability = upper.HasValue ? UiAutomationActions.SetRange : UiAutomationActions.SetValue;
         while (true)

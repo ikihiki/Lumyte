@@ -93,6 +93,10 @@ public sealed partial class UiAutomationDiagnosticsRuntime
             {
                 locator = locator is null ? page.GetByTestId(step.Value!) : locator.GetByTestId(step.Value!);
             }
+            else if (step.Kind == "item-key")
+            {
+                locator = locator!.GetByItemKey(step.Value!);
+            }
             else
             {
                 UiRole role = step.Role switch { "menu" => UiRole.Menu, "menuitem" => UiRole.MenuItem, "tooltip" => UiRole.Tooltip, "tabview" => UiRole.TabView, "tabitem" => UiRole.TabItem, "expander" => UiRole.Expander, "listbox" => UiRole.ListBox, "listitem" => UiRole.ListItem, "combobox" => UiRole.ComboBox, "slider" => UiRole.Slider, "rangeslider" => UiRole.RangeSlider, "togglebutton" => UiRole.ToggleButton, "checkbox" => UiRole.CheckBox, "switch" => UiRole.Switch, "radiogroup" => UiRole.RadioGroup, "radiobutton" => UiRole.RadioButton, "button" => UiRole.Button, "textbox" => UiRole.TextBox, "ime-candidates" => UiRole.ImeCandidates, "text" => UiRole.Text, "image" => UiRole.Image, "icon" => UiRole.Icon, "progressbar" => UiRole.ProgressBar, "busyindicator" => UiRole.BusyIndicator, "group" => UiRole.Group, _ => throw new InvalidOperationException("Unsupported semantic role.") };
@@ -133,6 +137,9 @@ public sealed partial class UiAutomationDiagnosticsRuntime
                 case "click":
                     UiClickOptions? click = plan.Position is { } point ? new() { Position = new Vector2((float)point.X, (float)point.Y), } : null;
                     await locator!.ClickAsync(click, token);
+                    break;
+                case "bring-item":
+                    await locator!.BringIntoViewAsync(cancellationToken: token);
                     break;
                 case "scroll":
                     await locator!.ScrollAsync(new Vector2((float)plan.Position!.X, (float)plan.Position.Y), cancellationToken: token);
