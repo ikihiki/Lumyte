@@ -318,7 +318,10 @@ internal sealed class PreparedSparseStripBatch2D : IRetainedCommandBatch2D, IRet
         foreach (SparseStrip2D sourceStrip in plan.Strips)
         {
             SparseStrip2D strip = sourceStrip;
-            ScissorRect scissor = DrawingBounds2D.GetScissor(plan.Commands[strip.CommandOrdinal], null, _context.Target, null, false, false, clips[strip.CommandOrdinal].Bounds);
+
+            // CPU strips already bound the shape on the target pixel grid. The
+            // normalized clip is target-clamped; never recompute float shape edges.
+            ScissorRect scissor = clips[strip.CommandOrdinal].Bounds;
             int left = Math.Max(strip.X, checked((int)scissor.X));
             int right = Math.Min(strip.X + strip.Length, checked((int)(scissor.X + scissor.Width)));
             if (strip.Y < scissor.Y || strip.Y >= (long)scissor.Y + scissor.Height || right <= left)
