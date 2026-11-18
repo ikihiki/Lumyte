@@ -123,6 +123,10 @@
           "type": "boolean",
           "description": "Publish and execute the selected UI feature using strict NativeAOT"
         },
+        "AotGroup": {
+          "type": "string",
+          "description": "Independent balanced NativeAOT group: balanced-1 or balanced-2. Omit for all 14 publications"
+        },
         "BenchmarkArea": {
           "type": "string",
           "description": "Benchmark area: core, animation, input, audio, graphics, or ui"
@@ -162,6 +166,10 @@
         "BrowserCase": {
           "type": "string",
           "description": "Independent browser API case: graphics, text, ui-application, ui-navigation, ui-pages, ui-transitions, or audio. Omit for the complete suite"
+        },
+        "BuildLane": {
+          "type": "string",
+          "description": "Optional Compile scope: cpu, gpu, or integration; omit for the full solution"
         },
         "Cache": {
           "type": "string",

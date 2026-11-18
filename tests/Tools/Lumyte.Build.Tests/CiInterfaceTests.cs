@@ -36,6 +36,26 @@ public sealed class CiInterfaceTests
         Assert.True(workflow.IndexOf("VulkanProgramCapacitiesAsync", StringComparison.Ordinal) < workflow.IndexOf("--pipeline-validation", StringComparison.Ordinal));
     }
 
+    /// <summary>DXC checkpoints and both balanced AOT groups remain required.</summary>
+    [Fact]
+    public void CountermeasureWorkflowPreservesTrustAndRequiredGroups()
+    {
+        string root = GetRepository();
+        string workflow = File.ReadAllText(Path.Combine(root, ".github", "workflows", "composition.yml"));
+        Assert.Contains("group: [balanced-1, balanced-2]", workflow, StringComparison.Ordinal);
+        Assert.Contains("--aot-group ${{ matrix.group }}", workflow, StringComparison.Ordinal);
+        Assert.Contains("--build-lane gpu", workflow, StringComparison.Ordinal);
+        Assert.Contains("needs: [cpu, gpu, linux, windows, browser, aot, format]", workflow, StringComparison.Ordinal);
+        string setup = File.ReadAllText(Path.Combine(root, ".github", "actions", "setup-linux", "action.yml"));
+        Assert.True(setup.IndexOf("Provision OS", StringComparison.Ordinal) < setup.IndexOf("actions/cache/restore@", StringComparison.Ordinal));
+        Assert.True(setup.IndexOf("actions/cache/save@", StringComparison.Ordinal) < setup.IndexOf("Complete native setup", StringComparison.Ordinal));
+        Assert.Contains("provenance.json", setup, StringComparison.Ordinal);
+        Assert.DoesNotContain("version.txt", setup, StringComparison.Ordinal);
+        Assert.DoesNotContain("refs/heads/main", setup, StringComparison.Ordinal);
+        Assert.DoesNotContain("pull_request_target", workflow, StringComparison.Ordinal);
+        Assert.Equal(8, Regex.Matches(workflow, @"uses: \./\.github/actions/cache-native").Count);
+    }
+
     /// <summary>Native hooks never re-enter the solution task and keep isolated state and repository roots.</summary>
     [Fact]
     public void NativeHooksUseTheCommonBackendWithoutSolutionRecursion()

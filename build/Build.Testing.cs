@@ -38,7 +38,7 @@ internal sealed partial class Build
         ValidateTestSelection();
         if (TestNeedsCompilation)
         {
-            await CompileAsync().ConfigureAwait(false);
+            await CompileAsync(Suite == "managed" && Lane != "all" ? Lane : BuildLane).ConfigureAwait(false);
         }
 
         await RunSelectedTestsAsync().ConfigureAwait(false);
@@ -50,6 +50,13 @@ internal sealed partial class Build
 
     private void ValidateTestSelection()
     {
+        ValidateAotSelection();
+        ValidateBuildLane();
+        if (BuildLane is not null && (Suite != "managed" || Platform != "host" || Lane == "all" || BuildLane != Lane))
+        {
+            throw new ArgumentException("--build-lane with Test requires the matching classified host --lane.");
+        }
+
         bool browserPlatform = Platform == "browser";
         if (Platform is not ("host" or "browser") || (browserPlatform && (Lane != "integration" || Suite != "managed" || Project is not null)))
         {
@@ -93,6 +100,11 @@ internal sealed partial class Build
         else if (Feature is not null || Aot)
         {
             throw new ArgumentException("--feature and --aot require --suite ui.");
+        }
+
+        if (Platform == "host" && Suite == "managed" && Lane != "all")
+        {
+            _ = SelectTestLane(Lane switch { "cpu" => "Cpu", "integration" => "Integration", _ => "Gpu" });
         }
 
         if (Project is not null && Suite != "managed")
@@ -156,32 +168,7 @@ internal sealed partial class Build
             throw new PlatformNotSupportedException("The CPU suite runs only on Linux x64. Use Test --lane integration or gpu on other hosts.");
         }
 
-        TestLane[] catalog = JsonSerializer.Deserialize<TestLane[]>(await File.ReadAllTextAsync(Path.Combine(RepositoryDirectory, "build", "TestLanes.json")).ConfigureAwait(false))!;
-        string solution = Path.GetFullPath(Solution, RepositoryDirectory);
-        string[] projects = XDocument.Load(solution).Descendants("Project")
-            .Select(element => Path.GetFullPath(element.Attribute("Path")!.Value, Path.GetDirectoryName(solution)!))
-            .Where(path => File.Exists(path) && XDocument.Load(path).Descendants("IsTestProject").Any(element => element.Value == "true"))
-            .ToArray();
-        foreach (string path in projects)
-        {
-            if (!catalog.Any(entry => Path.GetFullPath(entry.Project, RepositoryDirectory) == path))
-            {
-                throw new InvalidOperationException($"Classify the new test project in build/TestLanes.json: {path}");
-            }
-        }
-
-        string? selected = Project is null ? null : Path.GetFullPath(Project, RepositoryDirectory).TrimEnd(Path.DirectorySeparatorChar);
-        if (selected is not null && !catalog.Any(entry =>
-            Path.GetFullPath(entry.Project, RepositoryDirectory) == selected ||
-            Path.GetDirectoryName(Path.GetFullPath(entry.Project, RepositoryDirectory)) == selected))
-        {
-            throw new ArgumentException($"The selected project is not a classified test project: {Project}");
-        }
-
-        if (catalog.Select(entry => entry.Project).Distinct(StringComparer.Ordinal).Count() != catalog.Length || catalog.Any(entry => entry.Default is not ("Cpu" or "Integration") || entry.IntegrationClasses is null || entry.Lanes is null || entry.Lanes.Length == 0 || entry.Lanes.Any(value => value is not ("Cpu" or "Integration" or "Gpu")) || entry.Lanes.Distinct(StringComparer.Ordinal).Count() != entry.Lanes.Length))
-        {
-            throw new InvalidDataException("TestLanes.json contains duplicate projects or an invalid default lane.");
-        }
+        (string solution, TestLaneSelection[] selections) = SelectTestLane(lane);
 
         var environment = new Dictionary<string, string?> { ["LUMYTE_LANE_CATALOG"] = Path.Combine(RepositoryDirectory, "build", "TestLanes.json"), ["LUMYTE_TEST_SERIAL"] = lane == "Cpu" ? null : "1", ["LUMYTE_CPU_METHOD_PARALLELISM"] = lane == "Cpu" ? TestConcurrency.ToString(System.Globalization.CultureInfo.InvariantCulture) : null };
         if (lane == "Cpu")
@@ -190,18 +177,6 @@ internal sealed partial class Build
             {
                 environment[key] = null;
             }
-        }
-
-        var selections = catalog.Select(entry => new
-        {
-            Path = Path.GetFullPath(entry.Project, RepositoryDirectory),
-            Filter = entry.Filter(lane),
-        }).Where(entry => projects.Contains(entry.Path) && IsHostProject(entry.Path)
-            && (selected is null || selected == entry.Path || selected == Path.GetDirectoryName(entry.Path))
-            && entry.Filter is not null).ToArray();
-        if (selections.Length == 0)
-        {
-            throw new ArgumentException("No classified host test projects match the requested lane/project selection.");
         }
 
         string directory = Path.Combine(ArtifactRoot, "test-lanes");
@@ -223,7 +198,7 @@ internal sealed partial class Build
         await File.WriteAllTextAsync(filterFile, JsonSerializer.Serialize(solutionFilter, new JsonSerializerOptions { WriteIndented = true })).ConfigureAwait(false);
         var targets = new XElement("Project",
             new XElement("PropertyGroup", new XElement("VSTestTestCaseFilter", "FullyQualifiedName=__UnselectedLumyteLaneProject__")));
-        foreach (var entry in selections)
+        foreach (TestLaneSelection entry in selections)
         {
             // Filters must be project-local MSBuild properties, not a global --filter:
             // mixed projects and default-integration projects have different predicates.
@@ -242,7 +217,7 @@ internal sealed partial class Build
         await File.WriteAllTextAsync(targetsFile, new XDocument(targets).ToString()).ConfigureAwait(false);
         Directory.CreateDirectory(Path.Combine(ArtifactRoot, "test-results", lane.ToLowerInvariant()));
         // Reject stale evidence: every selected project must produce fresh nonempty results.
-        foreach (var entry in selections)
+        foreach (TestLaneSelection entry in selections)
         {
             File.Delete(Path.Combine(ArtifactRoot, "test-results", lane.ToLowerInvariant(), Path.GetFileNameWithoutExtension(entry.Path) + ".trx"));
         }
@@ -251,7 +226,7 @@ internal sealed partial class Build
         // serial boundaries; the CPU xUnit adapter handles bounded method concurrency.
         await DotNetWithEnvironmentAsync(environment, "test", filterFile, "--configuration", Configuration, "--no-build", "--no-restore", "-m:1",
             "-p:LumyteTestLaneTargets=" + targetsFile, "--results-directory", Path.Combine(ArtifactRoot, "test-results", lane.ToLowerInvariant())).ConfigureAwait(false);
-        foreach (var entry in selections)
+        foreach (TestLaneSelection entry in selections)
         {
             string inventoryFile = Path.Combine(inventoryDirectory, Path.GetFileName(entry.Path) + ".json");
             if (!File.Exists(inventoryFile))
@@ -272,6 +247,49 @@ internal sealed partial class Build
             }
         }
     }
+
+    private (string Solution, TestLaneSelection[] Projects) SelectTestLane(string lane)
+    {
+        TestLane[] catalog = JsonSerializer.Deserialize<TestLane[]>(File.ReadAllText(Path.Combine(RepositoryDirectory, "build", "TestLanes.json")))!;
+        if (catalog.Select(entry => Path.GetFullPath(entry.Project, RepositoryDirectory)).Distinct(StringComparer.Ordinal).Count() != catalog.Length || catalog.Any(entry => entry.Default is not ("Cpu" or "Integration") || entry.IntegrationClasses is null || entry.Lanes is null || entry.Lanes.Length == 0 || entry.Lanes.Any(value => value is not ("Cpu" or "Integration" or "Gpu")) || entry.Lanes.Distinct(StringComparer.Ordinal).Count() != entry.Lanes.Length))
+        {
+            throw new InvalidDataException("TestLanes.json contains duplicate projects or an invalid default lane.");
+        }
+
+        string solution = Path.GetFullPath(Solution, RepositoryDirectory);
+        string[] projects = XDocument.Load(solution).Descendants("Project")
+            .Select(element => Path.GetFullPath(element.Attribute("Path")!.Value, Path.GetDirectoryName(solution)!))
+            .Where(path => File.Exists(path) && XDocument.Load(path).Descendants("IsTestProject").Any(element => element.Value == "true"))
+            .ToArray();
+        foreach (string path in projects)
+        {
+            if (!catalog.Any(entry => Path.GetFullPath(entry.Project, RepositoryDirectory) == path))
+            {
+                throw new InvalidOperationException($"Classify the new test project in build/TestLanes.json: {path}");
+            }
+        }
+
+        string? selected = Project is null ? null : Path.GetFullPath(Project, RepositoryDirectory).TrimEnd(Path.DirectorySeparatorChar);
+        if (selected is not null && !catalog.Any(entry =>
+            Path.GetFullPath(entry.Project, RepositoryDirectory) == selected ||
+            Path.GetDirectoryName(Path.GetFullPath(entry.Project, RepositoryDirectory)) == selected))
+        {
+            throw new ArgumentException($"The selected project is not a classified test project: {Project}");
+        }
+
+        TestLaneSelection[] selections = catalog.Select(entry => new TestLaneSelection(
+            Path.GetFullPath(entry.Project, RepositoryDirectory), entry.Filter(lane))).Where(entry => projects.Contains(entry.Path) && IsHostProject(entry.Path)
+            && (selected is null || selected == entry.Path || selected == Path.GetDirectoryName(entry.Path))
+            && entry.Filter is not null).ToArray();
+        if (selections.Length == 0)
+        {
+            throw new ArgumentException("No classified host test projects match the requested lane/project selection.");
+        }
+
+        return (solution, selections);
+    }
+
+    private sealed record TestLaneSelection(string Path, string? Filter);
 
     private sealed record TestLane(string Project, string Default, string[] IntegrationClasses, string[] Lanes)
     {

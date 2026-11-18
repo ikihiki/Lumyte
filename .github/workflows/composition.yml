@@ -31,11 +31,17 @@ jobs:
         with:
           profile: native
       - name: Prepare build tools
-        run: bash tools/setup/setup.sh
+        uses: ./.github/actions/setup-linux
+      - name: Restore native Cargo compilation
+        uses: ./.github/actions/cache-native
       - name: Run CPU tests
         run: |
           source tools/setup/activate.sh
           dotnet run --project build -c Release --no-build --no-restore -- --target Test --lane cpu --host-only --test-concurrency 4
+      - name: Checkpoint verified native Cargo compilation
+        uses: ./.github/actions/cache-native
+        with:
+          mode: save
       - name: Upload CPU results
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
@@ -54,11 +60,18 @@ jobs:
         uses: ./.github/actions/cache-dependencies
         with:
           profile: native
+      - name: Prepare GPU tools
+        uses: ./.github/actions/setup-linux
+      - name: Restore native Cargo compilation
+        uses: ./.github/actions/cache-native
       - name: Prepare GPU build
         run: |
-          bash tools/setup/setup.sh
           source tools/setup/activate.sh
-          dotnet run --project build -c Release --no-build --no-restore -- --target Compile --host-only
+          dotnet run --project build -c Release --no-build --no-restore -- --target Compile --host-only --build-lane gpu
+      - name: Checkpoint verified native Cargo compilation
+        uses: ./.github/actions/cache-native
+        with:
+          mode: save
       - name: Native / cold-cache maximum drawing program
         shell: bash
         run: |
@@ -123,23 +136,13 @@ jobs:
     steps:
       - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
 
-      - name: Cache Linux DXC libraries
-        uses: actions/cache@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
-        with:
-          path: |
-            artifacts/dev-env/dxc/lib
-            artifacts/dev-env/dxc/version.txt
-            artifacts/dev-env/dxc/LICENSE.TXT
-          key: dxc-v1.8.2505.1-${{ runner.os }}-${{ matrix.arch }}-v2
-
       - name: Cache dependencies
         uses: ./.github/actions/cache-dependencies
         with:
           profile: native
 
       - name: Mise setup (Linux)
-        shell: bash
-        run: bash tools/setup/setup.sh
+        uses: ./.github/actions/setup-linux
 
       - name: Prepare Linux validation dependencies
         if: matrix.os == 'ubuntu-24.04'
@@ -148,12 +151,18 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libopenal1
 
+      - name: Restore native Cargo compilation
+        uses: ./.github/actions/cache-native
       - name: Build solution (Linux)
         shell: bash
         run: |
           source tools/setup/activate.sh
           dotnet run --project build -c Release --no-build --no-restore -- --target Compile --configuration Release --host-only
 
+      - name: Checkpoint verified native Cargo compilation
+        uses: ./.github/actions/cache-native
+        with:
+          mode: save
       - name: Run integration tests (Linux)
         shell: bash
         run: |
@@ -286,12 +295,18 @@ jobs:
           . ./tools/setup/activate.ps1
           Invoke-LumyteCommand dotnet @('build', 'build', '-c', 'Release')
 
+      - name: Restore native Cargo compilation
+        uses: ./.github/actions/cache-native
       - name: Build solution (Windows)
         shell: powershell
         run: |
           . ./tools/setup/activate.ps1
           Invoke-LumyteCommand dotnet @('run', '--project', 'build', '-c', 'Release', '--no-build', '--no-restore', '--', '--target', 'Compile', '--configuration', 'Release', '--host-only')
 
+      - name: Checkpoint verified native Cargo compilation
+        uses: ./.github/actions/cache-native
+        with:
+          mode: save
       - name: Run integration tests (Windows)
         shell: powershell
         run: |
@@ -341,23 +356,15 @@ jobs:
     steps:
       - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
 
-      - name: Cache Linux DXC libraries
-        uses: actions/cache@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
-        with:
-          path: |
-            artifacts/dev-env/dxc/lib
-            artifacts/dev-env/dxc/version.txt
-            artifacts/dev-env/dxc/LICENSE.TXT
-          key: dxc-v1.8.2505.1-${{ runner.os }}-x64-v2
-
       - name: Cache dependencies
         uses: ./.github/actions/cache-dependencies
         with:
           profile: browser
 
+      - name: Prepare Browser tools
+        uses: ./.github/actions/setup-linux
       - name: Mise setup (Browser)
         run: |
-          bash tools/setup/setup.sh
           source tools/setup/activate.sh
           dotnet workload install wasm-tools --version "$(dotnet --version)"
 
@@ -426,20 +433,15 @@ jobs:
           if-no-files-found: ignore
 
   aot:
-    name: AOT (Linux x64)
+    name: AOT (${{ matrix.group }}, Linux x64)
+    strategy:
+      fail-fast: false
+      matrix:
+        group: [balanced-1, balanced-2]
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
-
-      - name: Cache Linux DXC libraries
-        uses: actions/cache@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
-        with:
-          path: |
-            artifacts/dev-env/dxc/lib
-            artifacts/dev-env/dxc/version.txt
-            artifacts/dev-env/dxc/LICENSE.TXT
-          key: dxc-v1.8.2505.1-${{ runner.os }}-x64-v2
 
       - name: Cache dependencies
         uses: ./.github/actions/cache-dependencies
@@ -447,7 +449,7 @@ jobs:
           profile: native
 
       - name: Mise setup (AOT)
-        run: bash tools/setup/setup.sh
+        uses: ./.github/actions/setup-linux
 
       - name: Prepare AOT audio dependencies
         run: |
@@ -458,7 +460,7 @@ jobs:
         run: |
           source tools/setup/activate.sh
           # Each AOT publish restores and builds its own project references.
-          dotnet run --project build -c Release --no-build --no-restore -- --target Test --suite aot --configuration Release --host-only --no-build --no-restore
+          dotnet run --project build -c Release --no-build --no-restore -- --target Test --suite aot --aot-group ${{ matrix.group }} --configuration Release --host-only --no-build --no-restore
 
   format:
     name: Format (${{ matrix.platform }} x64)
@@ -475,26 +477,19 @@ jobs:
     steps:
       - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
 
-      - name: Cache Linux DXC libraries
-        if: runner.os == 'Linux'
-        uses: actions/cache@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
-        with:
-          path: |
-            artifacts/dev-env/dxc/lib
-            artifacts/dev-env/dxc/version.txt
-            artifacts/dev-env/dxc/LICENSE.TXT
-          key: dxc-v1.8.2505.1-${{ runner.os }}-x64-v2
-
       - name: Cache dependencies
         uses: ./.github/actions/cache-dependencies
         with:
           profile: native
 
+      - name: Prepare format tools (Linux)
+        if: runner.os == 'Linux'
+        uses: ./.github/actions/setup-linux
+
       - name: Prepare Release workspace (Linux)
         if: runner.os == 'Linux'
         shell: bash
         run: |
-          bash tools/setup/setup.sh
           source tools/setup/activate.sh
           dotnet run --project build -c Release --no-build --no-restore -- --target Compile --configuration Release --host-only
 

@@ -51,16 +51,19 @@ internal sealed partial class Build : FalloutBuild
 
     private string NodeExecutable => Node ?? FindExecutable("node");
 
-    private Target Compile => definition => definition.Executes(CompileAsync);
+    [Parameter("Optional Compile scope: cpu, gpu, or integration; omit for the full solution.")]
+    public string? BuildLane { get; set; }
 
-    private async Task RestoreAsync()
+    private Target Compile => definition => definition.Executes(() => CompileAsync(BuildLane));
+
+    private async Task RestoreAsync(string? buildInput = null)
     {
         if (NoRestore)
         {
             return;
         }
 
-        var arguments = new List<string> { "restore", Project ?? BuildSolution };
+        var arguments = new List<string> { "restore", buildInput ?? Project ?? BuildSolution };
         if (Runtime is not null)
         {
             arguments.AddRange(["--runtime", Runtime]);
@@ -69,15 +72,19 @@ internal sealed partial class Build : FalloutBuild
         await DotNetAsync(arguments.ToArray()).ConfigureAwait(false);
     }
 
-    private async Task CompileAsync()
+    private Task CompileAsync() => CompileAsync(null);
+
+    private async Task CompileAsync(string? lane)
     {
+        ValidateBuildLane();
+        string? scopedSolution = lane is null ? null : CreateLaneBuildSolution(lane);
         if (NoBuild)
         {
             return;
         }
 
-        await RestoreAsync().ConfigureAwait(false);
-        var arguments = new List<string> { "build", Project ?? BuildSolution, "--configuration", Configuration, "--no-restore" };
+        await RestoreAsync(scopedSolution).ConfigureAwait(false);
+        var arguments = new List<string> { "build", scopedSolution ?? Project ?? BuildSolution, "--configuration", Configuration, "--no-restore" };
         if (Runtime is not null)
         {
             arguments.AddRange(["--runtime", Runtime]);

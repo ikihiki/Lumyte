@@ -7,7 +7,7 @@ internal static class Program
 {
     private static readonly string[] _observedVariables =
     [
-        "PATH", "PARLEY_TEST_INHERITED", "CARGO_ENCODED_RUSTFLAGS", "RUSTFLAGS",
+        "PATH", "ALSOFT_DRIVERS", "PARLEY_TEST_INHERITED", "CARGO_ENCODED_RUSTFLAGS", "RUSTFLAGS",
         "CARGO_PROFILE_RELEASE_LTO", "DOTNET_EMSCRIPTEN_LLVM_ROOT", "DOTNET_EMSCRIPTEN_BINARYEN_ROOT",
         "DOTNET_EMSCRIPTEN_NODE_JS", "EM_CONFIG", "EM_CACHE", "EM_FROZEN_CACHE", "EMSDK_PYTHON",
         "PYTHON", "PYTHON3", "PYTHONHOME", "PYTHONPATH", "PYTHONNOUSERSITE", "CC_wasm32_unknown_emscripten",
@@ -19,6 +19,12 @@ internal static class Program
     private static int Main(string[] args)
     {
         string tool = Path.GetFileNameWithoutExtension(Environment.ProcessPath ?? string.Empty).Split(' ')[0];
+        string identity = Path.Combine(AppContext.BaseDirectory, "aot-executable.txt");
+        if (Environment.GetEnvironmentVariable("LUMYTE_TEST_STAGE_AOT") == "1" && File.Exists(identity))
+        {
+            tool = File.ReadAllText(identity);
+        }
+
         string log = Environment.GetEnvironmentVariable("PARLEY_TEST_LOG") ?? throw new InvalidOperationException("Missing test log directory.");
         Dictionary<string, string?> observed = _observedVariables.ToDictionary(name => name, Environment.GetEnvironmentVariable);
         Directory.CreateDirectory(log);
@@ -65,7 +71,31 @@ internal static class Program
                 Console.WriteLine(project.Descendants("IsPackable").LastOrDefault()?.Value ?? "true");
             }
 
+            if (args.FirstOrDefault() == "publish" && args.Contains("-p:PublishAot=true", StringComparer.Ordinal)
+                && Environment.GetEnvironmentVariable("LUMYTE_TEST_STAGE_AOT") == "1")
+            {
+                string output = args[Array.IndexOf(args, "-o") + 1];
+                Directory.CreateDirectory(output);
+                foreach (string file in Directory.GetFiles(AppContext.BaseDirectory))
+                {
+                    File.Copy(file, Path.Combine(output, Path.GetFileName(file)), overwrite: true);
+                }
+
+                string executable = Path.Combine(output, Path.GetFileName(args[1]) + (OperatingSystem.IsWindows() ? ".exe" : string.Empty));
+                File.Copy(Environment.ProcessPath!, executable, overwrite: true);
+                File.WriteAllText(Path.Combine(output, "aot-executable.txt"), Path.GetFileName(args[1]));
+                if (!OperatingSystem.IsWindows())
+                {
+                    File.SetUnixFileMode(executable, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+                }
+            }
+
             return 0;
+        }
+
+        if (Environment.GetEnvironmentVariable("LUMYTE_TEST_STAGE_AOT") == "1" && tool.StartsWith("Lumyte.", StringComparison.Ordinal))
+        {
+            return Environment.GetEnvironmentVariable("LUMYTE_TEST_AOT_FAIL_EXECUTABLE") == tool ? 29 : 0;
         }
 
         if (Environment.GetEnvironmentVariable("LUMYTE_TEST_QUALITY_TOOLS") == "1")

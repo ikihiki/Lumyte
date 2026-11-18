@@ -158,3 +158,113 @@ Raw local logs and galleries are under
 contract/build logs use the `diagnostics-startup-` prefix there. These results
 validate the startup protocol and preserve functional coverage; only the next
 required hosted CI run can establish the repair on the failing runner.
+
+## Three additional countermeasures (PR 183)
+
+The latest green required run, [44257429390](https://github.com/ikihiki/Lumyte/actions/runs/44257429390),
+took **25:48** overall. Linux ARM took 1,499 s (setup 772, build 283,
+integration 403); Windows ARM 1,239 s (setup 119, build 433, tests 487,
+post-cache 164). GPU took 824 s (preparation 308, tests 466). AOT queued for
+8:34, then spent 37 s preparing and 921 s publishing 14 projects serially.
+These observations supersede earlier bottleneck attribution, not earlier gates.
+
+### DXC installed-artifact checkpoint
+
+Linux ARM setup was dominated by DXC, **not APT**: the pinned
+release commit `b106a961d09221b3c5bdb37be45b679257da08b8` built 1,291 CMake/Ninja steps in 696 s; complete
+DXC setup took 716 s. APT took 19 s and mise 7.6 s. The old fixed cache key
+and existence-only version stamp could neither establish compiler provenance nor
+preserve that work when later assertions failed.
+
+The shared Linux setup action provisions OS packages and pinned tools first,
+then restores installed DXC libraries, license and provenance only. Runtime
+verification compares complete setup/flags/workaround inputs, release commit,
+architecture, compiler/support binaries, package ABI and private sysroot closure,
+and hashes every installed library and license. Custom external toolchain flags
+fail closed to rebuilding. A verified hit invokes neither Git nor CMake.
+An invalid/missing/corrupt entry follows the existing release download/source-build
+path. The successful verified installation is checkpointed immediately before
+remaining native setup and SDK checks, not at the end of the test job.
+
+Actions cache discovery uses an input-specific candidate prefix and unique
+run/attempt publication suffix; runtime provenance remains authoritative even
+when a restored candidate was produced by a different compiler/runner ABI.
+This avoids immutable rejected entries permanently blocking a replacement.
+Only standard cache ref isolation applies: a PR may read its accessible trusted
+default-branch cache, but never writes/promotes a PR entry to main. Normal
+successful main CI naturally publishes the corresponding main cache. That
+cross-ref warm behavior cannot be proven before authorized publication/main CI.
+Markdown-only changes do not invalidate the DXC input closure.
+
+### Two independent NativeAOT groups
+
+The required AOT matrix has exactly two isolated workspaces, `balanced-1` and
+`balanced-2` (9 and 5 projects). Their estimated publication sums from the
+hosted per-project log are **460.5 s / 456.6 s**; those are scheduling estimates,
+not measured new hosted job times. Both groups remain package dependencies.
+No per-project parallel writers share a checkout. Omit `--aot-group` to execute
+the original full suite. Invalid/incompatible selectors fail before tools.
+The authoritative manifest retains all 14 publications, original strict warning
+switches, executable arguments/font paths and every audio invocation (including
+OpenAL modes). Regression tests require exact disjoint union and propagate both
+publication and executable failures.
+
+### Compiled native reuse and category-limited builds
+
+Native compilation reuses standard Cargo target state only, never managed
+outputs or an unverified staged native binary. Ordinary Native/MSBuild targets,
+locked source checks, native binary/RID/provenance verification and regenerated
+license notices/package gates still execute on a hit. No timestamp-only build
+skip or blanket `BuildNative=false` is introduced in CI. Compiler/toolchain,
+source, lockfile, patches, headers, build-script and license inputs are cache
+identity boundaries; incompatible RIDs cannot share compiled state.
+
+Classified Test compilation now generates a matching canonical solution filter
+from `build/TestLanes.json` and `Lumyte.slnx`; the SDK builds its transitive
+ProjectReference closure. GPU preparation explicitly uses `--build-lane gpu`.
+There is no separate manually maintained project list. Unclassified new tests
+fail before tools. Full host Compile remains the default for native producers,
+samples and quality workspace validation. Each category still has exactly one
+SDK test invocation. CPU method concurrency and CPU purity, serial GPU execution,
+the unique-empty cold guard and the ordinary driver cache boundary are unchanged.
+
+### Verification and remaining timing boundary
+
+Local deterministic tests cover DXC changed inputs, corrupt/missing outputs,
+fresh hits without Git/CMake, miss fallback, AOT partition/failure/strict modes,
+Cargo cache identity and category-filter/new-project guards. Logs are retained in
+`artifacts/ci-countermeasure`. Local native warm compilation is evidence only for
+that host, not a hosted ARM cold/warm estimate. Full Linux CPU and relevant
+integration/orchestration, Node, formatting, YAML/shell and Markdown checks are
+recorded with the implementation review.
+
+**The ten-minute goal remains unmet/unproven until terminal required CI.** Queue
+time, two-group runner availability, cache transfer overhead, cold ARM compilation
+and remaining Windows ARM work must be measured. No timeout, native packaging,
+Windows ARM, licensing, provenance, strict-warning or required gate is relaxed;
+no paid runner, new service or GPU parallelism is introduced.
+
+Local implementation validation (SDK 10.0.403, Linux x64):
+
+- Complete scoped CPU: **3,835 passed, zero failures/skips, 49 projects**, one
+  SDK category invocation. The catalog, not the historical 50-project count,
+  determines the selected roots.
+- Complete build orchestration: **334 passed**, zero failures/skips. Relevant
+  classified build integration: **218 passed**, zero failures/skips.
+- Native Python contracts: **27 passed** (nine identity, eighteen native/source
+  preparation/provenance). Node Browser contracts: 236 tests, 235 passed,
+  one optional real-Chrome check skipped because Chrome was not configured.
+- Real Linux x64 DXC release download/checksum/extraction/license publication
+  succeeded; the matching second invocation reported a verified hit with no
+  external child command. This is not an ARM source-build timing result.
+- The initial truly empty DXC installation exposed and fixed a missing-parent
+  manifest deletion bug; the actual release archive also exposed separate
+  Microsoft/LLVM licenses, now both preserved in the hashed installed notice.
+- Build/test managed formatting, configured 370-file Markdown lint, workflow
+  and action YAML parsing, shell syntax and diff whitespace checks passed.
+
+Local managed tests used the pre-existing explicitly configured native output
+paths in `/tmp/lumyte-lanes-env.sh`; they do not prove a fresh native compile.
+Native source/RID/binary verifier tests and the real native warm probe are
+separate evidence. Hosted Windows/ARM compilation, cache transfer behavior,
+all 14 real AOT publications and terminal package completion remain CI-only.

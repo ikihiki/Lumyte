@@ -92,6 +92,39 @@ internal sealed partial class Build
         }
     }
 
+    private void ValidateBuildLane()
+    {
+        if (BuildLane is not null && BuildLane is not ("cpu" or "gpu" or "integration"))
+        {
+            throw new ArgumentException("Invalid --build-lane. Expected cpu, gpu, or integration.");
+        }
+    }
+
+    private string CreateLaneBuildSolution(string lane)
+    {
+        (string solution, TestLaneSelection[] projects) = SelectTestLane(lane switch { "cpu" => "Cpu", "integration" => "Integration", "gpu" => "Gpu", _ => throw new ArgumentException("Invalid build lane.") });
+        string directory = Path.Combine(ArtifactRoot, "ci");
+        Directory.CreateDirectory(directory);
+        string destination = Path.Combine(directory, lane + ".slnf");
+        // The SDK follows ProjectReference transitively, including helpers outside
+        // the solution. Only classified roots come from the authoritative catalog;
+        // no second dependency inventory or source-text reference evaluator is used.
+        string content = System.Text.Json.JsonSerializer.Serialize(new
+        {
+            solution = new
+            {
+                path = Path.GetRelativePath(directory, solution),
+                projects = projects.Select(project => Path.GetRelativePath(Path.GetDirectoryName(solution)!, project.Path)).ToArray(),
+            },
+        });
+        if (!File.Exists(destination) || File.ReadAllText(destination) != content)
+        {
+            File.WriteAllText(destination, content);
+        }
+
+        return destination;
+    }
+
     private static bool IsHostProject(string path)
     {
         string name = Path.GetFileNameWithoutExtension(path);

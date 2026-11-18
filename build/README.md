@@ -281,3 +281,21 @@ Test --suite ui --feature menus --aot（strict NativeAOTのpublishと実行）�
 
 Required-CI timing baselines, cache provenance, Browser case ownership, and the
 ten-minute evaluation method: [CI runtime budget](../docs/ci-runtime-budget.md).
+
+## Required CI reuse and scopes
+
+`Compile --build-lane cpu|gpu|integration` restores/builds the matching
+classified test roots plus SDK-evaluated transitive references. Classified
+`Test --lane` automatically selects that build scope; omit the Compile option
+for the complete canonical/host workspace (samples/native producers/quality).
+The authoritative catalog remains `TestLanes.json`, with new-project guards.
+
+`Test --suite aot --aot-group balanced-1|balanced-2` selects one of two
+independent balanced manifests. Omission still publishes and executes all 14
+projects with unchanged strict settings and invocation modes.
+
+Standard Actions caches retain verified installed DXC artifacts and ordinary
+Cargo compilation directories only. Every native build/verification/licensing
+gate still runs; managed outputs are not shared across jobs. See
+[CI runtime budget](../docs/ci-runtime-budget.md) for input identities,
+trust/checkpoint boundaries, observed timings and remaining hosted validation.
