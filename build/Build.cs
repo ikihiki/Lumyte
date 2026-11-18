@@ -76,6 +76,11 @@ internal sealed partial class Build : FalloutBuild
         }
 
         var arguments = new List<string> { "restore", buildInput ?? Project ?? BuildSolution };
+        if (HostOnly)
+        {
+            arguments.Add("-p:ShouldUnsetParentConfigurationAndPlatform=false");
+        }
+
         if (Runtime is not null)
         {
             arguments.AddRange(["--runtime", Runtime]);
@@ -98,6 +103,14 @@ internal sealed partial class Build : FalloutBuild
 
         await RestoreAsync(scopedSolution).ConfigureAwait(false);
         var arguments = new List<string> { "build", scopedSolution ?? Project ?? BuildSolution, "--configuration", Configuration, "--no-restore" };
+        if (HostOnly)
+        {
+            // A host projection can omit platform-specific roots that shared
+            // projects still reference. Keep SDK-owned dependencies in the
+            // same configuration rather than silently falling back to Debug.
+            arguments.Add("-p:ShouldUnsetParentConfigurationAndPlatform=false");
+        }
+
         if (Runtime is not null)
         {
             arguments.AddRange(["--runtime", Runtime]);

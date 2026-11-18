@@ -146,7 +146,7 @@ internal sealed partial class Build
         return name switch
         {
             "Lumyte.Platform.Linux" => OperatingSystem.IsLinux(),
-            "Lumyte.Platform.Windows" or "Lumyte.Platform.Windows.Sample"
+            "Lumyte.Platform.Windows" or "Lumyte.Platform.Windows.Sample" or "Lumyte.Platform.Windows.TextInput"
                 or "Lumyte.Graphics.Direct3D12" or "Lumyte.Graphics.Direct3D12.Sample"
                 or "Lumyte.Graphics.Direct3D12.Tests" or "Lumyte.Platform.Windows.TextInput.Tests" => OperatingSystem.IsWindows(),
             _ => true,

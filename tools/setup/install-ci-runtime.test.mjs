@@ -28,9 +28,12 @@ function run(args = [], overrides = {}) {
     writeFileSync(osRelease, 'ID=ubuntu\nVERSION_CODENAME=noble\n');
     // Only substitute the OS fixture; run the actual helper and libraries.
     const harness = 'source() { if [[ "$1" == /etc/os-release ]]; then builtin source "$TEST_OS_RELEASE"; else builtin source "$@"; fi; }; builtin source "$TEST_HELPER" "$@"';
+    const inherited = { ...process.env };
+    // Baseline is hermetic; inherited frontend behavior is tested explicitly below.
+    delete inherited.DEBIAN_FRONTEND;
     const result = spawnSync('bash', ['-c', harness, 'runtime-test', ...args], {
       encoding: 'utf8',
-      env: { ...process.env, PATH: bin + ':' + process.env.PATH, TEST_HELPER: helper,
+      env: { ...inherited, PATH: bin + ':' + process.env.PATH, TEST_HELPER: helper,
         TEST_OS_RELEASE: osRelease, TEST_LOG: log, TEST_FORBIDDEN: forbidden,
         TEST_FAIL: '', LUMYTE_ENV_ROOT: join(root, 'env with spaces'),
         LUMYTE_CI_APT: '1', GITHUB_ACTIONS: 'true', RUNNER_ENVIRONMENT: 'github-hosted', ...overrides },
@@ -62,6 +65,22 @@ for (const [role, packages] of [
     assert.ok(result.sources.includes('signed-by=/usr/share/keyrings/ubuntu-archive-keyring.gpg'));
     assert.ok(!/trusted=yes|allow-insecure|allow-unauthenticated/i.test(result.sources + JSON.stringify(result.calls)));
   });
+  for (const frontend of ['dialog', 'noninteractive']) {
+    test(role + ': explicitly inherited ' + frontend + ' affects update but install stays noninteractive', () => {
+      const result = run([role], { DEBIAN_FRONTEND: frontend });
+      assert.equal(result.status, 0, result.stderr);
+      assert.equal(result.built, false);
+      const options = ['-o', 'Dir::Etc::sourcelist=' + result.envRoot + '/ci-apt/sources.list',
+        '-o', 'Dir::Etc::sourceparts=-', '-o', 'Dir::Cache::archives=' + result.envRoot + '/ci-apt/archives',
+        '-o', 'Binary::apt-get::APT::Keep-Downloaded-Packages=true'];
+      assert.deepEqual(result.calls, [
+        { args: [...options, 'update', '-o', 'APT::Update::Error-Mode=any'], frontend },
+        { args: [...options, 'install', '-y', '--no-install-recommends', ...packages], frontend: 'noninteractive' },
+      ]);
+      assert.ok(result.sources.includes('signed-by=/usr/share/keyrings/ubuntu-archive-keyring.gpg'));
+      assert.ok(!/trusted=yes|allow-insecure|allow-unauthenticated/i.test(result.sources + JSON.stringify(result.calls)));
+    });
+  }
 }
 test('optional role defaults to native fixtures', () => {
   const result = run();

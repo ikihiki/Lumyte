@@ -570,7 +570,7 @@ jobs:
       shell: powershell
       run: |
         . ./tools/setup/activate.ps1
-        foreach ($project in @('src/Platform/Lumyte.Platform.Windows', 'src/Graphics/Lumyte.Graphics.Direct3D12')) {
+        foreach ($project in @('src/Platform/Lumyte.Platform.Windows', 'src/Platform/Lumyte.Platform.Windows.TextInput', 'src/Graphics/Lumyte.Graphics.Direct3D12')) {
           Invoke-LumyteCommand dotnet @('run', '--project', 'build', '-c', 'Release', '--no-build', '--no-restore', '--', '--target', 'Distribution', '--distribution-output', 'packages', '--project', $project, '--configuration', 'Release', '--no-build', '--no-restore')
         }
     - name: Upload test results

@@ -94,6 +94,48 @@ public sealed class ScopedBuildTests
         Assert.Equal(5, XDocument.Load(solution).Descendants("Project").Count());
     }
 
+    /// <summary>Compile and Quality select the same platform roots without losing shared desktop coverage.</summary>
+    /// <returns>The completed platform projection assertions.</returns>
+    [Fact]
+    [Trait("Execution", "Integration")]
+    public async Task HostProjectionKeepsPlatformLibraryAndReferenceScopeConsistentAsync()
+    {
+        using var fixture = new BuildFixture();
+        string[] shared = ["Lumyte.Platform.TextInput.Abstractions", "Lumyte.UI.Application.Desktop", "Shared"];
+        string[] windows = ["Lumyte.Platform.Windows", "Lumyte.Platform.Windows.TextInput", "Lumyte.Platform.Windows.TextInput.Tests", "Lumyte.Graphics.Direct3D12"];
+        string[] names = [.. shared, .. windows, "Lumyte.Platform.Linux"];
+        foreach (string name in names)
+        {
+            var project = new XElement("Project", new XElement("PropertyGroup", new XElement("TargetFramework", "net10.0")));
+            if (name == "Lumyte.Platform.Windows.TextInput")
+            {
+                project.Add(new XElement("ItemGroup", new XElement("ProjectReference", new XAttribute("Include", "Lumyte.Platform.Windows.csproj"))));
+            }
+
+            File.WriteAllText(Path.Combine(fixture.Root, name + ".csproj"), new XDocument(project).ToString());
+        }
+
+        File.WriteAllText(fixture.Solution, new XDocument(new XElement("Solution", names.Select(name => new XElement("Project", new XAttribute("Path", name + ".csproj"))))).ToString());
+        BuildFixture.ProcessResult compile = await fixture.RunAsync("Compile", "--host-only", "--dotnet-path", fixture.DotnetTool);
+        Assert.True(compile.ExitCode == 0, compile.Output + compile.Error);
+        Assert.All(fixture.Records("dotnet"), record => Assert.Contains("-p:ShouldUnsetParentConfigurationAndPlatform=false", record.GetProperty("arguments").EnumerateArray().Select(value => value.GetString())));
+        string projection = fixture.Records("dotnet")[1].GetProperty("arguments")[1].GetString()!;
+        string[] selected = XDocument.Load(projection).Descendants("Project").Select(project => Path.GetFileNameWithoutExtension(project.Attribute("Path")!.Value)).ToArray();
+        Assert.All(shared, name => Assert.Contains(name, selected));
+        Assert.All(windows, name => Assert.Equal(OperatingSystem.IsWindows(), selected.Contains(name, StringComparer.Ordinal)));
+        Assert.Equal(OperatingSystem.IsLinux(), selected.Contains("Lumyte.Platform.Linux", StringComparer.Ordinal));
+        Assert.Equal(selected.Contains("Lumyte.Platform.Windows", StringComparer.Ordinal), selected.Contains("Lumyte.Platform.Windows.TextInput", StringComparer.Ordinal));
+
+        BuildFixture.ProcessResult quality = await fixture.RunAsync("Quality", "--quality-scope", "managed", "--host-only", "--no-build", "--no-restore", "--dotnet-path", fixture.DotnetTool);
+        Assert.True(quality.ExitCode == 0, quality.Output + quality.Error);
+        JsonElement record = fixture.Records("dotnet")[2];
+        Assert.Equal("format", record.GetProperty("arguments")[0].GetString());
+        Assert.Equal("false", record.GetProperty("environment").GetProperty("ShouldUnsetParentConfigurationAndPlatform").GetString());
+        Assert.Equal(projection, record.GetProperty("arguments")[1].GetString());
+        Assert.Contains("--verify-no-changes", record.GetProperty("arguments").EnumerateArray().Select(value => value.GetString()));
+        Assert.Equal(3, fixture.Records("dotnet").Length);
+    }
+
     /// <summary>The pinned SDK builds only selected roots and their evaluated transitive references.</summary>
     /// <returns>The completed real SDK closure check.</returns>
     [Fact]

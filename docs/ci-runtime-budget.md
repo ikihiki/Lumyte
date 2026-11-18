@@ -113,6 +113,62 @@ runtime has been exercised locally. Full hosted terminal CI, artifact size and
 actual remote product-build counts remain required after parent review/push.
 Old-head CI cannot validate this graph. No old run was cancelled or restarted.
 
+### Final Linux gate corrections after 21 successful hosted jobs
+
+Run 44302480390 on 6b0b7b5b completed with 21 successes, two failures and the
+package gate skipped. All six producers, CPU/GPU, seven Browser cases, both AOT
+groups, both Windows Integration jobs, Windows Quality and ARM Integration passed.
+The remaining corrections preserve the same producer-to-parallel-consumer graph.
+
+- The shared Compile/Quality host projection now treats the Windows TextInput
+  library consistently with its Windows parent and tests: Windows roots remain
+  covered by Windows Quality, not selected as Linux roots. Shared text-input and
+  desktop library/sample/benchmark roots remain selected. Its existing package
+  validation is assigned to the Windows x64 no-build/no-restore package step
+  rather than silently lost when Linux HostOnly packaging excludes the library.
+- Root exclusion alone was reproduced as insufficient: shared desktop references
+  still need the managed Windows dependency metadata. The pinned SDK defaults
+  ShouldUnsetParentConfigurationAndPlatform=true for solution builds, which had
+  silently built omitted project-reference dependencies as Debug while Quality
+  requested Release. Host producer restore/build and Quality metadata evaluation
+  now use the standard SDK property=false consistently. The SDK still owns all
+  reference closure; no custom graph walk, consumer restore/build or ignored
+  workspace errors was added.
+- The runtime fake-APT baseline explicitly clears only its child fixture's
+  DEBIAN_FRONTEND. Separate exact deep assertions cover inherited dialog and
+  noninteractive values for every role: update retains the supplied value and
+  install is always explicitly noninteractive. The production installer and
+  signed routing/authentication assertions are unchanged. The three original
+  failures were reproduced under CI's inherited noninteractive environment.
+
+The platform regression exercises both Compile and managed Quality, verifies the
+same projected solution, retains shared roots, checks Windows library/parent
+selection together, and asserts matching reference-configuration properties.
+The latest full orchestration suite passes **347 tests**. Runtime/CI-APT contracts
+pass **24 tests**, including both inherited frontend environments; all host Node
+contracts pass **251 tests** with one unchanged optional skip. Transport security
+regressions remain **56 passed** and parsed graph/shell contracts **10 passed**.
+
+Authoritative isolated metadata verification starts by deleting every Windows
+parent/TextInput bin/obj before the producer, then performs supported producer
+restore/build in Release. The actual required transitive Release assemblies are
+new producer outputs, not private cached DLLs. A new tar.gz is validated, all
+producer bin/obj and private NuGet contents are deleted, then only the artifact
+is extracted for strict guarded no-build/no-restore Quality. Source and dependency
+hash checks remain enabled. Evidence logs are retained as
+/tmp/lumyte-final-config-producer.log, /tmp/lumyte-final-config-seal.log,
+/tmp/lumyte-final-config-extract.log and /tmp/lumyte-final-config-quality-complete.log.
+The restored strict Quality role passed: **4,403 files analyzed, zero changes,
+zero workspace load failures**, plus native formatting and all 370 Markdown files.
+The transported Windows dependency DLL hash stayed unchanged, confirming Quality
+used producer metadata rather than repairing outputs. Tool trust for this local
+fixture was provisioned in its isolated quality-tools-state directory; no host
+configuration or product source build was used. Inherited-environment reproducer
+logs are /tmp/lumyte-frontend-before.log (three failures before the fix),
+/tmp/lumyte-final-runtime-all.log and /tmp/lumyte-final-runtime-dialog.log (24 passed
+each), plus /tmp/lumyte-final-ci-host-contracts.log (251 passed, one optional skip).
+New hosted final-gate and package execution remains required after parent review.
+
 ### Hosted consumer fixes after successful producer transport
 
 Run 44293546120 proved all six producers and compressed uploads successful, but
@@ -250,12 +306,12 @@ ARM/Windows/GPU proof.
   dependency paths were provided, not a hosted cold-build timing claim.
 - CPU: 49 projects, 3,836 passed, no failures/skips; one SDK invocation with the
   prebuilt consumer guard enabled and fresh discovery/TRX.
-- Orchestration: **346 passed**, zero failures/skips, including the real
+- Orchestration: **347 passed**, zero failures/skips, including the real
   producer-to-two-AOT-consumers executable fixture and all no-publish contracts.
 - Relevant Integration orchestration: 227 passed with no-build/no-restore and
   the consumer guard enabled. Node contracts: 235 passed, one optional skip.
 - Transport: 56 Python security/closure tests across raw tar and gzip;
-  graph/shell contracts: nine tests.
+  graph/shell contracts: ten tests.
   Seven YAML files and XML/Python syntax parse. Managed/build format and all
   370 Markdown files pass.
 - Real clean-output product proof: Lumyte.Memory plus its DI library and test

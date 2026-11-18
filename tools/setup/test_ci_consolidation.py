@@ -127,6 +127,11 @@ class ConsolidationTests(unittest.TestCase):
         self.assertIn("'$(DesignTimeBuild)' != 'true'", target.get('Condition'))
         self.assertIn('LUMYTE_PREBUILT_ROOT', ET.tostring(slang, encoding='unicode'))
 
+    def test_windows_text_input_package_keeps_a_host_appropriate_owner(self):
+        step = next(s for s in self.jobs['integration-windows-x64']['steps'] if s.get('name') == 'Distribution / Windows packages')
+        self.assertIn('src/Platform/Lumyte.Platform.Windows.TextInput', step['run'])
+        self.assertIn("'--no-build', '--no-restore'", step['run'])
+
     def test_bash_syntax(self):
         for job in self.jobs.values():
             for step in job["steps"]:
