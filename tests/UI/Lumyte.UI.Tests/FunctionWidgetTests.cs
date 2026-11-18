@@ -208,6 +208,7 @@ public sealed class FunctionWidgetTests
 
     /// <summary>Checks sequential thread moves preserve state without requiring callers to enter a build context.</summary>
     /// <returns>The asynchronous test operation.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task SequentialThreadMovesPreserveStateAsync()
     {

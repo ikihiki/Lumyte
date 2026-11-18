@@ -13,6 +13,7 @@ public sealed class SemanticValueTests
 {
     /// <summary>Remote wheel cannot mutate an occluding sibling instead of the requested subtree.</summary>
     /// <returns>The asynchronous check.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task RemoteScrollRejectsOccludingSiblingAsync()
     {
@@ -30,6 +31,7 @@ public sealed class SemanticValueTests
 
     /// <summary>Checks typed version-five wheel and legacy snapshot role projection through HTTP.</summary>
     /// <returns>The asynchronous check.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task ClientScrollUsesVersionFiveAndPreservesSnapshotShapeAsync()
     {
@@ -58,6 +60,7 @@ public sealed class SemanticValueTests
     /// <summary>Checks strict old readers see the original shape for real scroll nodes.</summary>
     /// <param name="version">The old schema version.</param>
     /// <returns>The asynchronous check.</returns>
+    [Trait("Execution", "Integration")]
     [Theory]
     [InlineData(1)]
     [InlineData(2)]
@@ -78,6 +81,7 @@ public sealed class SemanticValueTests
 
     /// <summary>Checks all new roles roundtrip, locate correctly, and retain semantic value/state.</summary>
     /// <returns>The asynchronous check.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task ClientCarriesReadOnlySemanticStateAsync()
     {
@@ -148,6 +152,7 @@ public sealed class SemanticValueTests
 
     /// <summary>Checks desired actions never upgrade an observation page to input authority.</summary>
     /// <returns>The asynchronous check.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task SelectionRequiresAnExplicitControlPageAsync()
     {
@@ -165,6 +170,7 @@ public sealed class SemanticValueTests
     /// <summary>Old strict source-generated readers consume the original node shape only.</summary>
     /// <param name="version">The requested old schema.</param>
     /// <returns>The asynchronous check.</returns>
+    [Trait("Execution", "Integration")]
     [Theory]
     [InlineData(1)]
     [InlineData(2)]

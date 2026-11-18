@@ -9,6 +9,7 @@ public sealed class GraphLifetimeTests
     /// <summary>Canceling queued and dormant work cannot finish shutdown while a range handler is running.</summary>
     /// <param name="cancelRun">Whether cancellation is requested before shutdown.</param>
     /// <returns>The completed lifetime check.</returns>
+    [Trait("Execution", "Integration")]
     [Theory]
     [InlineData(false)]
     [InlineData(true)]

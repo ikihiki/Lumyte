@@ -13,6 +13,7 @@ public sealed class WindowTests
 {
     /// <summary>Checks closed declarations remain observed and title changes retain an existing content lifetime.</summary>
     /// <returns>The verification.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task SignalsOpenAndCloseWindowsWithoutExplicitRebuildAsync()
     {
@@ -77,6 +78,7 @@ public sealed class WindowTests
 
     /// <summary>Checks a model change between snapshot construction and observer attachment cannot be lost.</summary>
     /// <returns>The verification.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task WindowAttachmentObservesChangesAfterTheInitialSnapshotAsync()
     {
@@ -93,6 +95,7 @@ public sealed class WindowTests
 
     /// <summary>Checks reactive failure stops frame work and still completes normal resource cleanup.</summary>
     /// <returns>The verification.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task SignalFailureStopsTheApplicationAndDrainsAsync()
     {
@@ -110,6 +113,7 @@ public sealed class WindowTests
 
     /// <summary>Checks a hosted window retains content while the declaration key remains and recreates after close.</summary>
     /// <returns>The verification.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task HostedKeysRetainStateAndReopenWithNewIdentityAsync()
     {
@@ -162,6 +166,7 @@ public sealed class WindowTests
 
     /// <summary>Checks native-required failure is isolated and retries only after false then true.</summary>
     /// <returns>The verification.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task UnsupportedAdditionalNativeWindowDoesNotStopPrimaryAsync()
     {
@@ -189,6 +194,7 @@ public sealed class WindowTests
 
     /// <summary>Checks invalid lists leave the live primary and window state intact.</summary>
     /// <returns>The verification.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task InvalidRebuildPreservesCurrentWindowsAsync()
     {
@@ -227,6 +233,7 @@ public sealed class WindowTests
 
     /// <summary>Checks hosted close chrome uses routed automation and a model update.</summary>
     /// <returns>The verification.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task HostedCloseButtonUpdatesModelAndDrainsAsync()
     {
@@ -276,6 +283,7 @@ public sealed class WindowTests
     /// <summary>Checks diagnostics creates and drains one scope without closing windows when target capacity is exhausted.</summary>
     /// <param name="capacity">The target budget.</param>
     /// <returns>The verification.</returns>
+    [Trait("Execution", "Integration")]
     [Theory]
     [InlineData(1)]
     [InlineData(8)]

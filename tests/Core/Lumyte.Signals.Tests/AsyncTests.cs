@@ -296,6 +296,7 @@ public sealed class AsyncTests
     /// <summary>Checks all asynchronous publication paths can synchronously deliver to a different thread.</summary>
     /// <param name="transition">The state transition to publish.</param>
     /// <returns>The asynchronous verification.</returns>
+    [Trait("Execution", "Integration")]
     [Theory]
     [InlineData("completion")]
     [InlineData("reload")]

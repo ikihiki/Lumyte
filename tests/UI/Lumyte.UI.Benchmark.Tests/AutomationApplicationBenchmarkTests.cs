@@ -59,6 +59,7 @@ public sealed class AutomationApplicationBenchmarkTests
     /// <summary>Checks real owner initialization, repeated frame barriers, and ordered stop/disposal.</summary>
     /// <param name="diagnostics">Whether bounded local diagnostics participate.</param>
     /// <returns>Joined owner completion.</returns>
+    [Trait("Execution", "Integration")]
     [Theory]
     [InlineData(false)]
     [InlineData(true)]

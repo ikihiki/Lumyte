@@ -82,6 +82,7 @@ public sealed class ResourcePipelineJobTests
     }
 
     /// <summary>Requests explicitly made outside a workflow are dispatched instead of executing on an arbitrary thread.</summary>
+    [Trait("Execution", "Integration")]
     [Fact]
     public void OffWorkflowRequestDoesNotInlineDependency()
     {
@@ -238,6 +239,7 @@ public sealed class ResourcePipelineJobTests
 
     /// <summary>A cancellation continuation accepted before dependency completion is drained even when its caller returned.</summary>
     /// <param name="failChild">Whether the dependency fails after the cancellation notification.</param>
+    [Trait("Execution", "Integration")]
     [Theory]
     [InlineData(false)]
     [InlineData(true)]

@@ -4,6 +4,10 @@ namespace Lumyte.Build;
 
 internal sealed partial class Build
 {
+    // The validation task owns its executable identity; scoped compilation consumes
+    // this same root instead of maintaining an independent auxiliary project list.
+    private const string PipelineValidationProject = "samples/Lumyte.Graphics.DeviceCaps.Sample/Lumyte.Graphics.DeviceCaps.Sample.csproj";
+
     private static readonly string[][] _invocationModes = [[], ["--di"], ["--host"], ["--host", "--di"]];
     private static readonly IReadOnlyDictionary<string, string?> _openAlEnvironment = new Dictionary<string, string?> { ["ALSOFT_DRIVERS"] = "null" };
     private static readonly IReadOnlyDictionary<string, string?> _isolatedPythonEnvironment = new Dictionary<string, string?>
@@ -41,7 +45,7 @@ internal sealed partial class Build
     private async Task PipelineValidationAsync()
     {
         await CaptureValidationLogAsync("vulkan-pipeline-benchmark.jsonl", () => DotNetAsync(
-            "run", "--project", "samples/Lumyte.Graphics.DeviceCaps.Sample", "-c", Configuration, "--no-build", "--", "vulkan", "pipeline-benchmark")).ConfigureAwait(false);
+            "run", "--project", Path.GetDirectoryName(PipelineValidationProject)!, "-c", Configuration, "--no-build", "--no-restore", "--", "vulkan", "pipeline-benchmark")).ConfigureAwait(false);
     }
 
     private async Task TestWindowingAsync()
@@ -54,6 +58,40 @@ internal sealed partial class Build
         await ToolAsync("xvfb-run", "-a", DotNetExecutable, "test", "tests/Platform/Lumyte.Platform.Tests", "-c", Configuration,
             "--no-build", "--no-restore", "--filter", "FullyQualifiedName~LinuxNativeTests", "--logger", "trx",
             "--results-directory", Path.Combine(ArtifactRoot, "test-results", "x11")).ConfigureAwait(false);
+    }
+
+    // Test --suite aot routes here; the original sample runner remains available
+    // for developer publish-and-run behavior when --no-build is absent.
+    private async Task TestPublishedAotAsync()
+    {
+        ValidateAotSelection();
+        if (!NoBuild)
+        {
+            await RunAotSamplesAsync().ConfigureAwait(false);
+            return;
+        }
+
+        AotSample[] selected = AotSamples.Where(sample => AotGroup is null || sample.Group == AotGroup).ToArray();
+        // Fail before executing any sample when an artifact download is incomplete.
+        foreach (AotSample sample in selected)
+        {
+            RequireAotPublication(sample);
+        }
+
+        foreach (AotSample sample in selected)
+        {
+            string executable = RequireAotPublication(sample);
+            int invocation = 0;
+            foreach (string[] mode in sample.Modes)
+            {
+                string log = sample.Directory + "-" + (invocation++).ToString(System.Globalization.CultureInfo.InvariantCulture);
+                await CaptureValidationLogAsync(log + ".log", () => ToolAsync(executable, mode)).ConfigureAwait(false);
+                if (sample.OpenAl)
+                {
+                    await CaptureValidationLogAsync(log + "-openal.log", () => ToolWithEnvironmentAsync(executable, _openAlEnvironment, ["--openal", .. mode])).ConfigureAwait(false);
+                }
+            }
+        }
     }
 
     private async Task CaptureValidationLogAsync(string name, Func<Task<string>> action)

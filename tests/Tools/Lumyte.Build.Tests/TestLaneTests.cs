@@ -96,6 +96,20 @@ public sealed class TestLaneTests
         Assert.Contains("Missing real xUnit discovery inventory", result.Output + result.Error, StringComparison.Ordinal);
     }
 
+    /// <summary>A successful SDK with inventory but no nonempty results must fail closed.</summary>
+    /// <returns>The completed result evidence check.</returns>
+    [Fact]
+    [Trait("Execution", "Integration")]
+    public async Task MissingOrEmptyTrxFailsAsync()
+    {
+        using var fixture = new BuildFixture();
+        PrepareCatalog(fixture);
+        fixture.Environment["LUMYTE_TEST_EMPTY_TRX"] = "1";
+        BuildFixture.ProcessResult result = await fixture.RunAsync("Test", "--lane", "integration", "--dotnet-path", fixture.DotnetTool, "--no-build");
+        Assert.NotEqual(0, result.ExitCode);
+        Assert.Contains("Missing or empty lane TRX", result.Output + result.Error, StringComparison.Ordinal);
+    }
+
     /// <summary>Lane metadata must be explicit, nonempty, valid and unique.</summary>
     /// <param name="lanes">Malformed presence declaration.</param>
     /// <returns>The completed validation assertion.</returns>
