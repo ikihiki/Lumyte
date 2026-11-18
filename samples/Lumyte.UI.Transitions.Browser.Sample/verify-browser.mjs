@@ -1,3 +1,4 @@
+import { createBrowserProcessRecorder, createBoundedBrowserStderr, emitBrowserNative } from "../../tools/graphics/browser-process-recorder.mjs";
 import { captureDiagnosticBinding, captureDiagnosticsEnabled, installCaptureDiagnosticsRequest, createCaptureTraceReporter } from "../../tools/graphics/browser-capture-trace.mjs";
 import { browserGpuTraceEnabled, installBrowserGpuTrace } from "../../tools/graphics/browser-gpu-trace.mjs";
 import { browserGpuArguments, requiresSoftwareWebGpu, installBrowserGpuAudit, verifySoftwareWebGpu } from "../../tools/graphics/browser-gpu.mjs";
@@ -42,6 +43,15 @@ await new Promise((resolve, reject) => {
 const traceCapture = captureDiagnosticsEnabled();
 const captureTrace = createCaptureTraceReporter();
 let browser;
+let nativeRecorder;
+let nativeStarting;
+const nativeStderr = createBoundedBrowserStderr();
+const nativeEnabled = traceGpu || traceCapture;
+const nativeReport = (phase, process) => emitBrowserNative(value => console.log(JSON.stringify(value)), {
+    check: "browser-native-observation", sample: "transitions", phase, stage: traceStage ?? stage, pngIndex,
+    clockCorrelation: "Native Node clock; correlate with actual UI request/frame IDs, not guessed GPU frame ownership.",
+    stderr: nativeStderr.snapshot(), process,
+});
 let socket;
 let command;
 let stage = "startup";
@@ -55,10 +65,20 @@ try {
         ...browserGpuArguments(process.platform, "swiftshader"),
         "--remote-debugging-port=0", `--user-data-dir=${profile}`, "about:blank",
     ], { stdio: ["ignore", "ignore", "pipe"] });
+    if (nativeEnabled) {
+        nativeRecorder = createBrowserProcessRecorder({ browserPid: browser.pid });
+        nativeStarting = nativeRecorder.start().catch(() => {});
+        browser.on("error", error => nativeRecorder.event("root-error", { errorCode: error.code ?? "unknown" }));
+        browser.on("exit", (code, signal) => nativeRecorder.event("root-exit", { code, signal }));
+    }
     let diagnostics = "";
     let launchError;
     browser.on("error", error => { launchError = error; });
-    browser.stderr.on("data", data => { diagnostics += data; });
+    browser.stderr.on("data", data => {
+        nativeStderr.observe(data);
+        const bounded = nativeStderr.snapshot();
+        diagnostics = bounded.head + "\n" + bounded.tail;
+    });
     const launchDeadline = Date.now() + 120000;
     let debuggerPort;
     while (!debuggerPort && Date.now() < launchDeadline) {
@@ -97,6 +117,8 @@ try {
                 else if (captureObserved) { /* Already forwarded by the bounded reporter. */ }
                 else progress.push(entry.text);
             }
+        } else if (message.method === "Inspector.targetCrashed" || message.method === "Target.targetCrashed") {
+            nativeRecorder?.event("cdp-target-crashed");
         } else if (message.method === "Runtime.exceptionThrown") {
             errors.push(message.params.exceptionDetails.exception?.description ?? message.params.exceptionDetails.text);
         } else if (message.method === "Runtime.consoleAPICalled") {
@@ -329,6 +351,8 @@ try {
     }
     console.log(`${sequential ? "ExitThenEnter" : sameContent ? "One-pixel-budget live shared layer" : "Connected-only"} UI transitions WebGPU passed: live content during fades/flight, group alpha, Hosted popup exit/drain, isolated crossfade or allocation-free shared movement, bounds, input gate, DI retention, back/forward/skip and shutdown.`);
 } catch (failure) {
+    nativeRecorder?.event("failure-observed");
+    if (nativeEnabled) nativeReport("before-cleanup-failure", nativeRecorder?.snapshot());
     if (traceCapture || traceGpu) await captureTrace.failure(command, { sample: "transitions", stage, pngIndex });
     let audit;
     if (process.env.LUMYTE_ALLOW_KNOWN_BROWSER_TIMEOUT === "1" && sequential && !sameContent
@@ -344,14 +368,21 @@ try {
     console.warn("::warning title=Known Browser timeout temporarily ignored::Sequential entry midpoint PNG exceeded its unchanged automation deadline. Remaining sequential assertions were not executed; other Browser checks still run.");
     console.log(JSON.stringify({ check: "browser-ui-transitions", mode: "sequential", status: "ignored-known-timeout", stage, reason: "automation-deadline", remainingAssertionsExecuted: false }));
 } finally {
+    // Stop scheduling synchronously; do not wait for proc reads before existing cleanup.
+    let nativeStopping;
+    try { nativeStopping = nativeRecorder?.stop().catch(() => undefined); } catch {}
     socket?.close();
     if (browser?.pid && browser.exitCode === null && browser.signalCode === null) {
         const stopped = new Promise(resolve => browser.once("exit", resolve));
-        const timeout = setTimeout(() => browser.kill("SIGKILL"), 2000);
+        const timeout = setTimeout(() => { nativeRecorder?.event("cleanup-signal", { signal: "SIGKILL" }); browser.kill("SIGKILL"); }, 2000);
+        nativeRecorder?.event("cleanup-signal", { signal: "SIGTERM" });
         browser.kill("SIGTERM");
         await stopped;
         clearTimeout(timeout);
     }
+    let nativeFinal;
+    try { await nativeStarting; nativeFinal = await nativeStopping; } catch {}
+    if (nativeEnabled) nativeReport("after-existing-cleanup", nativeRecorder ? { ...nativeFinal, events: nativeRecorder.snapshot().events } : undefined);
     await new Promise(resolve => server.close(resolve));
     await rm(profile, { recursive: true, force: true, maxRetries: 3 });
 }
