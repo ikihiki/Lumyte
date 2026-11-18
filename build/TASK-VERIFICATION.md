@@ -251,3 +251,8 @@ readback/DOM ImageData/screenshot gate: passed (`/tmp/lumyte-reclassification-br
 The first execution detected the extracted fixture height still hard-coded as
 1700 in main.js/index.html; those DOM dimensions now match the retained 1000px
 API fixture. No assertion was removed to hide the mismatch.
+
+The optional all-GPU lavapipe run is longer than the host lanes: its native
+Graphics.Tests process was still executing at ~5 minutes after the extracted
+pixel fixture passed. This is not a terminal GPU verdict; existing CI cold-cache
+capacity guards, deadlines and opt-ins remain unchanged.
