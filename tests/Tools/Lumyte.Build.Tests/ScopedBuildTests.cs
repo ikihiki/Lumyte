@@ -194,6 +194,40 @@ public sealed class ScopedBuildTests
         Assert.False(File.Exists(Path.Combine(fixture.Log, "dotnet.jsonl")));
     }
 
+    /// <summary>The consolidated Linux context builds once, including the pipeline helper, then consumes outputs.</summary>
+    /// <returns>The completed serial category orchestration assertion.</returns>
+    [Fact]
+    [Trait("Execution", "Integration")]
+    public async Task FullHostBuildFeedsEveryCategoryWithoutRebuildingAsync()
+    {
+        if (!OperatingSystem.IsLinux() || RuntimeInformation.ProcessArchitecture != Architecture.X64)
+        {
+            return;
+        }
+
+        using var fixture = new BuildFixture();
+        Prepare(fixture);
+        BuildFixture.ProcessResult compile = await fixture.RunAsync("Compile", "--host-only", "--dotnet-path", fixture.DotnetTool);
+        Assert.True(compile.ExitCode == 0, compile.Output + compile.Error);
+        string solution = fixture.Records("dotnet")[1].GetProperty("arguments")[1].GetString()!;
+        Assert.Contains(XDocument.Load(solution).Descendants("Project"), project => project.Attribute("Path")!.Value == Path.Combine(fixture.Root, Driver));
+        foreach (string lane in new[] { "cpu", "integration", "gpu" })
+        {
+            string[] pipeline = lane == "gpu" ? ["--pipeline-validation"] : [];
+            BuildFixture.ProcessResult result = await fixture.RunAsync("Test", ["--lane", lane, "--host-only", "--no-build", "--no-restore", "--dotnet-path", fixture.DotnetTool, .. pipeline]);
+            Assert.True(result.ExitCode == 0, result.Output + result.Error);
+        }
+
+        JsonElement[] calls = fixture.Records("dotnet");
+        Assert.Equal(new[] { "restore", "build", "test", "test", "test", "run" }, calls.Select(call => call.GetProperty("arguments")[0].GetString()));
+        Assert.All(calls.Skip(2), call =>
+        {
+            string[] args = call.GetProperty("arguments").EnumerateArray().Select(arg => arg.GetString()!).ToArray();
+            Assert.Contains("--no-build", args);
+            Assert.Contains("--no-restore", args);
+        });
+    }
+
     private static void AssertFilter(BuildFixture fixture, string path, params string[] projects)
     {
         using var document = JsonDocument.Parse(File.ReadAllText(path));

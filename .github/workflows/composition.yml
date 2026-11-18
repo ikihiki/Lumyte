@@ -20,105 +20,6 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  cpu:
-    name: CPU Tests (Linux x64)
-    runs-on: ubuntu-24.04
-    timeout-minutes: 60
-    steps:
-      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
-      - name: Cache dependencies
-        uses: ./.github/actions/cache-dependencies
-        with:
-          profile: native
-      - name: Prepare build tools
-        uses: ./.github/actions/setup-linux
-      - name: Restore native Cargo compilation
-        uses: ./.github/actions/cache-native
-      - name: Run CPU tests
-        run: |
-          source tools/setup/activate.sh
-          dotnet run --project build -c Release --no-build --no-restore -- --target Test --lane cpu --host-only --test-concurrency 4
-      - name: Checkpoint verified native Cargo compilation
-        uses: ./.github/actions/cache-native
-        with:
-          mode: save
-      - name: Upload CPU results
-        if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        with:
-          name: test-results-cpu
-          path: artifacts/test-results/
-          if-no-files-found: ignore
-
-  gpu:
-    name: GPU (Linux x64, software Vulkan)
-    runs-on: ubuntu-24.04
-    timeout-minutes: 60
-    steps:
-      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
-      - name: Cache dependencies
-        uses: ./.github/actions/cache-dependencies
-        with:
-          profile: native
-      - name: Prepare GPU tools
-        uses: ./.github/actions/setup-linux
-      - name: Restore native Cargo compilation
-        uses: ./.github/actions/cache-native
-      - name: Prepare GPU build
-        run: |
-          source tools/setup/activate.sh
-          dotnet run --project build -c Release --no-build --no-restore -- --target Compile --host-only --build-lane gpu
-      - name: Checkpoint verified native Cargo compilation
-        uses: ./.github/actions/cache-native
-        with:
-          mode: save
-      - name: Native / cold-cache maximum drawing program
-        shell: bash
-        run: |
-          source tools/setup/activate.sh
-          export LUMYTE_GRAPHICS_GPU_TESTS=1
-          export VK_DRIVER_FILES="$LUMYTE_LAVAPIPE_ICD"
-          # A unique empty driver cache prevents a previous shader binary from hiding the regression.
-          export MESA_SHADER_CACHE_DIR="$RUNNER_TEMP/lumyte-capacity-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
-          dotnet test tests/Graphics/Lumyte.Graphics.Tests -c Release --no-build --no-restore --filter FullyQualifiedName~VulkanProgramCapacitiesAsync --logger "trx;LogFileName=graphics-cold-capacity.trx" --results-directory artifacts/test-results
-
-      - name: Fingerprint software GPU compiler and driver
-        id: gpu-cache
-        shell: bash
-        run: |
-          source tools/setup/activate.sh
-          # Driver closure changes invalidate every cached compiled shader.
-          driver_hash=$(find /usr/lib/x86_64-linux-gnu -maxdepth 1 -type f \( -name 'libvulkan*' -o -name 'libLLVM*' -o -name 'libgallium*' \) -print0 | sort -z | xargs -0 sha256sum | sha256sum | cut -d ' ' -f 1)
-          echo "driver=$driver_hash" >> "$GITHUB_OUTPUT"
-          source_hash=$(git ls-files -z -- src tests native build tools .github global.json mise.toml mise.lock Directory.Build.props | sort -z | xargs -0 sha256sum | sha256sum | cut -d ' ' -f 1)
-          echo "source=$source_hash" >> "$GITHUB_OUTPUT"
-          dpkg-query -W > artifacts/gpu-package-versions.txt
-          package_hash=$(sha256sum artifacts/gpu-package-versions.txt | cut -d ' ' -f 1)
-          echo "packages=$package_hash" >> "$GITHUB_OUTPUT"
-          slangc -version
-          VK_DRIVER_FILES="$LUMYTE_LAVAPIPE_ICD" vulkaninfo --summary
-
-      - name: Cache ordinary GPU compiled shaders
-        # Deliberately after the unique-empty cold maximum drawing guard.
-        uses: actions/cache@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
-        with:
-          path: artifacts/dev-env/mesa-cache
-          key: gpu-shaders-v1-ubuntu24-${{ runner.arch }}-${{ steps.gpu-cache.outputs.driver }}-${{ steps.gpu-cache.outputs.packages }}-${{ steps.gpu-cache.outputs.source }}
-
-      - name: GPU backend and pixel contracts
-        run: |
-          source tools/setup/activate.sh
-          export LUMYTE_GRAPHICS_GPU_TESTS=1
-          export VK_DRIVER_FILES="$LUMYTE_LAVAPIPE_ICD"
-          dotnet run --project build -c Release --no-build --no-restore -- --target Test --lane gpu --host-only --no-build --no-restore --pipeline-validation
-      - name: Upload GPU results
-        if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        with:
-          name: test-results-gpu
-          path: artifacts/test-results/
-          if-no-files-found: ignore
-
   linux:
     name: Linux (${{ matrix.arch }})
     strategy:
@@ -132,7 +33,7 @@ jobs:
             platform: Linux
             arch: aarch64
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 60
+    timeout-minutes: 120
     steps:
       - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
 
@@ -163,6 +64,12 @@ jobs:
         uses: ./.github/actions/cache-native
         with:
           mode: save
+      - name: Run CPU tests
+        if: matrix.arch == 'x64'
+        run: |
+          source tools/setup/activate.sh
+          dotnet run --project build -c Release --no-build --no-restore -- --target Test --lane cpu --host-only --test-concurrency 4 --no-build --no-restore
+
       - name: Run integration tests (Linux)
         shell: bash
         run: |
@@ -177,7 +84,51 @@ jobs:
         if: matrix.arch == 'x64'
         run: |
           source tools/setup/activate.sh
-          dotnet run --project build -c Release --no-build --no-restore -- --target Test --suite browser-contracts
+          dotnet run --project build -c Release --no-build --no-restore -- --target Test --suite browser-contracts --no-build --no-restore
+
+      - name: Native / cold-cache maximum drawing program
+        if: matrix.arch == 'x64'
+        shell: bash
+        run: |
+          source tools/setup/activate.sh
+          export LUMYTE_GRAPHICS_GPU_TESTS=1
+          export VK_DRIVER_FILES="$LUMYTE_LAVAPIPE_ICD"
+          # A unique empty driver cache prevents a previous shader binary from hiding the regression.
+          export MESA_SHADER_CACHE_DIR="$(mktemp -d "$RUNNER_TEMP/lumyte-capacity-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-XXXXXX")"
+          dotnet test tests/Graphics/Lumyte.Graphics.Tests -c Release --no-build --no-restore --filter FullyQualifiedName~VulkanProgramCapacitiesAsync --logger "trx;LogFileName=graphics-cold-capacity.trx" --results-directory artifacts/test-results
+
+      - name: Fingerprint software GPU compiler and driver
+        if: matrix.arch == 'x64'
+        id: gpu-cache
+        shell: bash
+        run: |
+          source tools/setup/activate.sh
+          # Driver closure changes invalidate every cached compiled shader.
+          driver_hash=$(find /usr/lib/x86_64-linux-gnu -maxdepth 1 -type f \( -name 'libvulkan*' -o -name 'libLLVM*' -o -name 'libgallium*' \) -print0 | sort -z | xargs -0 sha256sum | sha256sum | cut -d ' ' -f 1)
+          echo "driver=$driver_hash" >> "$GITHUB_OUTPUT"
+          source_hash=$(git ls-files -z -- src tests native build tools .github global.json mise.toml mise.lock Directory.Build.props | sort -z | xargs -0 sha256sum | sha256sum | cut -d ' ' -f 1)
+          echo "source=$source_hash" >> "$GITHUB_OUTPUT"
+          dpkg-query -W > artifacts/gpu-package-versions.txt
+          package_hash=$(sha256sum artifacts/gpu-package-versions.txt | cut -d ' ' -f 1)
+          echo "packages=$package_hash" >> "$GITHUB_OUTPUT"
+          slangc -version
+          VK_DRIVER_FILES="$LUMYTE_LAVAPIPE_ICD" vulkaninfo --summary
+
+      - name: Cache ordinary GPU compiled shaders
+        if: matrix.arch == 'x64'
+        # Deliberately after the unique-empty cold maximum drawing guard.
+        uses: actions/cache@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
+        with:
+          path: artifacts/dev-env/mesa-cache
+          key: gpu-shaders-v1-ubuntu24-${{ runner.arch }}-${{ steps.gpu-cache.outputs.driver }}-${{ steps.gpu-cache.outputs.packages }}-${{ steps.gpu-cache.outputs.source }}
+
+      - name: GPU backend and pixel contracts
+        if: matrix.arch == 'x64'
+        run: |
+          source tools/setup/activate.sh
+          export LUMYTE_GRAPHICS_GPU_TESTS=1
+          export VK_DRIVER_FILES="$LUMYTE_LAVAPIPE_ICD"
+          dotnet run --project build -c Release --no-build --no-restore -- --target Test --lane gpu --host-only --no-build --no-restore --pipeline-validation
 
       - name: Upload native Parley package assets
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
@@ -206,6 +157,13 @@ jobs:
             sudo apt-get install -y xvfb xauth
           fi
           dotnet run --project build -c Release --no-build --no-restore -- --target Test --suite windowing --configuration Release --no-build --no-restore
+
+      - name: Quality / format and lint (Linux)
+        if: matrix.arch == 'x64'
+        shell: bash
+        run: |
+          source tools/setup/activate.sh
+          dotnet run --project build -c Release --no-build --no-restore -- --target Quality --configuration Release --host-only --no-build --no-restore
 
       - name: Distribution / samples and packages
         if: matrix.arch == 'x64'
@@ -247,7 +205,7 @@ jobs:
           PREVIEW_LABEL: "${{ github.event_name == 'pull_request' && format('PR #{0}', github.event.pull_request.number) || github.ref_name }}"
         run: |
           source tools/setup/activate.sh
-          dotnet run --project build -c Release --no-build --no-restore -- --target Distribution --distribution-output diagnostic-gallery
+          dotnet run --project build -c Release --no-build --no-restore -- --target Distribution --distribution-output diagnostic-gallery --no-build --no-restore
 
       - name: Upload diagnostic gallery
         if: matrix.os == 'ubuntu-24.04'
@@ -266,6 +224,21 @@ jobs:
           path: artifacts/test-results/
           if-no-files-found: ignore
 
+      - name: Upload CPU results
+        if: always() && matrix.arch == 'x64'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: test-results-cpu
+          path: artifacts/test-results/
+          if-no-files-found: ignore
+      - name: Upload GPU results
+        if: always() && matrix.arch == 'x64'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: test-results-gpu
+          path: artifacts/test-results/
+          if-no-files-found: ignore
+
   windows:
     name: Windows (${{ matrix.arch }})
     strategy:
@@ -279,7 +252,7 @@ jobs:
             platform: Windows
             arch: aarch64
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 60
+    timeout-minutes: 120
     steps:
       - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
 
@@ -322,14 +295,12 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
-      - name: Upload test results
-        if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        with:
-          name: test-results-${{ matrix.platform }}-${{ matrix.arch }}
-          path: artifacts/test-results/
-          if-no-files-found: ignore
-
+      - name: Quality / format (Windows)
+        if: matrix.arch == 'x64'
+        shell: powershell
+        run: |
+          . ./tools/setup/activate.ps1
+          Invoke-LumyteCommand dotnet @('run', '--project', 'build', '-c', 'Release', '--no-build', '--no-restore', '--', '--target', 'Quality', '--quality-scope', 'managed', '--configuration', 'Release', '--host-only', '--no-build', '--no-restore')
       - name: Distribution / Windows window sample
         shell: powershell
         run: |
@@ -345,14 +316,18 @@ jobs:
             Invoke-LumyteCommand dotnet @('run', '--project', 'build', '-c', 'Release', '--no-build', '--no-restore', '--', '--target', 'Distribution', '--distribution-output', 'packages', '--project', $project, '--configuration', 'Release', '--no-build', '--no-restore')
           }
 
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: test-results-${{ matrix.platform }}-${{ matrix.arch }}
+          path: artifacts/test-results/
+          if-no-files-found: ignore
+
   browser:
-    name: Browser (${{ matrix.case }}, Linux x64)
-    strategy:
-      fail-fast: false
-      matrix:
-        case: [graphics, text, ui-application, ui-navigation, ui-pages, ui-transitions, audio]
+    name: Browser (all APIs, Linux x64)
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
 
@@ -363,11 +338,6 @@ jobs:
 
       - name: Prepare Browser tools
         uses: ./.github/actions/setup-linux
-      - name: Mise setup (Browser)
-        run: |
-          source tools/setup/activate.sh
-          dotnet workload install wasm-tools --version "$(dotnet --version)"
-
       - name: Save prepared dependencies before tests
         uses: ./.github/actions/cache-dependencies
         with:
@@ -422,24 +392,62 @@ jobs:
           LUMYTE_QUARANTINE_CONNECTED_PNG_TIMEOUT: "1"
         run: |
           source tools/setup/activate.sh
-          dotnet run --project build -c Release --no-build --no-restore -- --target Test --lane integration --platform browser --browser-case ${{ matrix.case }} --configuration Release
+          dotnet run --project build -c Release --no-build --no-restore -- --target Test --lane integration --platform browser --configuration Release
 
-      - name: Upload browser results
+      - name: Upload browser results / graphics
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: test-results-browser-${{ matrix.case }}
+          name: test-results-browser-graphics
+          path: artifacts/test-results/
+          if-no-files-found: ignore
+      - name: Upload browser results / text
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: test-results-browser-text
+          path: artifacts/test-results/
+          if-no-files-found: ignore
+      - name: Upload browser results / ui-application
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: test-results-browser-ui-application
+          path: artifacts/test-results/
+          if-no-files-found: ignore
+      - name: Upload browser results / ui-navigation
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: test-results-browser-ui-navigation
+          path: artifacts/test-results/
+          if-no-files-found: ignore
+      - name: Upload browser results / ui-pages
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: test-results-browser-ui-pages
+          path: artifacts/test-results/
+          if-no-files-found: ignore
+      - name: Upload browser results / ui-transitions
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: test-results-browser-ui-transitions
+          path: artifacts/test-results/
+          if-no-files-found: ignore
+      - name: Upload browser results / audio
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: test-results-browser-audio
           path: artifacts/test-results/
           if-no-files-found: ignore
 
   aot:
-    name: AOT (${{ matrix.group }}, Linux x64)
-    strategy:
-      fail-fast: false
-      matrix:
-        group: [balanced-1, balanced-2]
+    name: AOT (all 14, Linux x64)
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
 
@@ -460,65 +468,18 @@ jobs:
         run: |
           source tools/setup/activate.sh
           # Each AOT publish restores and builds its own project references.
-          dotnet run --project build -c Release --no-build --no-restore -- --target Test --suite aot --aot-group ${{ matrix.group }} --configuration Release --host-only --no-build --no-restore
-
-  format:
-    name: Format (${{ matrix.platform }} x64)
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: ubuntu-24.04
-            platform: Linux
-          - os: windows-2022
-            platform: Windows
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
-
-      - name: Cache dependencies
-        uses: ./.github/actions/cache-dependencies
+          dotnet run --project build -c Release --no-build --no-restore -- --target Test --suite aot --configuration Release --host-only --no-build --no-restore
+      - name: Upload AOT results
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          profile: native
-
-      - name: Prepare format tools (Linux)
-        if: runner.os == 'Linux'
-        uses: ./.github/actions/setup-linux
-
-      - name: Prepare Release workspace (Linux)
-        if: runner.os == 'Linux'
-        shell: bash
-        run: |
-          source tools/setup/activate.sh
-          dotnet run --project build -c Release --no-build --no-restore -- --target Compile --configuration Release --host-only
-
-      - name: Prepare Release workspace (Windows)
-        if: runner.os == 'Windows'
-        shell: powershell
-        run: |
-          .\tools\setup\setup.ps1
-          . ./tools/setup/activate.ps1
-          Invoke-LumyteCommand dotnet @('build', 'build', '-c', 'Release')
-          Invoke-LumyteCommand dotnet @('run', '--project', 'build', '-c', 'Release', '--no-build', '--no-restore', '--', '--target', 'Compile', '--configuration', 'Release', '--host-only')
-
-      - name: Quality / format and lint (Linux)
-        if: runner.os == 'Linux'
-        shell: bash
-        run: |
-          source tools/setup/activate.sh
-          dotnet run --project build -c Release --no-build --no-restore -- --target Quality --configuration Release --host-only
-
-      - name: Quality / format (Windows)
-        if: runner.os == 'Windows'
-        shell: powershell
-        run: |
-          . ./tools/setup/activate.ps1
-          Invoke-LumyteCommand dotnet @('run', '--project', 'build', '-c', 'Release', '--no-build', '--no-restore', '--', '--target', 'Quality', '--quality-scope', 'managed', '--configuration', 'Release', '--host-only')
+          name: test-results-aot
+          path: artifacts/test-results/
+          if-no-files-found: ignore
 
   package:
     name: Parley native NuGet package
-    needs: [cpu, gpu, linux, windows, browser, aot, format]
+    needs: [linux, windows, browser, aot]
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:

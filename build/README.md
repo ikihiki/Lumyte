@@ -119,7 +119,7 @@ GitHub Pagesの配信権限はCIから分離したままです。
 
 ### CIの対象と再利用
 
-CPUは独立したLinux x64 jobのTest --lane cpuで一度だけ実行します。GPUも独立Linux x64 jobのTest --lane gpuへ分離し、cold-cache容量試験とbackend/pixel検証を維持します。
+CPUはLinux x64 native job内のTest --lane cpuで一度だけ実行します。Integration・GPUも同じfull-host Compileの成果物を再利用し、別category commandで直列実行します。cold-cache容量試験とbackend/pixel検証を維持します。
 LinuxとWindowsは別jobとし、それぞれx64／arm64でbuildとTest --lane integrationを実行します。Windows／ARMでCPU全suiteは繰り返しません。
 分類と混在projectの選択規則は[テスト手順](../tests/README.md#実行レーン)を参照してください。
 `--host-only`は正本の`Lumyte.slnx`から現在のOS用solutionを`artifacts/ci/`へ生成します。
@@ -128,14 +128,14 @@ Platformのテストprojectもhost用の参照とソースだけをコンパイ�
 共通projectの追加は正本への登録だけで反映されます。OS専用projectを追加した場合は`Build.Ci.cs`の分類も更新してください。
 引数を省略した通常のsolution操作は従来どおり全projectを対象にします。
 
-BrowserはLinux／Windowsと同じplatform integrationとして、API別のLinux x64 jobで並列実行します。Node mock契約はhost統合jobで一度だけ実行します。
+BrowserはLinux／Windowsと同じplatform integrationとして、単一のLinux x64 jobで全APIを直列実行します。Node mock契約はhost統合jobで一度だけ実行します。
 Browser jobはsolution全体をビルドせず、検証するBrowser sampleとその依存だけをpublishします。
 共通のsample・package検証はnativeのLinux x64で実行します。
 AOTは独立したLinux x64 jobで、対象sampleだけをpublish・実行します。
 Windows専用packageとWindow sampleはWindows側で検証します。
-FormatはLinux／Windows各x64の独立したjobで、host用Releaseビルドを準備してC#の書式を検査します。
-native／Markdown lintはLinuxのFormat jobで一度だけ実行します。
-CPU・GPU・AOT・Format・Browser・nativeは並列に開始し、すべて成功してからParleyの統合packageを作成します。
+FormatはLinux／Windows各x64のnative job内で、既存host用Release成果物を再利用してC#の書式を検査します。
+native／Markdown lintはLinux x64 native jobで一度だけ実行します。
+native 4 RID・Browser全API・AOT全14 publishの計6 jobが成功してから、7個目のParley統合package jobを実行します。
 Browserの既知timeout許可は既存の狭い条件・期限のままとし、レーン全体の失敗を許可しません。
 環境の動作確認はBuildで行い、CIでは独立したVerify environment／Native smokeを実行しません。
 Parleyの4 RID収集と診断galleryのartifact名は共通のままです。
@@ -280,12 +280,14 @@ Test --suite ui --feature menus --aot（strict NativeAOTのpublishと実行）�
 [一括実行の設計と選択規則](TASK-MIGRATION.md#one-sdk-test-invocation-per-classified-lane)を参照してください。
 
 Required-CI timing baselines, cache provenance, Browser case ownership, and the
-ten-minute evaluation method: [CI runtime budget](../docs/ci-runtime-budget.md).
+historical timing evaluation (superseded by build consolidation): [CI runtime budget](../docs/ci-runtime-budget.md).
 
 ## Required CI reuse and scopes
 
 `Compile --build-lane cpu|gpu|integration` restores/builds the matching
-classified test roots plus SDK-evaluated transitive references. Classified
+classified test roots plus SDK-evaluated transitive references for local development.
+Required CI uses one full-host Compile per native RID, not these partial builds.
+Classified
 `Test --lane` automatically selects that build scope; omit the Compile option
 for the complete canonical/host workspace (samples/native producers/quality).
 The authoritative catalog remains `TestLanes.json`, with new-project guards.

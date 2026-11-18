@@ -1,5 +1,100 @@
 # Required CI runtime budget
 
+## Current design: consolidate compatible work (2026-11-18)
+
+The latest priority supersedes the earlier ten-minute target and split-job
+experiments below: avoid repeated builds even if serial wall time grows.
+Required CI now expands to **7 jobs**, not 18: four native OS/RID contexts,
+one Browser context, one AOT context, and the final package gate. Linux and
+Windows retain separate two-entry matrices for their existing shell and setup
+contracts. Each native context performs exactly one setup and one full-host
+Compile, then consumes the same Release workspace without restore/build.
+CPU/integration/GPU remain separate category SDK test commands; sharing outputs
+does not combine their discovery, filters, concurrency or result directories.
+
+### Before / after stage coverage
+
+| Previous owner | Consolidated owner | Retained work |
+| --- | --- | --- |
+| CPU Linux x64 | Linux x64 | CPU category once; bounded method concurrency 4 |
+| GPU Linux x64 | Linux x64, after integration | Unique-empty cold capacity guard, then exact ordinary shader cache, serial GPU category and DeviceCaps pipeline validation |
+| Linux x64 | Linux x64 | Native integration, Node host mocks, X11, samples/packages, diagnostics processes/UI/gallery and native/managed package assets |
+| Linux ARM64 | Linux ARM64 | Original integration, X11, diagnostics processes and native assets; no CPU, GPU opt-in, new Quality or distribution sample coverage |
+| Windows x64 | Windows x64 | Integration and existing GPU opt-ins, window sample/packages, native assets |
+| Windows ARM64 | Windows ARM64 | Original integration/GPU opt-in behavior, window sample/native assets; no CPU or new Quality |
+| Format Linux/Windows x64 | Corresponding native x64 | Full Linux managed/native/Markdown Quality; Windows managed Quality |
+| Browser seven API jobs | Browser once, serial | All seven cases / eight publications; graphics, text, application, navigation, pages, transitions normal/sequential/same-content, both audio cases |
+| AOT balanced-1 + balanced-2 | AOT once, serial | Exact disjoint union: all 14 publications, strict flags and every executable/mode/OpenAL invocation unchanged |
+| Package | Package, needs all six producer jobs | Four-RID asset/provenance/license validation and downloaded-managed-output metadata restore/pack |
+
+Full-host Compile contains the canonical DeviceCaps sample. Pipeline validation,
+diagnostics UI publication, window publication, managed sample runs and package
+checks use existing outputs; no hidden auxiliary Compile replaces a removed job.
+GPU opt-ins are process/step-local, never job-wide or written to GITHUB_ENV.
+The cold guard creates a fresh mktemp directory; the ordinary Mesa cache is
+restored strictly afterwards. CPU still clears inherited test/GPU/benchmark
+opt-ins. No GPU test command is parallelized with another category.
+
+### Observed workflow counts (definitions, not timings)
+
+Compared with pre-consolidation 8ae89728, expanded runner jobs: **18 -> 7**;
+Linux/Windows setup contexts: **17 -> 6** (package uses only setup-dotnet);
+native full/category build contexts: **8 -> 4** (including the previous implicit
+CPU build); explicit Compile command templates: **5 -> 2**, expanded explicit
+Compile invocations **7 -> 4**. Native Cargo restore/checkpoint contexts:
+**6 -> 4**, with one captured identity per native context. Browser Chrome setup:
+**7 -> 1** (the separate diagnostics Chrome remains); Browser workload installs:
+**14 -> 1** (previous workflow plus Test each installed it in seven jobs).
+AOT setup contexts **2 -> 1**. Setup itself still builds/verifies the runner and
+native tools as required; these counts do not pretend those are free or removed.
+
+Native host, Browser WASM and NativeAOT publications cannot blindly share
+binaries: target runtime, interop/static linkage, trimming and compiler properties
+differ. They retain separate workspaces. Within Browser/AOT, serial publications
+share incremental project dependencies; each distinct sample still publishes and
+executes its own required output. Local --browser-case / --aot-group / --build-lane
+selectors remain available but required CI does not shard/rebuild by them.
+
+Existing producer artifact names remain, including seven Browser result aliases
+(the aliases contain the shared complete result tree), CPU/GPU results, four-RID
+native assets, managed assets and diagnostics-gallery. Result uploads use always().
+Package has ordinary success dependencies on every retained job; no weakened gate
+or continue-on-error was introduced. Aggregate budgets are native 120 minutes,
+Browser/AOT 90 minutes, package 10 minutes; individual test deadlines, quarantine
+conditions and strict quality/asset rules are unchanged. These are capacity budgets,
+not performance claims. Hosted terminal CI and cache-hit timing remain unverified
+until parent review/push; the old-head run does not validate this composition.
+
+Local regression command: python3 tools/setup/test_ci_consolidation.py
+(requires PyYAML in the operator's test environment; not a new CI bootstrap).
+C# orchestration tests also guard the required task surface and native/Browser
+preparation counts; existing manifest tests exercise the complete Browser/AOT
+union plus selected cases/groups and failure propagation.
+
+### Local verification of the consolidated composition
+
+- Pinned SDK 10.0.403 full-host Compile succeeded, including DeviceCaps;
+  existing native dependency paths supplied by /tmp/lumyte-lanes-env.sh.
+  /tmp/lumyte-consolidation-fullhost.log (1:14; local incremental, not hosted timing).
+- Current-runner full orchestration: **339 passed, zero failures/skips**;
+  /tmp/lumyte-consolidation-orchestration-final.log. This includes the serial
+  one-full-build / three-category / no-build pipeline-helper fixture, exact
+  Browser/AOT manifests, failure propagation, and portable Windows sample paths.
+- Full CPU category: **49 projects, 3,836 passed, zero failures/skips**, one SDK
+  invocation with fresh discovery/results; /tmp/lumyte-consolidation-cpu-authoritative.log
+  (0:46). CPU membership is unchanged except the added CI composition regression.
+- Full host Quality succeeded: managed format, native clang-format and Markdown;
+  /tmp/lumyte-consolidation-quality-final.log (1:28). All Markdown: 370 files.
+- Parsed workflow/action YAML: 7 files; parsed consolidation/shell tests: 2 passed.
+  Browser/setup/diagnostics Node contracts: 257 passed, one existing optional skip.
+  Native Cargo identity/cache tests: 10 passed; gallery collector: 34 passed.
+  Python syntax checks and git diff --check passed.
+- Windows/ARM execution, real Browser/WASM, AOT publication/execution, full GPU
+  execution and remote cache-hit/terminal-CI results are not newly measured here.
+  Existing hosted checks remain required; no remote run was started or cancelled.
+
+## Historical investigations (superseded topology)
+
 ## Baseline (2026-11-18)
 
 Source: main commit `dd0831439bfcbdbfd1987404720d0a56b4b258de`,

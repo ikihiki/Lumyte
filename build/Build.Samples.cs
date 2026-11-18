@@ -109,22 +109,24 @@ internal sealed partial class Build
         foreach (AotSample sample in AotSamples.Where(sample => AotGroup is null || sample.Group == AotGroup))
         {
             string executable = await PublishAotSampleAsync(sample.Project, sample.Directory, sample.Executable, sample.Strict).ConfigureAwait(false);
+            int invocation = 0;
             foreach (string[] mode in sample.Modes)
             {
-                await ToolAsync(executable, mode).ConfigureAwait(false);
+                string log = sample.Directory + "-" + (invocation++).ToString(System.Globalization.CultureInfo.InvariantCulture);
+                await CaptureValidationLogAsync(log + ".log", () => ToolAsync(executable, mode)).ConfigureAwait(false);
                 if (sample.OpenAl)
                 {
-                    await ToolWithEnvironmentAsync(executable, _openAlEnvironment, ["--openal", .. mode]).ConfigureAwait(false);
+                    await CaptureValidationLogAsync(log + "-openal.log", () => ToolWithEnvironmentAsync(executable, _openAlEnvironment, ["--openal", .. mode])).ConfigureAwait(false);
                 }
             }
         }
     }
 
     private Task<string> RunManagedSampleAsync(string project, params string[] arguments)
-        => DotNetAsync(["run", "--project", project, "-c", Configuration, "--no-build", "--", .. arguments]);
+        => DotNetAsync(["run", "--project", project, "-c", Configuration, "--no-build", "--no-restore", "--", .. arguments]);
 
     private Task<string> RunOpenAlSampleAsync(string project, params string[] arguments)
-        => DotNetWithEnvironmentAsync(_openAlEnvironment, ["run", "--project", project, "-c", Configuration, "--no-build", "--", .. arguments]);
+        => DotNetWithEnvironmentAsync(_openAlEnvironment, ["run", "--project", project, "-c", Configuration, "--no-build", "--no-restore", "--", .. arguments]);
 
     private async Task<string> PublishAotSampleAsync(string project, string directory, string executable, bool strict)
     {
@@ -135,7 +137,7 @@ internal sealed partial class Build
             arguments.AddRange(["-p:ILLinkTreatWarningsAsErrors=true", "-p:IlcTreatWarningsAsErrors=true"]);
         }
 
-        await DotNetAsync(arguments.ToArray()).ConfigureAwait(false);
+        await CaptureValidationLogAsync(directory + "-publish.log", () => DotNetAsync(arguments.ToArray())).ConfigureAwait(false);
         return Path.Combine(output, executable + (OperatingSystem.IsWindows() ? ".exe" : string.Empty));
     }
 

@@ -15,10 +15,6 @@ public sealed class CiInterfaceTests
         string[] targets = Regex.Matches(workflow, "--target(?:', '|'? +)([A-Za-z0-9]+)")
             .Select(match => match.Groups[1].Value).Distinct().Order(StringComparer.Ordinal).ToArray();
         Assert.Equal(["Compile", "Distribution", "Quality", "Test"], targets);
-        string cpuJob = workflow[workflow.IndexOf("  cpu:", StringComparison.Ordinal)..workflow.IndexOf("  gpu:", StringComparison.Ordinal)];
-        Assert.Contains("name: CPU Tests (Linux x64)", cpuJob, StringComparison.Ordinal);
-        Assert.Contains("name: Run CPU tests", cpuJob, StringComparison.Ordinal);
-        Assert.DoesNotContain("integration", cpuJob, StringComparison.OrdinalIgnoreCase);
         foreach (string contract in new[]
         {
             "--lane cpu", "--lane integration", "--lane gpu", "--pipeline-validation", "--platform browser", "--suite browser-contracts", "--suite aot",
@@ -26,7 +22,7 @@ public sealed class CiInterfaceTests
             "--distribution-output diagnostic-gallery", "'--distribution-output', 'window-sample'", "'--distribution-output', 'packages'",
             "'--quality-scope', 'managed'", "--target Quality --configuration", "--restore-metadata",
             "VulkanProgramCapacitiesAsync", "MESA_SHADER_CACHE_DIR", "windows-11-arm", "ubuntu-24.04-arm",
-            "LUMYTE_QUARANTINE_CONNECTED_PNG_TIMEOUT", "needs: [cpu, gpu, linux, windows, browser, aot, format]",
+            "LUMYTE_QUARANTINE_CONNECTED_PNG_TIMEOUT", "needs: [linux, windows, browser, aot]",
             "parley-native-", "parley-managed", "diagnostics-gallery", "retention-days: 30",
         })
         {
@@ -42,10 +38,10 @@ public sealed class CiInterfaceTests
     {
         string root = GetRepository();
         string workflow = File.ReadAllText(Path.Combine(root, ".github", "workflows", "composition.yml"));
-        Assert.Contains("group: [balanced-1, balanced-2]", workflow, StringComparison.Ordinal);
-        Assert.Contains("--aot-group ${{ matrix.group }}", workflow, StringComparison.Ordinal);
-        Assert.Contains("--build-lane gpu", workflow, StringComparison.Ordinal);
-        Assert.Contains("needs: [cpu, gpu, linux, windows, browser, aot, format]", workflow, StringComparison.Ordinal);
+        Assert.DoesNotContain("--aot-group", workflow, StringComparison.Ordinal);
+        Assert.DoesNotContain("--build-lane", workflow, StringComparison.Ordinal);
+        Assert.Contains("--suite aot --configuration Release", workflow, StringComparison.Ordinal);
+        Assert.Contains("needs: [linux, windows, browser, aot]", workflow, StringComparison.Ordinal);
         string setup = File.ReadAllText(Path.Combine(root, ".github", "actions", "setup-linux", "action.yml"));
         Assert.True(setup.IndexOf("Provision OS", StringComparison.Ordinal) < setup.IndexOf("actions/cache/restore@", StringComparison.Ordinal));
         Assert.True(setup.IndexOf("actions/cache/save@", StringComparison.Ordinal) < setup.IndexOf("Complete native setup", StringComparison.Ordinal));
@@ -53,7 +49,7 @@ public sealed class CiInterfaceTests
         Assert.DoesNotContain("version.txt", setup, StringComparison.Ordinal);
         Assert.DoesNotContain("refs/heads/main", setup, StringComparison.Ordinal);
         Assert.DoesNotContain("pull_request_target", workflow, StringComparison.Ordinal);
-        Assert.Equal(8, Regex.Matches(workflow, @"uses: \./\.github/actions/cache-native").Count);
+        Assert.Equal(4, Regex.Matches(workflow, @"uses: \./\.github/actions/cache-native").Count);
     }
 
     /// <summary>Native hooks never re-enter the solution task and keep isolated state and repository roots.</summary>
@@ -208,7 +204,9 @@ public sealed class CiInterfaceTests
         Assert.EndsWith("gpu.slnf", calls[0][1], StringComparison.Ordinal);
         if (!failTest)
         {
-            Assert.Contains("samples/Lumyte.Graphics.DeviceCaps.Sample", calls[1]);
+            Assert.Contains(Path.Combine("samples", "Lumyte.Graphics.DeviceCaps.Sample"), calls[1]);
+            Assert.Contains("--no-build", calls[1]);
+            Assert.Contains("--no-restore", calls[1]);
             Assert.Equal(new[] { "vulkan", "pipeline-benchmark" }, calls[1][^2..]);
             Assert.True(File.Exists(Path.Combine(fixture.Root, "artifacts", "test-results", "vulkan-pipeline-benchmark.jsonl")));
         }
@@ -236,14 +234,14 @@ public sealed class CiInterfaceTests
     {
         string workflow = File.ReadAllText(Path.Combine(GetRepository(), ".github", "workflows", "composition.yml"));
         string browser = workflow[workflow.IndexOf("  browser:", StringComparison.Ordinal)..workflow.IndexOf("  aot:", StringComparison.Ordinal)];
-        Assert.Contains("case: [graphics, text, ui-application, ui-navigation, ui-pages, ui-transitions, audio]", browser, StringComparison.Ordinal);
-        Assert.Contains("--lane integration --platform browser --browser-case ${{ matrix.case }}", browser, StringComparison.Ordinal);
-        Assert.Contains("name: test-results-browser-${{ matrix.case }}", browser, StringComparison.Ordinal);
-        Assert.Contains("fail-fast: false", browser, StringComparison.Ordinal);
+        Assert.DoesNotContain("matrix.case", browser, StringComparison.Ordinal);
+        Assert.Contains("--lane integration --platform browser", browser, StringComparison.Ordinal);
+        Assert.Contains("name: test-results-browser-ui-transitions", browser, StringComparison.Ordinal);
+        Assert.DoesNotContain("strategy:", browser, StringComparison.Ordinal);
         Assert.DoesNotContain("--suite browser-contracts", browser, StringComparison.Ordinal);
         string linux = workflow[workflow.IndexOf("  linux:", StringComparison.Ordinal)..workflow.IndexOf("  windows:", StringComparison.Ordinal)];
         Assert.Contains("--suite browser-contracts", linux, StringComparison.Ordinal);
-        Assert.Contains("timeout-minutes: 30", browser, StringComparison.Ordinal);
+        Assert.Contains("timeout-minutes: 90", browser, StringComparison.Ordinal);
         Assert.True(browser.IndexOf("mode: save", StringComparison.Ordinal) < browser.IndexOf("Browser / platform API integration", StringComparison.Ordinal));
         string cache = File.ReadAllText(Path.Combine(GetRepository(), ".github", "actions", "cache-dependencies", "action.yml"));
         Assert.Contains("actions/cache/save@", cache, StringComparison.Ordinal);
@@ -252,7 +250,7 @@ public sealed class CiInterfaceTests
         string[] keys = cache.Split((char)10).Where(line => line.TrimStart().StartsWith("key:", StringComparison.Ordinal)).Select(line => line.Trim()).ToArray();
         Assert.Equal(2, keys.GroupBy(value => value).Count(group => group.Count() == 2));
 
-        string gpu = workflow[workflow.IndexOf("  gpu:", StringComparison.Ordinal)..workflow.IndexOf("  linux:", StringComparison.Ordinal)];
+        string gpu = linux;
         Assert.True(gpu.IndexOf("VulkanProgramCapacitiesAsync", StringComparison.Ordinal) < gpu.IndexOf("Cache ordinary GPU", StringComparison.Ordinal));
         Assert.Contains("git ls-files -z -- src tests native build tools .github", gpu, StringComparison.Ordinal);
         Assert.Contains("dpkg-query -W", gpu, StringComparison.Ordinal);
@@ -260,6 +258,59 @@ public sealed class CiInterfaceTests
         Assert.Contains("steps.gpu-cache.outputs.packages", gpu, StringComparison.Ordinal);
         Assert.Contains("steps.gpu-cache.outputs.source", gpu, StringComparison.Ordinal);
         Assert.DoesNotContain("restore-keys:", gpu, StringComparison.Ordinal);
+    }
+
+    /// <summary>One native preparation owns category execution; only aggregate budgets change.</summary>
+    [Fact]
+    public void NativeContextsShareOneFullBuildAndPrivateStageEnvironments()
+    {
+        string workflow = File.ReadAllText(Path.Combine(GetRepository(), ".github", "workflows", "composition.yml"));
+        Assert.Equal(
+            new[] { "linux", "windows", "browser", "aot", "package" },
+            Regex.Matches(workflow[workflow.IndexOf("jobs:", StringComparison.Ordinal)..], @"^  ([a-z]+):$", RegexOptions.Multiline).Select(match => match.Groups[1].Value));
+        foreach (string platform in new[] { "linux", "windows" })
+        {
+            int start = workflow.IndexOf("  " + platform + ":", StringComparison.Ordinal);
+            int end = workflow.IndexOf(platform == "linux" ? "  windows:" : "  browser:", start, StringComparison.Ordinal);
+            string native = workflow[start..end];
+            Assert.Equal(2, Regex.Matches(native, @"arch: (?:x64|aarch64)").Count);
+            Assert.Single(Regex.Matches(native, @"--target(?:', '|'? +)Compile"));
+            Assert.Equal(2, Regex.Matches(native, @"uses: \./\.github/actions/cache-native").Count);
+            Assert.DoesNotContain("--build-lane", native, StringComparison.Ordinal);
+            Assert.DoesNotContain("continue-on-error", native, StringComparison.Ordinal);
+            foreach (string step in native.Split("      - name:").Where(step => step.Contains("--target Test --lane", StringComparison.Ordinal) || step.Contains("'--lane',", StringComparison.Ordinal)))
+            {
+                Assert.Contains("--no-build", step, StringComparison.Ordinal);
+                Assert.Contains("--no-restore", step, StringComparison.Ordinal);
+            }
+
+            string quality = native.Split("      - name:").Single(step => step.Contains("Quality /", StringComparison.Ordinal));
+            Assert.Contains("if: matrix.arch == 'x64'", quality, StringComparison.Ordinal);
+            Assert.Contains("if: always()", native, StringComparison.Ordinal);
+        }
+
+        string linux = workflow[workflow.IndexOf("  linux:", StringComparison.Ordinal)..workflow.IndexOf("  windows:", StringComparison.Ordinal)];
+        foreach (string name in new[] { "Run CPU tests", "Native / cold-cache", "Fingerprint software GPU", "Cache ordinary GPU", "GPU backend" })
+        {
+            string step = linux.Split("      - name:").Single(step => step.TrimStart().StartsWith(name, StringComparison.Ordinal));
+            Assert.Contains("if: matrix.arch == 'x64'", step, StringComparison.Ordinal);
+        }
+
+        Assert.DoesNotContain("GITHUB_ENV", linux, StringComparison.Ordinal);
+        Assert.True(linux.IndexOf("Run CPU tests", StringComparison.Ordinal) < linux.IndexOf("Run integration", StringComparison.Ordinal));
+        Assert.True(linux.IndexOf("Run integration", StringComparison.Ordinal) < linux.IndexOf("Native / cold-cache", StringComparison.Ordinal));
+        Assert.Contains("mktemp -d", linux, StringComparison.Ordinal);
+        Assert.Contains("--test-concurrency 4", linux, StringComparison.Ordinal);
+        Assert.Contains("Lumyte.Graphics.DeviceCaps.Sample", File.ReadAllText(Path.Combine(GetRepository(), "Lumyte.slnx")), StringComparison.Ordinal);
+        string browser = workflow[workflow.IndexOf("  browser:", StringComparison.Ordinal)..workflow.IndexOf("  aot:", StringComparison.Ordinal)];
+        Assert.Single(Regex.Matches(browser, "uses: ./.github/actions/setup-linux"));
+        Assert.Single(Regex.Matches(browser, "uses: browser-actions/setup-chrome"));
+        Assert.DoesNotContain("workload install", browser, StringComparison.Ordinal);
+        Assert.DoesNotContain("--browser-case", browser, StringComparison.Ordinal);
+        foreach (string name in new[] { "graphics", "text", "ui-application", "ui-navigation", "ui-pages", "ui-transitions", "audio" })
+        {
+            Assert.Contains("name: test-results-browser-" + name, browser, StringComparison.Ordinal);
+        }
     }
 
     private static string GetRepository()

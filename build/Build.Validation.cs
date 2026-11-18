@@ -45,7 +45,7 @@ internal sealed partial class Build
     private async Task PipelineValidationAsync()
     {
         await CaptureValidationLogAsync("vulkan-pipeline-benchmark.jsonl", () => DotNetAsync(
-            "run", "--project", Path.GetDirectoryName(PipelineValidationProject)!, "-c", Configuration, "--no-build", "--", "vulkan", "pipeline-benchmark")).ConfigureAwait(false);
+            "run", "--project", Path.GetDirectoryName(PipelineValidationProject)!, "-c", Configuration, "--no-build", "--no-restore", "--", "vulkan", "pipeline-benchmark")).ConfigureAwait(false);
     }
 
     private async Task TestWindowingAsync()
