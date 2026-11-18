@@ -40,7 +40,7 @@ interchanged. Default developer commands still build/publish and test. Explicit
 
 ### Transfer and trust boundary
 
-Standard pinned Actions upload/download-artifact transports a standard tar.
+Standard pinned Actions upload/download-artifact transports a standard gzip-compressed tar.
 The small stdlib helper validates the entire payload before extraction, retaining
 executable modes and safe relative symlinks. It binds actual checkout HEAD
 (including PR synthetic merge SHA), tracked source contents/modes, OS/architecture,
@@ -100,6 +100,7 @@ python3 -m unittest discover -s tools/ci -p 'test_*.py'
 python3 tools/setup/test_ci_consolidation.py
 bash tools/ci/smoke-prebuilt.sh
 bash tools/ci/smoke-prebuilt.sh product
+bash tools/ci/smoke-nuget-roots.sh
 ```
 
 The smoke creates an owned isolated checkout and private NuGet root, really builds
@@ -110,6 +111,53 @@ transport/SDK adapter boundary, not a claim that every native/Windows/Browser/AO
 runtime has been exercised locally. Full hosted terminal CI, artifact size and
 actual remote product-build counts remain required after parent review/push.
 Old-head CI cannot validate this graph. No old run was cancelled or restarted.
+
+### Disk-bounded streaming compression
+
+CI producers now write .tar.gz directly with Python's standard gzip level 1 and
+streaming tar writer. No intermediate raw tar or custom object store is created.
+Actions uploads disable redundant outer compression. Consumers retain only the
+compressed transfer alongside extracted outputs, never a second raw-tar spool.
+
+Validation uses one forward pass over every member: hashes, safe names/types,
+mode/symlink/source identity, assets/package closure and ICD metadata are checked
+inline with bounded metadata buffers. The gzip stream is drained through its CRC
+and trailer before validation succeeds. Only after every check passes does a
+second forward pass extract files and preserve executable/symlink modes. Readers
+also accept legacy raw tar for compatibility. All security tests run for both
+formats; truncated/corrupt gzip trailers fail before any extraction writes.
+
+Observed full-producer transport comparison (same 36,042 payload entries and
+identical per-file hashes/modes/symlink closure): raw tar **6,982,860,800 bytes**,
+streamed gzip **2,353,543,737 bytes**, a **66.30%** transfer/spool reduction.
+Creation plus seal verification took 73.91 seconds locally; two-pass fresh
+extraction took 38.25 seconds with 134,468 KiB peak RSS. These are local evidence,
+not hosted timing promises. The comparison fixture retains its older raw archives;
+CI creates no such raw files. After deleting all producer bin/obj and private
+NuGet directories again, gzip-only restoration passed the complete CPU gate:
+**49 projects, 3,836 passed**, no failures/skips, compilation guard enabled.
+Logs: /tmp/lumyte-full-producer-gzip-create.log,
+/tmp/lumyte-full-producer-gzip-extract.log and
+/tmp/lumyte-full-producer-gzip-cpu.log.
+
+### Canonical producer NuGet roots on Windows
+
+Root comparison now respects Windows case/separator/trailing-separator spelling
+while Linux remains case-sensitive. This is path equivalence, not relocation or
+assets rewriting; genuinely different or additional roots remain fatal. Errors
+report declared and expected non-secret paths for diagnosis. The old Windows
+failure did not report those paths, so its exact spelling/fallback combination
+cannot be recovered from that log alone.
+
+Repository NuGet.config explicitly clears inherited machine/user fallback package
+folders while preserving both existing package sources. Producers perform normal
+restore against that policy; consumers never discard fallback entries or restore
+product metadata. A real SDK fixture reproduced an unused inherited machine
+fallback appearing as a second packageFolders root. Adding the repository clear
+and performing supported producer restore removed it without rewriting assets.
+The repeatable smoke is tools/ci/smoke-nuget-roots.sh; evidence is retained in
+lumyte-nuget-roots-SlLM0y. The compressed Memory/DI fresh-consumer smoke also passes
+with the current repository root policy. Hosted Windows remains the final proof.
 
 ### Producer traversal boundary
 
@@ -149,7 +197,8 @@ ARM/Windows/GPU proof.
   producer-to-two-AOT-consumers executable fixture and all no-publish contracts.
 - Relevant Integration orchestration: 227 passed with no-build/no-restore and
   the consumer guard enabled. Node contracts: 235 passed, one optional skip.
-- Transport: 23 Python security/closure tests; graph/shell contracts: six tests.
+- Transport: 50 Python security/closure tests across raw tar and gzip;
+  graph/shell contracts: seven tests.
   Seven YAML files and XML/Python syntax parse. Managed/build format and all
   370 Markdown files pass.
 - Real clean-output product proof: Lumyte.Memory plus its DI library and test

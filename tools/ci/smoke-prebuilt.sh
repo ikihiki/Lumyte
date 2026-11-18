@@ -9,6 +9,7 @@ export NUGET_PACKAGES="$root/artifacts/dev-env/nuget-packages"
 if [[ "$product" == product ]]; then
     git -C "$repo" archive HEAD | tar -x -C "$root"
     cp "$repo/Directory.Build.props" "$root/Directory.Build.props"
+    cp "$repo/NuGet.config" "$root/NuGet.config"
     project=tests/Core/Lumyte.Memory.Tests
 else
     project=tests/Smoke
@@ -34,13 +35,13 @@ git add .
 git -c user.name=Smoke -c user.email=smoke@invalid commit -qm fixture
 dotnet build "$project" -c Release -p:GenerateDocumentationFile=false -p:EnforceCodeStyleInBuild=false -p:TreatWarningsAsErrors=false -p:RunAnalyzers=false
 sdk=$(dotnet --version)
-python3 "$repo/tools/ci/prebuilt.py" create "$root/prebuilt.tar" --rid linux-x64 --configuration Release --sdk "$sdk"
+python3 "$repo/tools/ci/prebuilt.py" create "$root/prebuilt.tar.gz" --rid linux-x64 --configuration Release --sdk "$sdk"
 # Remove only this harness's producer outputs and private package cache.
 find "$root/src" "$root/tests" -type d \( -name bin -o -name obj \) -prune -exec rm -rf {} +
 rm -rf "$NUGET_PACKAGES"
 # Simulate rerun-failed-jobs: producer attempt 1, consumer attempt 2.
 export GITHUB_RUN_ATTEMPT=2
-python3 "$repo/tools/ci/prebuilt.py" extract "$root/prebuilt.tar" --rid linux-x64 --configuration Release --sdk "$sdk"
+python3 "$repo/tools/ci/prebuilt.py" extract "$root/prebuilt.tar.gz" --rid linux-x64 --configuration Release --sdk "$sdk"
 export LUMYTE_PREBUILT_CONSUMER=1
 dotnet test "$project" -c Release --no-build --no-restore --logger 'trx;LogFileName=smoke.trx' --results-directory "$root/results"
 if dotnet build "$project" -c Release --no-restore > "$root/forbidden-build.log" 2>&1; then

@@ -63,14 +63,15 @@ jobs:
         source tools/setup/activate.sh
         test "$DOTNET_ROOT" = "$LUMYTE_PREBUILT_SDK_ROOT"
         mkdir -p "$RUNNER_TEMP/prebuilt"
-        python tools/ci/prebuilt.py create "$RUNNER_TEMP/prebuilt/native-linux-x64.tar" --kind native --rid linux-x64 --configuration Release --sdk 10.0.403 --nuget-root "$GITHUB_WORKSPACE/artifacts/dev-env/nuget-packages"
+        python tools/ci/prebuilt.py create "$RUNNER_TEMP/prebuilt/native-linux-x64.tar.gz" --kind native --rid linux-x64 --configuration Release --sdk 10.0.403 --nuget-root "$GITHUB_WORKSPACE/artifacts/dev-env/nuget-packages"
     - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
       with:
         name: prebuilt-native-linux-x64
-        path: ${{ runner.temp }}/prebuilt/native-linux-x64.tar
+        path: ${{ runner.temp }}/prebuilt/native-linux-x64.tar.gz
         if-no-files-found: error
         retention-days: 1
         overwrite: true
+        compression-level: 0
     env:
       LUMYTE_PREBUILT_SDK_ROOT: ${{ github.workspace }}/artifacts/dev-env/mise/data/installs/http-dotnet/10.0.403
   integration-linux-x64:
@@ -92,14 +93,14 @@ jobs:
       shell: bash
       run: |-
         test "$(dotnet --version)" = 10.0.403
-        python tools/ci/prebuilt.py extract "$RUNNER_TEMP/prebuilt/native-linux-x64.tar" --kind native --rid linux-x64 --configuration Release --sdk 10.0.403 --nuget-root "$GITHUB_WORKSPACE/artifacts/dev-env/nuget-packages"
+        python tools/ci/prebuilt.py extract "$RUNNER_TEMP/prebuilt/native-linux-x64.tar.gz" --kind native --rid linux-x64 --configuration Release --sdk 10.0.403 --nuget-root "$GITHUB_WORKSPACE/artifacts/dev-env/nuget-packages"
     - name: Provision tools and runtime only (no product compilation)
       shell: bash
       run: |
         LUMYTE_SETUP_TOOLS_ONLY=1 bash tools/setup/setup.sh
         source tools/setup/activate.sh
         test "$DOTNET_ROOT" = "$LUMYTE_PREBUILT_SDK_ROOT"
-        python tools/ci/prebuilt.py verify "$RUNNER_TEMP/prebuilt/native-linux-x64.tar" --kind native --rid linux-x64 --configuration Release --sdk 10.0.403 --nuget-root "$GITHUB_WORKSPACE/artifacts/dev-env/nuget-packages" --check-runtime
+        python tools/ci/prebuilt.py verify "$RUNNER_TEMP/prebuilt/native-linux-x64.tar.gz" --kind native --rid linux-x64 --configuration Release --sdk 10.0.403 --nuget-root "$GITHUB_WORKSPACE/artifacts/dev-env/nuget-packages" --check-runtime
         sudo apt-get install -y libopenal1 xvfb xauth
     - name: Run integration tests (Linux)
       shell: bash
@@ -198,14 +199,14 @@ jobs:
       shell: bash
       run: |-
         test "$(dotnet --version)" = 10.0.403
-        python tools/ci/prebuilt.py extract "$RUNNER_TEMP/prebuilt/native-linux-x64.tar" --kind native --rid linux-x64 --configuration Release --sdk 10.0.403 --nuget-root "$GITHUB_WORKSPACE/artifacts/dev-env/nuget-packages"
+        python tools/ci/prebuilt.py extract "$RUNNER_TEMP/prebuilt/native-linux-x64.tar.gz" --kind native --rid linux-x64 --configuration Release --sdk 10.0.403 --nuget-root "$GITHUB_WORKSPACE/artifacts/dev-env/nuget-packages"
     - name: Provision tools and runtime only (no product compilation)
       shell: bash
       run: |
         LUMYTE_SETUP_TOOLS_ONLY=1 bash tools/setup/setup.sh
         source tools/setup/activate.sh
         test "$DOTNET_ROOT" = "$LUMYTE_PREBUILT_SDK_ROOT"
-        python tools/ci/prebuilt.py verify "$RUNNER_TEMP/prebuilt/native-linux-x64.tar" --kind native --rid linux-x64 --configuration Release --sdk 10.0.403 --nuget-root "$GITHUB_WORKSPACE/artifacts/dev-env/nuget-packages" --check-runtime
+        python tools/ci/prebuilt.py verify "$RUNNER_TEMP/prebuilt/native-linux-x64.tar.gz" --kind native --rid linux-x64 --configuration Release --sdk 10.0.403 --nuget-root "$GITHUB_WORKSPACE/artifacts/dev-env/nuget-packages" --check-runtime
         sudo apt-get install -y libopenal1 xvfb xauth
     - name: Run CPU tests
       run: |
@@ -244,14 +245,14 @@ jobs:
       shell: bash
       run: |-
         test "$(dotnet --version)" = 10.0.403
-        python tools/ci/prebuilt.py extract "$RUNNER_TEMP/prebuilt/native-linux-x64.tar" --kind native --rid linux-x64 --configuration Release --sdk 10.0.403 --nuget-root "$GITHUB_WORKSPACE/artifacts/dev-env/nuget-packages"
+        python tools/ci/prebuilt.py extract "$RUNNER_TEMP/prebuilt/native-linux-x64.tar.gz" --kind native --rid linux-x64 --configuration Release --sdk 10.0.403 --nuget-root "$GITHUB_WORKSPACE/artifacts/dev-env/nuget-packages"
     - name: Provision tools and runtime only (no product compilation)
       shell: bash
       run: |
         LUMYTE_SETUP_TOOLS_ONLY=1 bash tools/setup/setup.sh
         source tools/setup/activate.sh
         test "$DOTNET_ROOT" = "$LUMYTE_PREBUILT_SDK_ROOT"
-        python tools/ci/prebuilt.py verify "$RUNNER_TEMP/prebuilt/native-linux-x64.tar" --kind native --rid linux-x64 --configuration Release --sdk 10.0.403 --nuget-root "$GITHUB_WORKSPACE/artifacts/dev-env/nuget-packages" --check-runtime
+        python tools/ci/prebuilt.py verify "$RUNNER_TEMP/prebuilt/native-linux-x64.tar.gz" --kind native --rid linux-x64 --configuration Release --sdk 10.0.403 --nuget-root "$GITHUB_WORKSPACE/artifacts/dev-env/nuget-packages" --check-runtime
         sudo apt-get install -y libopenal1 xvfb xauth
     - name: Native / cold-cache maximum drawing program
       shell: bash
@@ -322,14 +323,14 @@ jobs:
       shell: bash
       run: |-
         test "$(dotnet --version)" = 10.0.403
-        python tools/ci/prebuilt.py extract "$RUNNER_TEMP/prebuilt/native-linux-x64.tar" --kind native --rid linux-x64 --configuration Release --sdk 10.0.403 --nuget-root "$GITHUB_WORKSPACE/artifacts/dev-env/nuget-packages"
+        python tools/ci/prebuilt.py extract "$RUNNER_TEMP/prebuilt/native-linux-x64.tar.gz" --kind native --rid linux-x64 --configuration Release --sdk 10.0.403 --nuget-root "$GITHUB_WORKSPACE/artifacts/dev-env/nuget-packages"
     - name: Provision tools and runtime only (no product compilation)
       shell: bash
       run: |
         LUMYTE_SETUP_TOOLS_ONLY=1 bash tools/setup/setup.sh
         source tools/setup/activate.sh
         test "$DOTNET_ROOT" = "$LUMYTE_PREBUILT_SDK_ROOT"
-        python tools/ci/prebuilt.py verify "$RUNNER_TEMP/prebuilt/native-linux-x64.tar" --kind native --rid linux-x64 --configuration Release --sdk 10.0.403 --nuget-root "$GITHUB_WORKSPACE/artifacts/dev-env/nuget-packages" --check-runtime
+        python tools/ci/prebuilt.py verify "$RUNNER_TEMP/prebuilt/native-linux-x64.tar.gz" --kind native --rid linux-x64 --configuration Release --sdk 10.0.403 --nuget-root "$GITHUB_WORKSPACE/artifacts/dev-env/nuget-packages" --check-runtime
         sudo apt-get install -y libopenal1 xvfb xauth
     - name: Quality / format and lint (Linux)
       shell: bash
@@ -391,14 +392,15 @@ jobs:
         source tools/setup/activate.sh
         test "$DOTNET_ROOT" = "$LUMYTE_PREBUILT_SDK_ROOT"
         mkdir -p "$RUNNER_TEMP/prebuilt"
-        python tools/ci/prebuilt.py create "$RUNNER_TEMP/prebuilt/native-linux-arm64.tar" --kind native --rid linux-arm64 --configuration Release --sdk 10.0.403 --nuget-root "$GITHUB_WORKSPACE/artifacts/dev-env/nuget-packages"
+        python tools/ci/prebuilt.py create "$RUNNER_TEMP/prebuilt/native-linux-arm64.tar.gz" --kind native --rid linux-arm64 --configuration Release --sdk 10.0.403 --nuget-root "$GITHUB_WORKSPACE/artifacts/dev-env/nuget-packages"
     - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
       with:
         name: prebuilt-native-linux-arm64
-        path: ${{ runner.temp }}/prebuilt/native-linux-arm64.tar
+        path: ${{ runner.temp }}/prebuilt/native-linux-arm64.tar.gz
         if-no-files-found: error
         retention-days: 1
         overwrite: true
+        compression-level: 0
     env:
       LUMYTE_PREBUILT_SDK_ROOT: ${{ github.workspace }}/artifacts/dev-env/mise/data/installs/http-dotnet/10.0.403
   integration-linux-arm64:
@@ -420,14 +422,14 @@ jobs:
       shell: bash
       run: |-
         test "$(dotnet --version)" = 10.0.403
-        python tools/ci/prebuilt.py extract "$RUNNER_TEMP/prebuilt/native-linux-arm64.tar" --kind native --rid linux-arm64 --configuration Release --sdk 10.0.403 --nuget-root "$GITHUB_WORKSPACE/artifacts/dev-env/nuget-packages"
+        python tools/ci/prebuilt.py extract "$RUNNER_TEMP/prebuilt/native-linux-arm64.tar.gz" --kind native --rid linux-arm64 --configuration Release --sdk 10.0.403 --nuget-root "$GITHUB_WORKSPACE/artifacts/dev-env/nuget-packages"
     - name: Provision tools and runtime only (no product compilation)
       shell: bash
       run: |
         LUMYTE_SETUP_TOOLS_ONLY=1 bash tools/setup/setup.sh
         source tools/setup/activate.sh
         test "$DOTNET_ROOT" = "$LUMYTE_PREBUILT_SDK_ROOT"
-        python tools/ci/prebuilt.py verify "$RUNNER_TEMP/prebuilt/native-linux-arm64.tar" --kind native --rid linux-arm64 --configuration Release --sdk 10.0.403 --nuget-root "$GITHUB_WORKSPACE/artifacts/dev-env/nuget-packages" --check-runtime
+        python tools/ci/prebuilt.py verify "$RUNNER_TEMP/prebuilt/native-linux-arm64.tar.gz" --kind native --rid linux-arm64 --configuration Release --sdk 10.0.403 --nuget-root "$GITHUB_WORKSPACE/artifacts/dev-env/nuget-packages" --check-runtime
         sudo apt-get install -y libopenal1 xvfb xauth
     - name: Run integration tests (Linux)
       shell: bash
@@ -511,14 +513,15 @@ jobs:
         . ./tools/setup/activate.ps1
         if ([IO.Path]::GetFullPath($env:DOTNET_ROOT) -ne [IO.Path]::GetFullPath($env:LUMYTE_PREBUILT_SDK_ROOT)) { throw "SDK root mismatch" }
         New-Item -ItemType Directory -Force "$env:RUNNER_TEMP/prebuilt" | Out-Null
-        Invoke-LumyteCommand python @('tools/ci/prebuilt.py', 'create', "$env:RUNNER_TEMP/prebuilt/native-win-x64.tar", '--rid', 'win-x64', '--configuration', 'Release', '--sdk', '10.0.403', '--kind', 'native')
+        Invoke-LumyteCommand python @('tools/ci/prebuilt.py', 'create', "$env:RUNNER_TEMP/prebuilt/native-win-x64.tar.gz", '--rid', 'win-x64', '--configuration', 'Release', '--sdk', '10.0.403', '--kind', 'native')
     - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
       with:
         name: prebuilt-native-win-x64
-        path: ${{ runner.temp }}/prebuilt/native-win-x64.tar
+        path: ${{ runner.temp }}/prebuilt/native-win-x64.tar.gz
         if-no-files-found: error
         retention-days: 1
         overwrite: true
+        compression-level: 0
     env:
       LUMYTE_PREBUILT_SDK_ROOT: ${{ github.workspace }}/artifacts/dev-env/mise/data/installs/http-dotnet/10.0.403
   integration-windows-x64:
@@ -540,7 +543,7 @@ jobs:
       shell: bash
       run: |-
         test "$(dotnet --version)" = 10.0.403
-        python tools/ci/prebuilt.py extract "$RUNNER_TEMP/prebuilt/native-win-x64.tar" --kind native --rid win-x64 --configuration Release --sdk 10.0.403 --nuget-root "$GITHUB_WORKSPACE/artifacts/dev-env/nuget-packages"
+        python tools/ci/prebuilt.py extract "$RUNNER_TEMP/prebuilt/native-win-x64.tar.gz" --kind native --rid win-x64 --configuration Release --sdk 10.0.403 --nuget-root "$GITHUB_WORKSPACE/artifacts/dev-env/nuget-packages"
     - name: Provision tools only (never product/bootstrap compilation)
       shell: powershell
       run: |-
@@ -548,7 +551,7 @@ jobs:
         .\tools\setup\setup.ps1
         . ./tools/setup/activate.ps1
         if ([IO.Path]::GetFullPath($env:DOTNET_ROOT) -ne [IO.Path]::GetFullPath($env:LUMYTE_PREBUILT_SDK_ROOT)) { throw "SDK root mismatch" }
-        Invoke-LumyteCommand python @('tools/ci/prebuilt.py', 'verify', "$env:RUNNER_TEMP/prebuilt/native-win-x64.tar", '--rid', 'win-x64', '--configuration', 'Release', '--sdk', '10.0.403', '--kind', 'native', '--check-runtime')
+        Invoke-LumyteCommand python @('tools/ci/prebuilt.py', 'verify', "$env:RUNNER_TEMP/prebuilt/native-win-x64.tar.gz", '--rid', 'win-x64', '--configuration', 'Release', '--sdk', '10.0.403', '--kind', 'native', '--check-runtime')
     - name: Run integration tests (Windows)
       shell: powershell
       run: |
@@ -600,7 +603,7 @@ jobs:
       shell: bash
       run: |-
         test "$(dotnet --version)" = 10.0.403
-        python tools/ci/prebuilt.py extract "$RUNNER_TEMP/prebuilt/native-win-x64.tar" --kind native --rid win-x64 --configuration Release --sdk 10.0.403 --nuget-root "$GITHUB_WORKSPACE/artifacts/dev-env/nuget-packages"
+        python tools/ci/prebuilt.py extract "$RUNNER_TEMP/prebuilt/native-win-x64.tar.gz" --kind native --rid win-x64 --configuration Release --sdk 10.0.403 --nuget-root "$GITHUB_WORKSPACE/artifacts/dev-env/nuget-packages"
     - name: Provision tools only (never product/bootstrap compilation)
       shell: powershell
       run: |-
@@ -608,7 +611,7 @@ jobs:
         .\tools\setup\setup.ps1
         . ./tools/setup/activate.ps1
         if ([IO.Path]::GetFullPath($env:DOTNET_ROOT) -ne [IO.Path]::GetFullPath($env:LUMYTE_PREBUILT_SDK_ROOT)) { throw "SDK root mismatch" }
-        Invoke-LumyteCommand python @('tools/ci/prebuilt.py', 'verify', "$env:RUNNER_TEMP/prebuilt/native-win-x64.tar", '--rid', 'win-x64', '--configuration', 'Release', '--sdk', '10.0.403', '--kind', 'native', '--check-runtime')
+        Invoke-LumyteCommand python @('tools/ci/prebuilt.py', 'verify', "$env:RUNNER_TEMP/prebuilt/native-win-x64.tar.gz", '--rid', 'win-x64', '--configuration', 'Release', '--sdk', '10.0.403', '--kind', 'native', '--check-runtime')
     - name: Quality / format (Windows)
       shell: powershell
       run: |
@@ -673,14 +676,15 @@ jobs:
         . ./tools/setup/activate.ps1
         if ([IO.Path]::GetFullPath($env:DOTNET_ROOT) -ne [IO.Path]::GetFullPath($env:LUMYTE_PREBUILT_SDK_ROOT)) { throw "SDK root mismatch" }
         New-Item -ItemType Directory -Force "$env:RUNNER_TEMP/prebuilt" | Out-Null
-        Invoke-LumyteCommand python @('tools/ci/prebuilt.py', 'create', "$env:RUNNER_TEMP/prebuilt/native-win-arm64.tar", '--rid', 'win-arm64', '--configuration', 'Release', '--sdk', '10.0.403', '--kind', 'native')
+        Invoke-LumyteCommand python @('tools/ci/prebuilt.py', 'create', "$env:RUNNER_TEMP/prebuilt/native-win-arm64.tar.gz", '--rid', 'win-arm64', '--configuration', 'Release', '--sdk', '10.0.403', '--kind', 'native')
     - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
       with:
         name: prebuilt-native-win-arm64
-        path: ${{ runner.temp }}/prebuilt/native-win-arm64.tar
+        path: ${{ runner.temp }}/prebuilt/native-win-arm64.tar.gz
         if-no-files-found: error
         retention-days: 1
         overwrite: true
+        compression-level: 0
     env:
       LUMYTE_PREBUILT_SDK_ROOT: ${{ github.workspace }}/artifacts/dev-env/mise/data/installs/http-dotnet/10.0.403
   integration-windows-arm64:
@@ -702,7 +706,7 @@ jobs:
       shell: bash
       run: |-
         test "$(dotnet --version)" = 10.0.403
-        python tools/ci/prebuilt.py extract "$RUNNER_TEMP/prebuilt/native-win-arm64.tar" --kind native --rid win-arm64 --configuration Release --sdk 10.0.403 --nuget-root "$GITHUB_WORKSPACE/artifacts/dev-env/nuget-packages"
+        python tools/ci/prebuilt.py extract "$RUNNER_TEMP/prebuilt/native-win-arm64.tar.gz" --kind native --rid win-arm64 --configuration Release --sdk 10.0.403 --nuget-root "$GITHUB_WORKSPACE/artifacts/dev-env/nuget-packages"
     - name: Provision tools only (never product/bootstrap compilation)
       shell: powershell
       run: |-
@@ -710,7 +714,7 @@ jobs:
         .\tools\setup\setup.ps1
         . ./tools/setup/activate.ps1
         if ([IO.Path]::GetFullPath($env:DOTNET_ROOT) -ne [IO.Path]::GetFullPath($env:LUMYTE_PREBUILT_SDK_ROOT)) { throw "SDK root mismatch" }
-        Invoke-LumyteCommand python @('tools/ci/prebuilt.py', 'verify', "$env:RUNNER_TEMP/prebuilt/native-win-arm64.tar", '--rid', 'win-arm64', '--configuration', 'Release', '--sdk', '10.0.403', '--kind', 'native', '--check-runtime')
+        Invoke-LumyteCommand python @('tools/ci/prebuilt.py', 'verify', "$env:RUNNER_TEMP/prebuilt/native-win-arm64.tar.gz", '--rid', 'win-arm64', '--configuration', 'Release', '--sdk', '10.0.403', '--kind', 'native', '--check-runtime')
     - name: Run integration tests (Windows)
       shell: powershell
       run: |
@@ -763,14 +767,15 @@ jobs:
         source tools/setup/activate.sh
         test "$DOTNET_ROOT" = "$LUMYTE_PREBUILT_SDK_ROOT"
         mkdir -p "$RUNNER_TEMP/prebuilt"
-        python tools/ci/prebuilt.py create "$RUNNER_TEMP/prebuilt/browser-linux-x64.tar" --kind browser --rid linux-x64 --configuration Release --sdk 10.0.403 --nuget-root "$GITHUB_WORKSPACE/artifacts/dev-env/nuget-packages"
+        python tools/ci/prebuilt.py create "$RUNNER_TEMP/prebuilt/browser-linux-x64.tar.gz" --kind browser --rid linux-x64 --configuration Release --sdk 10.0.403 --nuget-root "$GITHUB_WORKSPACE/artifacts/dev-env/nuget-packages"
     - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
       with:
         name: prebuilt-browser-linux-x64
-        path: ${{ runner.temp }}/prebuilt/browser-linux-x64.tar
+        path: ${{ runner.temp }}/prebuilt/browser-linux-x64.tar.gz
         if-no-files-found: error
         retention-days: 1
         overwrite: true
+        compression-level: 0
     env:
       LUMYTE_PREBUILT_SDK_ROOT: ${{ github.workspace }}/artifacts/dev-env/mise/data/installs/http-dotnet/10.0.403
   browser-graphics:
@@ -792,14 +797,14 @@ jobs:
       shell: bash
       run: |-
         test "$(dotnet --version)" = 10.0.403
-        python tools/ci/prebuilt.py extract "$RUNNER_TEMP/prebuilt/browser-linux-x64.tar" --kind browser --rid linux-x64 --configuration Release --sdk 10.0.403 --nuget-root "$GITHUB_WORKSPACE/artifacts/dev-env/nuget-packages"
+        python tools/ci/prebuilt.py extract "$RUNNER_TEMP/prebuilt/browser-linux-x64.tar.gz" --kind browser --rid linux-x64 --configuration Release --sdk 10.0.403 --nuget-root "$GITHUB_WORKSPACE/artifacts/dev-env/nuget-packages"
     - name: Provision tools and runtime only (no product compilation)
       shell: bash
       run: |
         LUMYTE_SETUP_TOOLS_ONLY=1 bash tools/setup/setup.sh
         source tools/setup/activate.sh
         test "$DOTNET_ROOT" = "$LUMYTE_PREBUILT_SDK_ROOT"
-        python tools/ci/prebuilt.py verify "$RUNNER_TEMP/prebuilt/browser-linux-x64.tar" --kind browser --rid linux-x64 --configuration Release --sdk 10.0.403 --nuget-root "$GITHUB_WORKSPACE/artifacts/dev-env/nuget-packages" --check-runtime
+        python tools/ci/prebuilt.py verify "$RUNNER_TEMP/prebuilt/browser-linux-x64.tar.gz" --kind browser --rid linux-x64 --configuration Release --sdk 10.0.403 --nuget-root "$GITHUB_WORKSPACE/artifacts/dev-env/nuget-packages" --check-runtime
         sudo apt-get install -y libopenal1 xvfb xauth
     - name: Install pinned Chrome with bundled SwiftShader
       id: chrome
@@ -866,14 +871,14 @@ jobs:
       shell: bash
       run: |-
         test "$(dotnet --version)" = 10.0.403
-        python tools/ci/prebuilt.py extract "$RUNNER_TEMP/prebuilt/browser-linux-x64.tar" --kind browser --rid linux-x64 --configuration Release --sdk 10.0.403 --nuget-root "$GITHUB_WORKSPACE/artifacts/dev-env/nuget-packages"
+        python tools/ci/prebuilt.py extract "$RUNNER_TEMP/prebuilt/browser-linux-x64.tar.gz" --kind browser --rid linux-x64 --configuration Release --sdk 10.0.403 --nuget-root "$GITHUB_WORKSPACE/artifacts/dev-env/nuget-packages"
     - name: Provision tools and runtime only (no product compilation)
       shell: bash
       run: |
         LUMYTE_SETUP_TOOLS_ONLY=1 bash tools/setup/setup.sh
         source tools/setup/activate.sh
         test "$DOTNET_ROOT" = "$LUMYTE_PREBUILT_SDK_ROOT"
-        python tools/ci/prebuilt.py verify "$RUNNER_TEMP/prebuilt/browser-linux-x64.tar" --kind browser --rid linux-x64 --configuration Release --sdk 10.0.403 --nuget-root "$GITHUB_WORKSPACE/artifacts/dev-env/nuget-packages" --check-runtime
+        python tools/ci/prebuilt.py verify "$RUNNER_TEMP/prebuilt/browser-linux-x64.tar.gz" --kind browser --rid linux-x64 --configuration Release --sdk 10.0.403 --nuget-root "$GITHUB_WORKSPACE/artifacts/dev-env/nuget-packages" --check-runtime
         sudo apt-get install -y libopenal1 xvfb xauth
     - name: Install pinned Chrome with bundled SwiftShader
       id: chrome
@@ -940,14 +945,14 @@ jobs:
       shell: bash
       run: |-
         test "$(dotnet --version)" = 10.0.403
-        python tools/ci/prebuilt.py extract "$RUNNER_TEMP/prebuilt/browser-linux-x64.tar" --kind browser --rid linux-x64 --configuration Release --sdk 10.0.403 --nuget-root "$GITHUB_WORKSPACE/artifacts/dev-env/nuget-packages"
+        python tools/ci/prebuilt.py extract "$RUNNER_TEMP/prebuilt/browser-linux-x64.tar.gz" --kind browser --rid linux-x64 --configuration Release --sdk 10.0.403 --nuget-root "$GITHUB_WORKSPACE/artifacts/dev-env/nuget-packages"
     - name: Provision tools and runtime only (no product compilation)
       shell: bash
       run: |
         LUMYTE_SETUP_TOOLS_ONLY=1 bash tools/setup/setup.sh
         source tools/setup/activate.sh
         test "$DOTNET_ROOT" = "$LUMYTE_PREBUILT_SDK_ROOT"
-        python tools/ci/prebuilt.py verify "$RUNNER_TEMP/prebuilt/browser-linux-x64.tar" --kind browser --rid linux-x64 --configuration Release --sdk 10.0.403 --nuget-root "$GITHUB_WORKSPACE/artifacts/dev-env/nuget-packages" --check-runtime
+        python tools/ci/prebuilt.py verify "$RUNNER_TEMP/prebuilt/browser-linux-x64.tar.gz" --kind browser --rid linux-x64 --configuration Release --sdk 10.0.403 --nuget-root "$GITHUB_WORKSPACE/artifacts/dev-env/nuget-packages" --check-runtime
         sudo apt-get install -y libopenal1 xvfb xauth
     - name: Install pinned Chrome with bundled SwiftShader
       id: chrome
@@ -1014,14 +1019,14 @@ jobs:
       shell: bash
       run: |-
         test "$(dotnet --version)" = 10.0.403
-        python tools/ci/prebuilt.py extract "$RUNNER_TEMP/prebuilt/browser-linux-x64.tar" --kind browser --rid linux-x64 --configuration Release --sdk 10.0.403 --nuget-root "$GITHUB_WORKSPACE/artifacts/dev-env/nuget-packages"
+        python tools/ci/prebuilt.py extract "$RUNNER_TEMP/prebuilt/browser-linux-x64.tar.gz" --kind browser --rid linux-x64 --configuration Release --sdk 10.0.403 --nuget-root "$GITHUB_WORKSPACE/artifacts/dev-env/nuget-packages"
     - name: Provision tools and runtime only (no product compilation)
       shell: bash
       run: |
         LUMYTE_SETUP_TOOLS_ONLY=1 bash tools/setup/setup.sh
         source tools/setup/activate.sh
         test "$DOTNET_ROOT" = "$LUMYTE_PREBUILT_SDK_ROOT"
-        python tools/ci/prebuilt.py verify "$RUNNER_TEMP/prebuilt/browser-linux-x64.tar" --kind browser --rid linux-x64 --configuration Release --sdk 10.0.403 --nuget-root "$GITHUB_WORKSPACE/artifacts/dev-env/nuget-packages" --check-runtime
+        python tools/ci/prebuilt.py verify "$RUNNER_TEMP/prebuilt/browser-linux-x64.tar.gz" --kind browser --rid linux-x64 --configuration Release --sdk 10.0.403 --nuget-root "$GITHUB_WORKSPACE/artifacts/dev-env/nuget-packages" --check-runtime
         sudo apt-get install -y libopenal1 xvfb xauth
     - name: Install pinned Chrome with bundled SwiftShader
       id: chrome
@@ -1088,14 +1093,14 @@ jobs:
       shell: bash
       run: |-
         test "$(dotnet --version)" = 10.0.403
-        python tools/ci/prebuilt.py extract "$RUNNER_TEMP/prebuilt/browser-linux-x64.tar" --kind browser --rid linux-x64 --configuration Release --sdk 10.0.403 --nuget-root "$GITHUB_WORKSPACE/artifacts/dev-env/nuget-packages"
+        python tools/ci/prebuilt.py extract "$RUNNER_TEMP/prebuilt/browser-linux-x64.tar.gz" --kind browser --rid linux-x64 --configuration Release --sdk 10.0.403 --nuget-root "$GITHUB_WORKSPACE/artifacts/dev-env/nuget-packages"
     - name: Provision tools and runtime only (no product compilation)
       shell: bash
       run: |
         LUMYTE_SETUP_TOOLS_ONLY=1 bash tools/setup/setup.sh
         source tools/setup/activate.sh
         test "$DOTNET_ROOT" = "$LUMYTE_PREBUILT_SDK_ROOT"
-        python tools/ci/prebuilt.py verify "$RUNNER_TEMP/prebuilt/browser-linux-x64.tar" --kind browser --rid linux-x64 --configuration Release --sdk 10.0.403 --nuget-root "$GITHUB_WORKSPACE/artifacts/dev-env/nuget-packages" --check-runtime
+        python tools/ci/prebuilt.py verify "$RUNNER_TEMP/prebuilt/browser-linux-x64.tar.gz" --kind browser --rid linux-x64 --configuration Release --sdk 10.0.403 --nuget-root "$GITHUB_WORKSPACE/artifacts/dev-env/nuget-packages" --check-runtime
         sudo apt-get install -y libopenal1 xvfb xauth
     - name: Install pinned Chrome with bundled SwiftShader
       id: chrome
@@ -1162,14 +1167,14 @@ jobs:
       shell: bash
       run: |-
         test "$(dotnet --version)" = 10.0.403
-        python tools/ci/prebuilt.py extract "$RUNNER_TEMP/prebuilt/browser-linux-x64.tar" --kind browser --rid linux-x64 --configuration Release --sdk 10.0.403 --nuget-root "$GITHUB_WORKSPACE/artifacts/dev-env/nuget-packages"
+        python tools/ci/prebuilt.py extract "$RUNNER_TEMP/prebuilt/browser-linux-x64.tar.gz" --kind browser --rid linux-x64 --configuration Release --sdk 10.0.403 --nuget-root "$GITHUB_WORKSPACE/artifacts/dev-env/nuget-packages"
     - name: Provision tools and runtime only (no product compilation)
       shell: bash
       run: |
         LUMYTE_SETUP_TOOLS_ONLY=1 bash tools/setup/setup.sh
         source tools/setup/activate.sh
         test "$DOTNET_ROOT" = "$LUMYTE_PREBUILT_SDK_ROOT"
-        python tools/ci/prebuilt.py verify "$RUNNER_TEMP/prebuilt/browser-linux-x64.tar" --kind browser --rid linux-x64 --configuration Release --sdk 10.0.403 --nuget-root "$GITHUB_WORKSPACE/artifacts/dev-env/nuget-packages" --check-runtime
+        python tools/ci/prebuilt.py verify "$RUNNER_TEMP/prebuilt/browser-linux-x64.tar.gz" --kind browser --rid linux-x64 --configuration Release --sdk 10.0.403 --nuget-root "$GITHUB_WORKSPACE/artifacts/dev-env/nuget-packages" --check-runtime
         sudo apt-get install -y libopenal1 xvfb xauth
     - name: Install pinned Chrome with bundled SwiftShader
       id: chrome
@@ -1246,14 +1251,14 @@ jobs:
       shell: bash
       run: |-
         test "$(dotnet --version)" = 10.0.403
-        python tools/ci/prebuilt.py extract "$RUNNER_TEMP/prebuilt/browser-linux-x64.tar" --kind browser --rid linux-x64 --configuration Release --sdk 10.0.403 --nuget-root "$GITHUB_WORKSPACE/artifacts/dev-env/nuget-packages"
+        python tools/ci/prebuilt.py extract "$RUNNER_TEMP/prebuilt/browser-linux-x64.tar.gz" --kind browser --rid linux-x64 --configuration Release --sdk 10.0.403 --nuget-root "$GITHUB_WORKSPACE/artifacts/dev-env/nuget-packages"
     - name: Provision tools and runtime only (no product compilation)
       shell: bash
       run: |
         LUMYTE_SETUP_TOOLS_ONLY=1 bash tools/setup/setup.sh
         source tools/setup/activate.sh
         test "$DOTNET_ROOT" = "$LUMYTE_PREBUILT_SDK_ROOT"
-        python tools/ci/prebuilt.py verify "$RUNNER_TEMP/prebuilt/browser-linux-x64.tar" --kind browser --rid linux-x64 --configuration Release --sdk 10.0.403 --nuget-root "$GITHUB_WORKSPACE/artifacts/dev-env/nuget-packages" --check-runtime
+        python tools/ci/prebuilt.py verify "$RUNNER_TEMP/prebuilt/browser-linux-x64.tar.gz" --kind browser --rid linux-x64 --configuration Release --sdk 10.0.403 --nuget-root "$GITHUB_WORKSPACE/artifacts/dev-env/nuget-packages" --check-runtime
         sudo apt-get install -y libopenal1 xvfb xauth
     - name: Install pinned Chrome with bundled SwiftShader
       id: chrome
@@ -1328,14 +1333,15 @@ jobs:
         source tools/setup/activate.sh
         test "$DOTNET_ROOT" = "$LUMYTE_PREBUILT_SDK_ROOT"
         mkdir -p "$RUNNER_TEMP/prebuilt"
-        python tools/ci/prebuilt.py create "$RUNNER_TEMP/prebuilt/aot-linux-x64.tar" --kind aot --rid linux-x64 --configuration Release --sdk 10.0.403 --nuget-root "$GITHUB_WORKSPACE/artifacts/dev-env/nuget-packages"
+        python tools/ci/prebuilt.py create "$RUNNER_TEMP/prebuilt/aot-linux-x64.tar.gz" --kind aot --rid linux-x64 --configuration Release --sdk 10.0.403 --nuget-root "$GITHUB_WORKSPACE/artifacts/dev-env/nuget-packages"
     - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
       with:
         name: prebuilt-aot-linux-x64
-        path: ${{ runner.temp }}/prebuilt/aot-linux-x64.tar
+        path: ${{ runner.temp }}/prebuilt/aot-linux-x64.tar.gz
         if-no-files-found: error
         retention-days: 1
         overwrite: true
+        compression-level: 0
     env:
       LUMYTE_PREBUILT_SDK_ROOT: ${{ github.workspace }}/artifacts/dev-env/mise/data/installs/http-dotnet/10.0.403
   aot-balanced-1:
@@ -1357,14 +1363,14 @@ jobs:
       shell: bash
       run: |-
         test "$(dotnet --version)" = 10.0.403
-        python tools/ci/prebuilt.py extract "$RUNNER_TEMP/prebuilt/aot-linux-x64.tar" --kind aot --rid linux-x64 --configuration Release --sdk 10.0.403 --nuget-root "$GITHUB_WORKSPACE/artifacts/dev-env/nuget-packages"
+        python tools/ci/prebuilt.py extract "$RUNNER_TEMP/prebuilt/aot-linux-x64.tar.gz" --kind aot --rid linux-x64 --configuration Release --sdk 10.0.403 --nuget-root "$GITHUB_WORKSPACE/artifacts/dev-env/nuget-packages"
     - name: Provision tools and runtime only (no product compilation)
       shell: bash
       run: |
         LUMYTE_SETUP_TOOLS_ONLY=1 bash tools/setup/setup.sh
         source tools/setup/activate.sh
         test "$DOTNET_ROOT" = "$LUMYTE_PREBUILT_SDK_ROOT"
-        python tools/ci/prebuilt.py verify "$RUNNER_TEMP/prebuilt/aot-linux-x64.tar" --kind aot --rid linux-x64 --configuration Release --sdk 10.0.403 --nuget-root "$GITHUB_WORKSPACE/artifacts/dev-env/nuget-packages" --check-runtime
+        python tools/ci/prebuilt.py verify "$RUNNER_TEMP/prebuilt/aot-linux-x64.tar.gz" --kind aot --rid linux-x64 --configuration Release --sdk 10.0.403 --nuget-root "$GITHUB_WORKSPACE/artifacts/dev-env/nuget-packages" --check-runtime
         sudo apt-get install -y libopenal1 xvfb xauth
     - name: Execute prebuilt AOT outputs
       run: |-
@@ -1403,14 +1409,14 @@ jobs:
       shell: bash
       run: |-
         test "$(dotnet --version)" = 10.0.403
-        python tools/ci/prebuilt.py extract "$RUNNER_TEMP/prebuilt/aot-linux-x64.tar" --kind aot --rid linux-x64 --configuration Release --sdk 10.0.403 --nuget-root "$GITHUB_WORKSPACE/artifacts/dev-env/nuget-packages"
+        python tools/ci/prebuilt.py extract "$RUNNER_TEMP/prebuilt/aot-linux-x64.tar.gz" --kind aot --rid linux-x64 --configuration Release --sdk 10.0.403 --nuget-root "$GITHUB_WORKSPACE/artifacts/dev-env/nuget-packages"
     - name: Provision tools and runtime only (no product compilation)
       shell: bash
       run: |
         LUMYTE_SETUP_TOOLS_ONLY=1 bash tools/setup/setup.sh
         source tools/setup/activate.sh
         test "$DOTNET_ROOT" = "$LUMYTE_PREBUILT_SDK_ROOT"
-        python tools/ci/prebuilt.py verify "$RUNNER_TEMP/prebuilt/aot-linux-x64.tar" --kind aot --rid linux-x64 --configuration Release --sdk 10.0.403 --nuget-root "$GITHUB_WORKSPACE/artifacts/dev-env/nuget-packages" --check-runtime
+        python tools/ci/prebuilt.py verify "$RUNNER_TEMP/prebuilt/aot-linux-x64.tar.gz" --kind aot --rid linux-x64 --configuration Release --sdk 10.0.403 --nuget-root "$GITHUB_WORKSPACE/artifacts/dev-env/nuget-packages" --check-runtime
         sudo apt-get install -y libopenal1 xvfb xauth
     - name: Execute prebuilt AOT outputs
       run: |-

@@ -1,5 +1,7 @@
 """Run: python3 -m unittest discover -s tools/ci -p 'test_prebuilt.py' -v."""
 import io
+import gzip
+import zlib
 import json
 import os
 from pathlib import Path
@@ -299,10 +301,60 @@ class TransportTests(unittest.TestCase):
         self.assertIn(repr('workspace/' + bad), str(caught.exception))
         self.assertNotIn(chr(10), str(caught.exception))
 
+    def test_windows_root_equivalence_is_not_relocation(self):
+        p.require_package_root({'packageFolders': {'d:/A/Repo/artifacts/packages/': {}}},
+                               'D:/a/repo/artifacts/packages', 'fixture', windows=True)
+        for folders in ({'D:/other/packages': {}},
+                        {'D:/a/repo/artifacts/packages': {}, 'C:/VisualStudio/Fallback': {}}):
+            with self.assertRaisesRegex(p.Invalid, 'declared=.*expected='):
+                p.require_package_root({'packageFolders': folders},
+                                       'D:/a/repo/artifacts/packages', 'fixture', windows=True)
+        with self.assertRaises(p.Invalid):
+            p.require_package_root({'packageFolders': {'/repo/Packages': {}}},
+                                   '/repo/packages', 'fixture', windows=False)
+
     def test_wrong_nuget_root_in_assets(self):
         self.put('src/P/obj/project.assets.json', json.dumps({'packageFolders': {'/wrong/': {}}}))
         with self.assertRaisesRegex(p.Invalid, 'packageFolders'):
             self.create()
+
+
+class GzipTransportTests(TransportTests):
+    """Run every path/hash/closure/identity regression through gzip as well."""
+
+    def setUp(self):
+        super().setUp()
+        self.archive = self.base / 'prebuilt.tar.gz'
+
+    def rewrite(self, mutate):
+        super().rewrite(mutate)
+        self.archive.write_bytes(gzip.compress(self.archive.read_bytes(), compresslevel=1))
+
+    def test_crc_corruption_and_truncation_fail_before_any_writes(self):
+        self.create()
+        original = self.archive.read_bytes()
+        self.fresh()
+        corrupt = bytearray(original)
+        corrupt[-8] ^= 1
+        broken_block = bytearray(original)
+        broken_block[12] ^= 255
+        for data in (bytes(corrupt), bytes(broken_block), original[:-1], original[:-8], original[:len(original) // 2]):
+            with self.subTest(size=len(data)):
+                self.archive.write_bytes(data)
+                with self.assertRaises((p.Invalid, OSError, EOFError, tarfile.TarError, zlib.error)):
+                    self.verify(extract=True)
+                self.assertFalse((self.root / 'src/P').exists())
+                self.assertFalse(self.nuget.exists())
+
+    def test_exactly_two_forward_passes_without_raw_spool(self):
+        self.create()
+        self.fresh()
+        with patch.object(p, 'read_archive', wraps=p.read_archive) as passes, \
+                patch.object(tarfile.TarFile, 'getmembers', side_effect=AssertionError('must stream')):
+            self.verify(extract=True)
+        self.assertEqual(passes.call_count, 2)
+        self.assertEqual(self.archive.read_bytes()[:2], bytes((31, 139)))
+        self.assertEqual(list(self.base.glob('*.tar')), [])
 
 
 if __name__ == '__main__':

@@ -92,6 +92,15 @@ class ConsolidationTests(unittest.TestCase):
             extract = next(step['run'] for step in job['steps'] if 'prebuilt.py extract' in step.get('run', ''))
             self.assertNotIn('--check-runtime', extract)
 
+    def test_streamed_gzip_transport_paths(self):
+        for job in self.jobs.values():
+            for step in job['steps']:
+                if 'prebuilt.py' in step.get('run', ''):
+                    self.assertIn('.tar.gz', step['run'])
+                if 'actions/upload-artifact@' in step.get('uses', '') and step['with'].get('name', '').startswith('prebuilt-'):
+                    self.assertTrue(step['with']['path'].endswith('.tar.gz'))
+                    self.assertEqual(step['with']['compression-level'], 0)
+
     def test_bash_syntax(self):
         for job in self.jobs.values():
             for step in job["steps"]:

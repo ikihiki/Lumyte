@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Same-run/path tar transport; no SDK/build/restore tools are invoked.
+"""Same-run/path streaming tar/gzip transport; no SDK/build/restore tools are invoked.
 
 Usage: prebuilt.py {create,verify,extract} FILE --rid linux-x64
        --configuration Release --sdk 10.0.403 [--workspace PATH] [--nuget-root PATH]
@@ -8,11 +8,16 @@ storage: hashes detect corruption, not malicious replacement. Exclusive workspac
 required. Existing files must be identical; no existing file is overwritten.
 Run identity excludes consumer attempt; producer_attempt is informational.
 Use verify --check-runtime after OS/runtime installation to resolve external ICDs.
+A .gz output streams gzip level 1 directly; readers accept gzip or legacy raw tar.
+Extraction validates one complete forward pass before a second extraction pass.
 """
 import argparse
+from contextlib import contextmanager, ExitStack
+import gzip
 import hashlib
 import io
 import json
+import ntpath
 import os
 from pathlib import Path, PurePosixPath
 import platform
@@ -20,6 +25,7 @@ import re
 import stat
 import subprocess
 import tarfile
+import zlib
 
 
 class Invalid(ValueError):
@@ -131,7 +137,11 @@ def describe(path, name):
         link = os.readlink(path)
         require(not link.startswith('/') and chr(92) not in link and ':' not in link, 'unsafe link')
         return dict(kind='link', mode=mode, link=link)
-    return dict(kind='file', mode=mode, size=s.st_size, sha256=digest(path.read_bytes()))
+    h = hashlib.sha256()
+    with path.open('rb') as stream:
+        for block in iter(lambda: stream.read(1024 * 1024), b''):
+            h.update(block)
+    return dict(kind='file', mode=mode, size=s.st_size, sha256=h.hexdigest())
 
 
 def validate_links(entries):
@@ -151,6 +161,21 @@ def validate_links(entries):
             current = '/'.join(parts)
             require(current in entries and current not in seen, 'dangling/cyclic symlink')
             seen.add(current)
+
+
+def canonical_package_root(value, windows=None):
+    """Only filesystem spelling equivalence; never relocate an assets path."""
+    if windows is None:
+        windows = os.name == 'nt'
+    return ntpath.normcase(ntpath.normpath(str(value))) if windows else os.path.abspath(value)
+
+
+def require_package_root(assets, nuget, label, windows=None):
+    declared = assets.get('packageFolders', {})
+    require({canonical_package_root(folder, windows) for folder in declared}
+            == {canonical_package_root(nuget, windows)},
+            'assets packageFolders must match exact NuGet root: ' + label
+            + '; declared=' + repr(list(declared)) + '; expected=' + repr(str(nuget)))
 
 
 def collect(root, nuget):
@@ -191,8 +216,7 @@ def collect(root, nuget):
         if p.name != 'project.assets.json':
             continue
         data = json.loads(p.read_text())
-        require({str(Path(folder).absolute()) for folder in data.get('packageFolders', {})} == {str(nuget)},
-                'assets packageFolders must match exact NuGet root: ' + name)
+        require_package_root(data, nuget, name)
         for key, library in data.get('libraries', {}).items():
             if library.get('type') == 'package':
                 package = library.get('path', key.lower())
@@ -223,7 +247,12 @@ def create(archive, root, nuget, expected):
     validate_links(entries)
     manifest = dict(version=1, identity=expected, entries=entries,
                     producer_attempt=os.environ.get('GITHUB_RUN_ATTEMPT', ''))
-    with archive.open('xb') as output, tarfile.open(fileobj=output, mode='w', format=tarfile.PAX_FORMAT) as tf:
+    with ExitStack() as stack:
+        output = stack.enter_context(archive.open('xb'))
+        if archive.name.endswith('.gz'):
+            output = stack.enter_context(gzip.GzipFile(filename='', fileobj=output, mode='wb',
+                                                      compresslevel=1, mtime=0))
+        tf = stack.enter_context(tarfile.open(fileobj=output, mode='w|', format=tarfile.PAX_FORMAT))
         data = canonical(manifest)
         info = tarfile.TarInfo('manifest.json')
         info.size, info.mode = len(data), 0o644
@@ -241,95 +270,119 @@ def create(archive, root, nuget, expected):
     verify(archive, root, nuget, expected)
 
 
+@contextmanager
+def read_archive(raw):
+    """One forward-only tar pass; drain gzip through its CRC/trailer before success."""
+    raw.seek(0)
+    compressed = raw.read(2) == bytes((31, 139))
+    raw.seek(0)
+    with ExitStack() as stack:
+        stream = stack.enter_context(gzip.GzipFile(fileobj=raw, mode='rb')) if compressed else raw
+        tf = stack.enter_context(tarfile.open(fileobj=stream, mode='r|'))
+        yield tf
+        # tar stops at its end blocks; gzip corruption/truncation at the trailer
+        # must still fail during validation, before any consumer output is written.
+        for block in iter(lambda: stream.read(1024 * 1024), b''):
+            pass
+
+
+def read_manifest(tf):
+    first = tf.next()
+    require(first is not None and first.name == 'manifest.json' and first.isfile()
+            and first.size <= 64 * 1024 * 1024, 'missing/oversized manifest')
+    return json.load(tf.extractfile(first))
+
+
 def verify(archive, root, nuget, expected, extract=False, check_runtime=False):
     tracked = set(git(root, 'ls-files', '-z').decode().split(chr(0)))
-    with tarfile.open(archive, 'r:') as tf:
-        members = tf.getmembers()
-        require(members and members[0].name == 'manifest.json' and members[0].isfile()
-                and members[0].size <= 64 * 1024 * 1024, 'missing/oversized manifest')
-        manifest = json.load(tf.extractfile(members[0]))
-        require(manifest.get('version') == 1, 'unsupported manifest')
-        require(manifest.get('identity') == expected, 'prebuilt identity mismatch')
-        require(expected['rid'].startswith('win-') == (platform.system() == 'Windows'), 'RID/OS mismatch')
-        machine = platform.machine().lower()
-        require(expected['rid'].endswith('-arm64') == (machine in ('aarch64', 'arm64')), 'RID/architecture mismatch')
-        entries = manifest['entries']
-        require(isinstance(entries, dict) and entries, 'empty payload')
-        require(len(members) == len(entries) + 1, 'archive closure mismatch')
-        seen = set()
-        folded = set()
-        for info in members[1:]:
-            name = info.name
-            require(name.casefold() not in folded, 'case-colliding archive member')
-            folded.add(name.casefold())
-            require(name not in seen and name in entries, 'duplicate/unknown archive member')
-            seen.add(name)
-            destination = target(name, root, nuget)
-            require(not (name.startswith('workspace/') and name[10:] in tracked), 'tracked source payload')
-            entry = entries[name]
-            require(entry['mode'] == info.mode and not info.mode & ~0o777, 'invalid mode')
-            if entry['kind'] == 'file':
-                require(info.isfile() and info.size == entry['size'], 'invalid file type/size')
-                stream = tf.extractfile(info)
-                h = hashlib.sha256()
-                for block in iter(lambda: stream.read(1024 * 1024), b''):
-                    h.update(block)
-                require(h.hexdigest() == entry['sha256'], 'payload hash mismatch: ' + name)
-            else:
-                require(entry['kind'] == 'link' and info.issym() and info.linkname == entry['link'], 'invalid symlink')
-                require(not info.linkname.startswith('/') and chr(92) not in info.linkname and ':' not in info.linkname,
-                        'unsafe symlink')
-            no_link_parents(destination.parent)
-            if destination.exists() or destination.is_symlink():
-                require(describe(destination, name) == entry, 'refusing to overwrite existing path: ' + name)
-        validate_links(entries)
-        required_packages = set()
-        for info in members[1:]:
-            if info.name.endswith('/project.assets.json'):
-                require(info.isfile(), 'restore assets must be regular files')
-                assets = json.load(tf.extractfile(info))
-                require({str(Path(folder).absolute()) for folder in assets.get('packageFolders', {})} == {str(nuget)},
-                        'restore assets NuGet root mismatch')
-                for key, library in assets.get('libraries', {}).items():
-                    if library.get('type') == 'package':
-                        package = library.get('path', key.lower())
-                        require(len(clean(package)) == 2, 'invalid package path')
-                        required_packages.add(package)
-        for info in members[1:]:
-            if info.name == 'workspace/artifacts/dev-env/lavapipe.json':
-                driver = json.load(tf.extractfile(info))['ICD']['library_path']
-                if Path(driver).is_absolute():
-                    path = Path(driver)
-                    if root in path.parents:
-                        require('workspace/' + path.relative_to(root).as_posix() in entries,
-                                'missing absolute lavapipe library closure')
-                    elif check_runtime:
-                        require(path.is_file(), 'missing system lavapipe library')
-        actual_packages = {'/'.join(clean(n)[1:3]) for n in entries if n.startswith('nuget/')}
-        require(actual_packages == required_packages, 'NuGet package closure mismatch')
-        require(any('/bin/' in n for n in entries), 'missing bin closure')
-        require(any(n.endswith('/project.assets.json') for n in entries), 'missing restore closure')
-        for name in entries:
-            require(not any('/'.join(name.split('/')[:i]) in entries
-                            for i in range(1, len(name.split('/')))), 'payload ancestor collision')
-        require(seen == set(entries), 'missing payload member')
-        if extract:
-            # NuGet.config declares this source even when no local packages exist.
-            (root / 'artifacts/nuget').mkdir(parents=True, exist_ok=True)
-            for info in members[1:]:
-                destination = target(info.name, root, nuget)
-                if destination.exists() or destination.is_symlink():
-                    continue
-                destination.parent.mkdir(parents=True, exist_ok=True)
-                no_link_parents(destination.parent)
-                if info.issym():
-                    os.symlink(info.linkname, destination)
+    # Keep the same archive descriptor for both passes, never a raw tar spool.
+    with archive.open('rb') as raw:
+        with read_archive(raw) as tf:
+            manifest = read_manifest(tf)
+            require(manifest.get('version') == 1, 'unsupported manifest')
+            require(manifest.get('identity') == expected, 'prebuilt identity mismatch')
+            require(expected['rid'].startswith('win-') == (platform.system() == 'Windows'), 'RID/OS mismatch')
+            machine = platform.machine().lower()
+            require(expected['rid'].endswith('-arm64') == (machine in ('aarch64', 'arm64')), 'RID/architecture mismatch')
+            entries = manifest['entries']
+            require(isinstance(entries, dict) and entries, 'empty payload')
+            seen, folded, required_packages = set(), set(), set()
+            # tf.next() avoids iterating the already-consumed manifest twice.
+            while (info := tf.next()) is not None:
+                name = info.name
+                require(name.casefold() not in folded, 'case-colliding archive member')
+                folded.add(name.casefold())
+                require(name not in seen and name in entries, 'duplicate/unknown archive member')
+                seen.add(name)
+                destination = target(name, root, nuget)
+                require(not (name.startswith('workspace/') and name[10:] in tracked), 'tracked source payload')
+                entry = entries[name]
+                require(entry['mode'] == info.mode and not info.mode & ~0o777, 'invalid mode')
+                if entry['kind'] == 'file':
+                    require(info.isfile() and info.size == entry['size'], 'invalid file type/size')
+                    metadata = (name.endswith('/project.assets.json')
+                                or name == 'workspace/artifacts/dev-env/lavapipe.json')
+                    require(not metadata or info.size <= 64 * 1024 * 1024, 'oversized metadata')
+                    data = bytearray() if metadata else None
+                    stream = tf.extractfile(info)
+                    h = hashlib.sha256()
+                    for block in iter(lambda: stream.read(1024 * 1024), b''):
+                        h.update(block)
+                        if data is not None:
+                            data.extend(block)
+                    require(h.hexdigest() == entry['sha256'], 'payload hash mismatch: ' + name)
+                    if metadata:
+                        document = json.loads(data)
+                        if name.endswith('/project.assets.json'):
+                            require_package_root(document, nuget, name)
+                            for key, library in document.get('libraries', {}).items():
+                                if library.get('type') == 'package':
+                                    package = library.get('path', key.lower())
+                                    require(len(clean(package)) == 2, 'invalid package path')
+                                    required_packages.add(package)
+                        else:
+                            path = Path(document['ICD']['library_path'])
+                            if path.is_absolute():
+                                if root in path.parents:
+                                    require('workspace/' + path.relative_to(root).as_posix() in entries,
+                                            'missing absolute lavapipe library closure')
+                                elif check_runtime:
+                                    require(path.is_file(), 'missing system lavapipe library')
                 else:
-                    with destination.open('xb') as output:
-                        stream = tf.extractfile(info)
-                        for block in iter(lambda: stream.read(1024 * 1024), b''):
-                            output.write(block)
-                    destination.chmod(info.mode)
+                    require(entry['kind'] == 'link' and info.issym() and info.linkname == entry['link'], 'invalid symlink')
+                    require(not info.linkname.startswith('/') and chr(92) not in info.linkname and ':' not in info.linkname,
+                            'unsafe symlink')
+                no_link_parents(destination.parent)
+                if destination.exists() or destination.is_symlink():
+                    require(describe(destination, name) == entry, 'refusing to overwrite existing path: ' + name)
+            validate_links(entries)
+            actual_packages = {'/'.join(clean(n)[1:3]) for n in entries if n.startswith('nuget/')}
+            require(actual_packages == required_packages, 'NuGet package closure mismatch')
+            require(any('/bin/' in n for n in entries), 'missing bin closure')
+            require(any(n.endswith('/project.assets.json') for n in entries), 'missing restore closure')
+            for name in entries:
+                require(not any('/'.join(name.split('/')[:i]) in entries
+                                for i in range(1, len(name.split('/')))), 'payload ancestor collision')
+            require(seen == set(entries), 'missing payload member')
+        # Entire archive, metadata closure and gzip CRC passed before these writes.
+        if extract:
+            (root / 'artifacts/nuget').mkdir(parents=True, exist_ok=True)
+            with read_archive(raw) as tf:
+                require(read_manifest(tf) == manifest, 'archive changed between passes')
+                while (info := tf.next()) is not None:
+                    destination = target(info.name, root, nuget)
+                    if destination.exists() or destination.is_symlink():
+                        continue
+                    destination.parent.mkdir(parents=True, exist_ok=True)
+                    no_link_parents(destination.parent)
+                    if info.issym():
+                        os.symlink(info.linkname, destination)
+                    else:
+                        with destination.open('xb') as output:
+                            stream = tf.extractfile(info)
+                            for block in iter(lambda: stream.read(1024 * 1024), b''):
+                                output.write(block)
+                        destination.chmod(info.mode)
     return manifest
 
 
@@ -361,7 +414,7 @@ def main():
         else:
             verify(args.archive, root, nuget, expected, args.command == 'extract', args.check_runtime)
         print('prebuilt ' + args.command + ': verified')
-    except (Invalid, OSError, ValueError, KeyError, TypeError, tarfile.TarError,
+    except (Invalid, OSError, EOFError, ValueError, KeyError, TypeError, tarfile.TarError, zlib.error,
             subprocess.CalledProcessError) as error:
         parser.exit(1, 'prebuilt: ' + str(error) + chr(10))
 
