@@ -10,6 +10,10 @@ namespace Lumyte.UI.Application.WebView.Cef;
 internal sealed class CefHelperSession : IDisposable
 {
     private readonly object _gate = new();
+    private readonly CefScriptRequests _scripts = new();
+    private readonly Queue<(long Epoch, Uri Source, string Json)> _messages = new();
+    private readonly Queue<bool> _focusReturns = new();
+    private readonly string[] _origins;
     private readonly CefWebViewOptions _options;
     private readonly WebViewPixelBudget _budget;
     private readonly Action _wake;
@@ -18,6 +22,10 @@ internal sealed class CefHelperSession : IDisposable
     private readonly Task _lifetime;
     private readonly CefExecutionScope _execution;
     private readonly bool _ownsExecution;
+    private long _documentEpoch;
+    private long _commandSequence;
+    private uint _features;
+
     private CefSharedFrames? _sharedFrames;
     private bool _runtimeRetired;
     private ExceptionDispatchInfo? _cleanupFailure;
@@ -41,6 +49,7 @@ internal sealed class CefHelperSession : IDisposable
     internal CefHelperSession(Uri uri, WebViewPixelBudget budget, Action wake, CefWebViewOptions options, CefExecutionScope? execution = null, bool ownsExecution = false)
     {
         _options = options;
+        _origins = CefMessageOrigins.Snapshot(options.AllowedMessageOrigins);
         _budget = budget;
         _wake = wake;
         _snapshot = new(UiWebViewState.Creating, uri);
@@ -69,6 +78,30 @@ internal sealed class CefHelperSession : IDisposable
     internal Process? CleanupOwner => _cleanupOwner;
 
     internal string? OwnedDirectory => _ownedDirectory;
+
+    internal long DocumentEpoch
+    {
+        get
+        {
+            lock (_gate)
+            {
+                return _documentEpoch;
+            }
+        }
+    }
+
+    internal uint Features
+    {
+        get
+        {
+            lock (_gate)
+            {
+                return _ready && !_closing && _snapshot.State == UiWebViewState.Ready ? _features : 0;
+            }
+        }
+    }
+
+    internal bool MessagesEnabled => _origins.Length != 0;
 
     public void Dispose()
     {
@@ -163,6 +196,8 @@ internal sealed class CefHelperSession : IDisposable
         lock (_gate)
         {
             _closing = true;
+            _scripts.Abort("cef-script-closed");
+            _messages.Clear();
         }
 
         _stop.Cancel();
@@ -201,6 +236,63 @@ internal sealed class CefHelperSession : IDisposable
         _wake();
     }
 
+    internal Task<string> EvaluateAsync(string script, TimeSpan timeout, CancellationToken token)
+    {
+        lock (_gate)
+        {
+            CheckReady(2);
+            if (_documentEpoch <= 0)
+            {
+                throw new UiWebViewScriptException("cef-script-context-unavailable");
+            }
+
+            return _scripts.EvaluateAsync(script, _documentEpoch, timeout, token, body => QueueChecked(new(10, Body: body)));
+        }
+    }
+
+    internal void SendInput(byte[][] bodies)
+    {
+        lock (_gate)
+        {
+            CheckReady(1);
+            if (bodies.Length > 16 || _commands.Reader.Count + bodies.Length > 16)
+            {
+                Fail("cef-input-queue-full");
+                throw new InvalidOperationException("cef-input-queue-full");
+            }
+
+            foreach (byte[] body in bodies)
+            {
+                QueueChecked(new(9, Body: body));
+            }
+        }
+    }
+
+    internal bool TryTakeMessage(out (long Epoch, Uri Source, string Json) message)
+    {
+        lock (_gate)
+        {
+            while (_messages.TryDequeue(out message))
+            {
+                if (message.Epoch == _documentEpoch && !_closing && _snapshot.State == UiWebViewState.Ready)
+                {
+                    return true;
+                }
+            }
+
+            message = default;
+            return false;
+        }
+    }
+
+    internal bool TryTakeFocusReturn(out bool forward)
+    {
+        lock (_gate)
+        {
+            return _focusReturns.TryDequeue(out forward);
+        }
+    }
+
     private static async Task DrainDiagnosticsAsync(StreamReader reader, CancellationToken token)
     {
         // Never retain unbounded native stderr or leak addresses/profile information to UI.
@@ -210,9 +302,32 @@ internal sealed class CefHelperSession : IDisposable
         }
     }
 
+    private void CheckReady(uint feature)
+    {
+        if (_closing || _snapshot.State != UiWebViewState.Ready)
+        {
+            throw new InvalidOperationException("cef-not-ready");
+        }
+
+        if ((_features & feature) == 0)
+        {
+            throw new NotSupportedException("cef-feature-unavailable");
+        }
+    }
+
+    private void QueueChecked(CefHelperPacket packet)
+    {
+        CheckReady(packet.Kind == 9 ? 1u : 2u);
+        if (!_commands.Writer.TryWrite(packet with { Sequence = checked(++_commandSequence) }))
+        {
+            Fail("cef-command-queue-full");
+            throw new InvalidOperationException("cef-command-queue-full");
+        }
+    }
+
     private void Queue(CefHelperPacket packet)
     {
-        if (!_commands.Writer.TryWrite(packet))
+        if (!_commands.Writer.TryWrite(packet with { Sequence = checked(++_commandSequence) }))
         {
             Fail("cef-command-queue-full");
         }
@@ -222,6 +337,8 @@ internal sealed class CefHelperSession : IDisposable
     {
         lock (_gate)
         {
+            _scripts.Abort("cef-script-browser-faulted");
+            _messages.Clear();
             if (!_closing && _snapshot.State != UiWebViewState.Faulted)
             {
                 _snapshot = _snapshot with { State = UiWebViewState.Faulted, FailureCode = reason, Loading = false };
@@ -390,7 +507,7 @@ internal sealed class CefHelperSession : IDisposable
                     ViewPixels.Resize(-1);
                 }
 
-                startPacket = new(1, Width: initialWidth, Height: initialHeight, Body: Encoding.UTF8.GetBytes(uri.AbsoluteUri));
+                startPacket = new(1, Width: initialWidth, Height: initialHeight, Body: CefMessageOrigins.Start(uri, _origins));
             }
 
             await CefHelperProtocol.WriteAsync(process.StandardInput.BaseStream, startPacket, startup.Token);
@@ -412,7 +529,7 @@ internal sealed class CefHelperSession : IDisposable
                 return;
             }
 
-            if (first.Kind != 101 || first.Sequence < 0 || !_sharedFrames.MatchesReady(first.Body))
+            if (first.Kind != 101 || first.Sequence < 0 || first.Body is not { Length: 32 } || !_sharedFrames.MatchesReady(first.Body[..24]) || System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(first.Body.AsSpan(24)) != 2 || (System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(first.Body.AsSpan(28)) & ~7u) != 0)
             {
                 throw new InvalidDataException("cef-helper-not-ready");
             }
@@ -424,6 +541,7 @@ internal sealed class CefHelperSession : IDisposable
                 _navigationStarted = Stopwatch.GetTimestamp();
                 _eventSequence = first.Sequence;
                 _ready = true;
+                _features = System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(first.Body!.AsSpan(28));
                 if (_pendingViewport is { } viewport)
                 {
                     Queue(viewport);
@@ -479,7 +597,7 @@ internal sealed class CefHelperSession : IDisposable
                     switch (packet.Kind)
                     {
                         case 102:
-                            string address = Encoding.UTF8.GetString(packet.Body!);
+                            string address = CefScriptRequests.Utf8.GetString(packet.Body!);
                             if (!Uri.TryCreate(address, UriKind.Absolute, out Uri? observed) || observed.Scheme is not ("http" or "https"))
                             {
                                 throw new InvalidDataException("cef-protocol-uri");
@@ -498,6 +616,42 @@ internal sealed class CefHelperSession : IDisposable
                             // Notice only; authoritative pixels and frame sequence are in the ring.
                             break;
                         case 104: Fail("cef-helper-fault"); break;
+                        case 106: _scripts.Complete(packet.Body!); break;
+                        case 107:
+                            ReadMessage(packet.Body!);
+                            break;
+                        case 108:
+                            if (packet.Body is not { Length: 8 })
+                            {
+                                throw new InvalidDataException("cef-document-epoch");
+                            }
+
+                            long epoch = System.Buffers.Binary.BinaryPrimitives.ReadInt64LittleEndian(packet.Body);
+                            if (epoch <= _documentEpoch)
+                            {
+                                throw new InvalidDataException("cef-document-epoch");
+                            }
+
+                            _documentEpoch = epoch;
+                            _scripts.Abort("cef-script-navigation-aborted");
+                            _messages.Clear();
+                            _loading = true;
+                            _navigationStarted = Stopwatch.GetTimestamp();
+                            _snapshot = _snapshot with { Loading = true }; _dirty = true;
+                            break;
+                        case 109:
+                            if (packet.Body is not { Length: 4 } || packet.Body[0] > 1 || packet.Body[1] != 0 || packet.Body[2] != 0 || packet.Body[3] != 0)
+                            {
+                                throw new InvalidDataException("cef-focus-return");
+                            }
+
+                            if (_focusReturns.Count == 16)
+                            {
+                                throw new InvalidDataException("cef-focus-queue-full");
+                            }
+
+                            _focusReturns.Enqueue(packet.Body[0] == 0);
+                            break;
                         default: throw new InvalidDataException("cef-protocol-kind");
                     }
 
@@ -514,9 +668,9 @@ internal sealed class CefHelperSession : IDisposable
         {
             Fail("cef-startup-timeout");
         }
-        catch (InvalidDataException)
+        catch (InvalidDataException error)
         {
-            Fail("cef-helper-protocol");
+            Fail(error.Message == "cef-helper-protocol-incompatible" ? error.Message : "cef-helper-protocol");
         }
         catch (EndOfStreamException)
         {
@@ -655,6 +809,41 @@ internal sealed class CefHelperSession : IDisposable
 
             _wake();
         }
+    }
+
+    private void ReadMessage(byte[] body)
+    {
+        if (body.Length < 13)
+        {
+            throw new InvalidDataException("cef-message-size");
+        }
+
+        long epoch = System.Buffers.Binary.BinaryPrimitives.ReadInt64LittleEndian(body);
+        uint length = System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(body.AsSpan(8));
+        if (length == 0 || length > body.Length - 12)
+        {
+            throw new InvalidDataException("cef-message-source");
+        }
+
+        string source = CefScriptRequests.Utf8.GetString(body.AsSpan(12, (int)length));
+        string json = CefScriptRequests.Utf8.GetString(body.AsSpan(12 + (int)length));
+        bool depthAllowed = CefScriptRequests.ValidateJson(json);
+        if (!Uri.TryCreate(source, UriKind.Absolute, out Uri? uri) || !CefMessageOrigins.Allows(_origins, uri))
+        {
+            throw new InvalidDataException("cef-message-origin");
+        }
+
+        if (!depthAllowed || epoch != _documentEpoch)
+        {
+            return;
+        }
+
+        if (_messages.Count == 16)
+        {
+            throw new InvalidDataException("cef-message-queue-full");
+        }
+
+        _messages.Enqueue((epoch, uri, json));
     }
 
     private void ReportCleanupFailure()

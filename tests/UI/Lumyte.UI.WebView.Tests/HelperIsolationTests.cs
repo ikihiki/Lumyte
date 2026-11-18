@@ -488,6 +488,58 @@ public sealed class HelperIsolationTests
         }
     }
 
+    /// <summary>A real engine-free helper negotiates features and completes a correlated script without blocking its owner.</summary>
+    /// <returns>The asynchronous verification.</returns>
+    [CefHelperFact]
+    public async Task NegotiatedScriptRoundtripAsync()
+    {
+        string executable = CopyHelper("input-js");
+        try
+        {
+            using var helper = new CefHelperSession(new("https://example.test/"), new(1048576), () => { }, new() { HelperExecutablePath = executable });
+            await WaitAsync(() => helper.DocumentEpoch == 1);
+            Assert.Equal(7u, helper.Features);
+            Assert.False(helper.MessagesEnabled);
+            Assert.Equal("42", await helper.EvaluateAsync("21*2", TimeSpan.FromSeconds(1), default));
+            helper.SendInput([CefInputCodec.Focus(true, 1), CefInputCodec.Focus(false, 1)]);
+            helper.Close();
+            await helper.Completion.WaitAsync(TimeSpan.FromSeconds(5));
+        }
+        finally
+        {
+            Directory.Delete(Path.GetDirectoryName(executable)!, true);
+        }
+    }
+
+    /// <summary>Valid deep data is rejected locally while the IPC session stays ready.</summary>
+    /// <returns>The asynchronous verification.</returns>
+    [CefHelperFact]
+    public async Task DeepDataDoesNotFaultBrowserAsync()
+    {
+        string executable = CopyHelper("input-js");
+        try
+        {
+            using var helper = new CefHelperSession(new("https://example.test/"), new(1048576), () => { }, new() { HelperExecutablePath = executable, AllowedMessageOrigins = ["https://example.test"] });
+            await WaitAsync(() => helper.DocumentEpoch == 1);
+            UiWebViewScriptException error = await Assert.ThrowsAsync<UiWebViewScriptException>(() => helper.EvaluateAsync("deep", TimeSpan.FromSeconds(2), default));
+            Assert.Equal("cef-script-result-depth-limit", error.Code);
+            Assert.Equal("42", await helper.EvaluateAsync("deep-message", TimeSpan.FromSeconds(2), default));
+            Assert.True(helper.TryTakeMessage(out (long Epoch, Uri Source, string Json) message));
+            Assert.Equal("42", message.Json);
+            Assert.False(helper.TryTakeMessage(out _));
+            Assert.Equal(7u, helper.Features);
+            helper.TryTakeSnapshot(out HelperSnapshot snapshot);
+            Assert.Equal(UiWebViewState.Ready, snapshot.State);
+            Assert.Equal("42", await helper.EvaluateAsync("21*2", TimeSpan.FromSeconds(2), default));
+            helper.Close();
+            await helper.Completion.WaitAsync(TimeSpan.FromSeconds(5));
+        }
+        finally
+        {
+            Directory.Delete(Path.GetDirectoryName(executable)!, true);
+        }
+    }
+
     private static CefHelperSession Create(string? executable) => new(new("https://example.test/"), new(1048576), () => { }, new() { HelperExecutablePath = executable, StartupTimeout = TimeSpan.FromSeconds(2), NavigationTimeout = TimeSpan.FromMilliseconds(400) });
 
     private static string CopyHelper(string mode)

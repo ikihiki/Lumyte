@@ -1,4 +1,4 @@
-//! Internal helper protocol. No user-input injection capability is exposed.
+//! Bounded version-2 helper control protocol.
 use std::io::{self, Read, Write};
 pub const MAX: usize = HEADER + 4096;
 pub const MAX_PIXELS: usize = 16 * 1024 * 1024;
@@ -27,7 +27,7 @@ impl Packet {
         reader.read_exact(&mut h)?;
         let u32_at = |i| u32::from_le_bytes(h[i..i + 4].try_into().unwrap());
         let i64_at = |i| i64::from_le_bytes(h[i..i + 8].try_into().unwrap());
-        if u64::from_le_bytes(h[4..12].try_into().unwrap()) != 1
+        if u64::from_le_bytes(h[4..12].try_into().unwrap()) != 2
             || u32_at(36) as usize != length - HEADER
         {
             return Err(io::Error::other("invalid packet header"));
@@ -53,7 +53,7 @@ impl Packet {
         }
         writer.write_all(&((HEADER + self.body.len()) as u32).to_le_bytes())?;
         writer.write_all(&self.kind.to_le_bytes())?;
-        writer.write_all(&1u64.to_le_bytes())?;
+        writer.write_all(&2u64.to_le_bytes())?;
         writer.write_all(&self.generation.to_le_bytes())?;
         writer.write_all(&self.sequence.to_le_bytes())?;
         writer.write_all(&self.width.to_le_bytes())?;
@@ -104,6 +104,22 @@ mod tests {
             assert!(Packet::read(&mut &n.to_le_bytes()[..]).is_err());
         }
         assert!(Packet::read(&mut &[][..]).unwrap().is_none());
+    }
+    #[test]
+    fn version_one_is_rejected() {
+        let p = Packet {
+            kind: 4,
+            generation: 0,
+            sequence: 0,
+            width: 1,
+            height: 1,
+            body: vec![],
+        };
+        let mut b = vec![];
+        p.write(&mut b).unwrap();
+        assert_eq!(&b[8..16], &2u64.to_le_bytes());
+        b[8..16].copy_from_slice(&1u64.to_le_bytes());
+        assert!(Packet::read(&mut b.as_slice()).is_err());
     }
     #[test]
     fn viewport_bound() {

@@ -36,8 +36,20 @@ public static partial class BrowserSampleUi
         public static Widget BrowserPane(Uri initialUri)
         {
             UiWebViewSession browser = UseWebView("page", initialUri);
-            Widget view = WebCompose.WebView(session: browser, width: 640, height: 360, automationName: "Optional read-only browser");
-            return Panel(width: 688, height: 400, clipToBounds: true, with: [Padding.All(12)], automationName: "Browser container")[view];
+            Widget view = WebCompose.WebView(session: browser, width: 640, height: 360, automationName: "Optional browser");
+            Widget script = Button(width: 160, height: 32, automationName: "Evaluate document title", onClick: async () =>
+            {
+                try
+                {
+                    string json = await browser.EvaluateScriptAsync("document.title");
+                    Console.Error.WriteLine($"Browser title JSON: {json}");
+                }
+                catch (Exception error) when (error is InvalidOperationException or NotSupportedException or UiWebViewScriptException or OperationCanceledException)
+                {
+                    Console.Error.WriteLine($"Browser script unavailable: {error.GetType().Name}");
+                }
+            });
+            return Stack(spacing: 8)[script, Panel(width: 688, height: 400, clipToBounds: true, with: [Padding.All(12)], automationName: "Browser container")[view]];
         }
     }
 }

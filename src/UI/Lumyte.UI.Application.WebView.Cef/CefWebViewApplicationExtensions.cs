@@ -3,7 +3,7 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Lumyte.UI.Application.WebView.Cef;
 
-/// <summary>Registers the explicit optional process-isolated, read-only browser fallback.</summary>
+/// <summary>Registers the explicit optional process-isolated browser backend.</summary>
 public static class CefWebViewApplicationExtensions
 {
     /// <summary>Registers one CEF runtime; the optional helper starts asynchronously on explicit session use.</summary>
@@ -15,6 +15,7 @@ public static class CefWebViewApplicationExtensions
         ArgumentNullException.ThrowIfNull(builder);
         ArgumentNullException.ThrowIfNull(options);
         builder.CheckMutable();
+        options = options with { AllowedMessageOrigins = CefMessageOrigins.Snapshot(options.AllowedMessageOrigins) };
         if (options.MaximumSessions != 1 || options.StartupTimeout <= TimeSpan.Zero || options.StartupTimeout > TimeSpan.FromMinutes(2) || options.NavigationTimeout <= TimeSpan.Zero || options.NavigationTimeout > TimeSpan.FromMinutes(2) || options.CpuPixelBudgetBytes <= 0 || options.GpuImageBudgetBytes <= 0)
         {
             throw new ArgumentOutOfRangeException(nameof(options));

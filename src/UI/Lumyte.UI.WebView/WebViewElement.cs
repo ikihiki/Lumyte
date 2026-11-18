@@ -42,10 +42,22 @@ public sealed class WebViewElement : UiElement<WebViewWidget>
             return UiInputResult.Handled;
         }
 
-        if (context.Input is UiPointerInput { Phase: UiPointerPhase.Down })
+        // Touch and pen are deliberately unsupported: do not focus or capture them.
+        if (context.Input is UiPointerInput { Device: not UiPointerDevice.Mouse }
+            || context.Input is not (UiPointerInput or UiWheelInput or UiKeyInput or UiKeyCancelInput or UiCommittedTextInput or UiFocusLostInput))
+        {
+            return UiInputResult.Unhandled;
+        }
+
+        if (context.Input is UiPointerInput { Device: UiPointerDevice.Mouse, Phase: UiPointerPhase.Down })
         {
             context.RequestFocus();
             context.CapturePointer();
+        }
+
+        if (context.Input is UiKeyInput { IsDown: true })
+        {
+            context.CaptureKey();
         }
 
         host.Input(context.Input, context.PointerPosition);
@@ -95,12 +107,14 @@ public sealed class WebViewElement : UiElement<WebViewWidget>
         Widget.Session!.Attach(this);
         Widget.Session.PixelsChanged += InvalidateDrawing;
         Widget.Session.FocusReturn += ReturnFocus;
+        Widget.Session.WebMessageReceived += ReceiveMessage;
     }
 
     /// <inheritdoc/>
     protected override void OnUnmounted()
     {
-        Widget.Session!.FocusReturn -= ReturnFocus;
+        Widget.Session!.WebMessageReceived -= ReceiveMessage;
+        Widget.Session.FocusReturn -= ReturnFocus;
         Widget.Session.PixelsChanged -= InvalidateDrawing;
         Widget.Session.Detach(this);
     }
@@ -112,11 +126,13 @@ public sealed class WebViewElement : UiElement<WebViewWidget>
         {
             // Acquire first: an unexpected ownership violation must not detach the old session.
             Widget.Session!.Attach(this);
-            previous.Session!.FocusReturn -= ReturnFocus;
+            previous.Session!.WebMessageReceived -= ReceiveMessage;
+            previous.Session.FocusReturn -= ReturnFocus;
             previous.Session.PixelsChanged -= InvalidateDrawing;
             previous.Session.Detach(this);
             Widget.Session.PixelsChanged += InvalidateDrawing;
             Widget.Session.FocusReturn += ReturnFocus;
+            Widget.Session.WebMessageReceived += ReceiveMessage;
         }
     }
 
@@ -132,6 +148,8 @@ public sealed class WebViewElement : UiElement<WebViewWidget>
             }
         }
     }
+
+    private void ReceiveMessage(object? sender, UiWebMessageReceivedEventArgs message) => Widget.OnWebMessageReceived?.Invoke(message);
 
     private void ReturnFocus(bool forward)
     {

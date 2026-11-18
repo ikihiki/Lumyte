@@ -32,7 +32,7 @@ public static partial class WebViewFunctionUi
         [Composable(Factory = "WebViewFunctionUi")]
         public static Widget HelpPane(Probe probe)
         {
-            _ = probe.Revision.Value;
+            int revision = probe.Revision.Value;
             Signal<int> local = UseSignal(0);
             _ = local.Value;
             UiWebViewSession browser = UseWebView(probe.SessionKey, probe.InitialUri);
@@ -44,9 +44,16 @@ public static partial class WebViewFunctionUi
                 local.Value++;
                 probe.Clicks++;
             };
+            Action<UiWebMessageReceivedEventArgs> receive = message =>
+            {
+                local.Value++;
+                probe.Messages++;
+                probe.LastMessageRevision = revision;
+                probe.LastMessage = message.Json;
+            };
             return Stack(spacing: 3)[
                 Button(width: 120, height: 18, automationName: "browser-state", onClick: probe.Click),
-                probe.ShowView ? WebCompose.WebView(session: browser, width: 180, height: 110, automationName: "help-browser") : Panel(width: 180, height: 110)];
+                probe.ShowView ? WebCompose.WebView(session: browser, width: 180, height: 110, automationName: "help-browser", onWebMessageReceived: receive) : Panel(width: 180, height: 110)];
         }
     }
 
@@ -73,6 +80,15 @@ public static partial class WebViewFunctionUi
 
         /// <summary>Gets or sets the captured ordinary button callback.</summary>
         public Action? Click { get; set; }
+
+        /// <summary>Gets the number of declarative message callbacks.</summary>
+        public int Messages { get; internal set; }
+
+        /// <summary>Gets the callback's captured render revision.</summary>
+        public int LastMessageRevision { get; internal set; }
+
+        /// <summary>Gets the latest payload.</summary>
+        public string? LastMessage { get; internal set; }
 
         /// <summary>Gets the number of button invocations.</summary>
         public int Clicks { get; internal set; }

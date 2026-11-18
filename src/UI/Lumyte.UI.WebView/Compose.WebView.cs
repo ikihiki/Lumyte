@@ -24,6 +24,10 @@ public static partial class Compose
             [ComposeParameter]
             public UiWebViewSession? Session { get; set; }
 
+            /// <summary>Gets or sets the owner-thread message callback for this mounted view.</summary>
+            [ComposeParameter]
+            public Action<UiWebMessageReceivedEventArgs>? OnWebMessageReceived { get; set; }
+
             /// <inheritdoc/>
             protected override UiElement CreateElement() => new WebViewElement(this);
 

@@ -34,6 +34,8 @@ if (mode.EndsWith("argumentproof", StringComparison.Ordinal))
 Stream input = Console.OpenStandardInput();
 Stream output = Console.OpenStandardOutput();
 CefHelperPacket start = await CefHelperProtocol.ReadAsync(input, CancellationToken.None);
+using var startJson = System.Text.Json.JsonDocument.Parse(start.Body!);
+byte[] startUrl = Encoding.UTF8.GetBytes(startJson.RootElement.GetProperty("url").GetString()!);
 if (mode.Contains("orphan-", StringComparison.Ordinal))
 {
     string marker = Path.Combine(Path.GetDirectoryName(Environment.ProcessPath)!, "child.txt");
@@ -77,7 +79,14 @@ if (mode.EndsWith("malformed", StringComparison.Ordinal))
 }
 
 using var frames = new FakeSharedFrameProducer(Environment.GetEnvironmentVariable("TMPDIR")!);
-byte[] readyBody = frames.ReadyBody;
+byte[] readyBody = new byte[32];
+frames.ReadyBody.CopyTo(readyBody, 0);
+System.Buffers.Binary.BinaryPrimitives.WriteUInt32LittleEndian(readyBody.AsSpan(24), 2);
+if (mode.EndsWith("input-js", StringComparison.Ordinal))
+{
+    System.Buffers.Binary.BinaryPrimitives.WriteUInt32LittleEndian(readyBody.AsSpan(28), 7);
+}
+
 if (mode.EndsWith("stale-ready", StringComparison.Ordinal))
 {
     readyBody[23] ^= 1;
@@ -95,6 +104,11 @@ if (mode.EndsWith("ready-frame", StringComparison.Ordinal))
 }
 
 await CefHelperProtocol.WriteAsync(output, new(101, Body: readyBody), CancellationToken.None);
+if (mode.EndsWith("input-js", StringComparison.Ordinal))
+{
+    await CefHelperProtocol.WriteAsync(output, new(108, Body: BitConverter.GetBytes(1L)), CancellationToken.None);
+}
+
 if (mode.EndsWith("navigationhang", StringComparison.Ordinal))
 {
     await Task.Delay(Timeout.Infinite);
@@ -102,8 +116,8 @@ if (mode.EndsWith("navigationhang", StringComparison.Ordinal))
 
 if (mode.EndsWith("sequence-rewind", StringComparison.Ordinal))
 {
-    await CefHelperProtocol.WriteAsync(output, new(102, Sequence: 10, Body: start.Body), CancellationToken.None);
-    await CefHelperProtocol.WriteAsync(output, new(102, Sequence: 9, Body: start.Body), CancellationToken.None);
+    await CefHelperProtocol.WriteAsync(output, new(102, Sequence: 10, Body: startUrl), CancellationToken.None);
+    await CefHelperProtocol.WriteAsync(output, new(102, Sequence: 9, Body: startUrl), CancellationToken.None);
     return;
 }
 
@@ -112,7 +126,7 @@ if (mode.EndsWith("backpressure", StringComparison.Ordinal))
     await Task.Delay(Timeout.Infinite);
 }
 
-await CefHelperProtocol.WriteAsync(output, new(102, Body: start.Body), CancellationToken.None);
+await CefHelperProtocol.WriteAsync(output, new(102, Body: startUrl), CancellationToken.None);
 while (true)
 {
     CefHelperPacket packet;
@@ -137,12 +151,35 @@ while (true)
         if (mode.EndsWith("lost-notice", StringComparison.Ordinal))
         {
             // Model a full native frame-notification queue: final frame only has a state wake.
-            await CefHelperProtocol.WriteAsync(output, new(102, Body: start.Body), CancellationToken.None);
+            await CefHelperProtocol.WriteAsync(output, new(102, Body: startUrl), CancellationToken.None);
         }
         else
         {
             await CefHelperProtocol.WriteAsync(output, new(103, packet.Generation, Width: packet.Width, Height: packet.Height), CancellationToken.None);
         }
+    }
+    else if (packet.Kind == 10 && mode.EndsWith("input-js", StringComparison.Ordinal))
+    {
+        string script = Encoding.UTF8.GetString(packet.Body!.AsSpan(20));
+        string json = script == "deep" ? new string('[', 65) + "0" + new string(']', 65) : "42";
+        if (script == "deep-message")
+        {
+            byte[] source = Encoding.UTF8.GetBytes("https://example.test/");
+            foreach (string value in new[] { new string('[', 65) + "0" + new string(']', 65), "42" })
+            {
+                byte[] message = new byte[12 + source.Length + Encoding.UTF8.GetByteCount(value)];
+                BitConverter.GetBytes(1L).CopyTo(message, 0);
+                BitConverter.GetBytes((uint)source.Length).CopyTo(message, 8);
+                source.CopyTo(message, 12);
+                Encoding.UTF8.GetBytes(value).CopyTo(message, 12 + source.Length);
+                await CefHelperProtocol.WriteAsync(output, new(107, Body: message), CancellationToken.None);
+            }
+        }
+
+        byte[] result = new byte[20 + Encoding.UTF8.GetByteCount(json)];
+        packet.Body.AsSpan(0, 16).CopyTo(result);
+        Encoding.UTF8.GetBytes(json).CopyTo(result, 20);
+        await CefHelperProtocol.WriteAsync(output, new(106, Body: result), CancellationToken.None);
     }
     else if (packet.Kind is 2 or 5 or 6 or 7 or 8)
     {

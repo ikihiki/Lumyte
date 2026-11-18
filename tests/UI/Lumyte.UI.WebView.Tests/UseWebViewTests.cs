@@ -254,6 +254,58 @@ public sealed class UseWebViewTests
         }
     }
 
+    /// <summary>Generated function message callbacks stay latest and exactly once through ownership transitions.</summary>
+    [Fact]
+    public void DeclarativeMessageCallbackTracksMountedWidget()
+    {
+        var probe = new WebViewFunctionUi.Probe();
+        var provider = new Sessions();
+        Widget Tree() => ProvideWebViewSessions(provider, WebViewFunctionUi.HelpPane(probe));
+        using var surface = new UiSurface(Tree());
+        surface.UpdateLayout();
+        UiWebViewSession first = probe.Sessions[^1];
+        first.Update(UiWebViewState.Ready);
+        first.HostMessagesAvailable = true;
+        for (int index = 0; index < 10; index++)
+        {
+            probe.Revision.Value = index;
+            surface.Rebuild(Tree());
+            surface.UpdateLayout();
+            first.ReceiveMessage(new("https://example.invalid/"), "42");
+            Assert.Equal(index + 1, probe.Messages);
+            Assert.Equal(index, probe.LastMessageRevision);
+            Assert.Equal("42", probe.LastMessage);
+            surface.UpdateLayout();
+        }
+
+        probe.ShowView = false;
+        surface.Rebuild(Tree());
+        surface.UpdateLayout();
+        first.ReceiveMessage(new("https://example.invalid/"), "42");
+        Assert.Equal(10, probe.Messages);
+        Assert.Equal(UiWebViewState.Ready, first.State);
+        probe.ShowView = true;
+        surface.Rebuild(Tree());
+        surface.UpdateLayout();
+        first.ReceiveMessage(new("https://example.invalid/"), "42");
+        Assert.Equal(11, probe.Messages);
+        probe.SessionKey = "second";
+        surface.Rebuild(Tree());
+        surface.UpdateLayout();
+        UiWebViewSession second = probe.Sessions[^1];
+        Assert.NotSame(first, second);
+        second.Update(UiWebViewState.Ready);
+        second.HostMessagesAvailable = true;
+        first.ReceiveMessage(new("https://example.invalid/"), "42");
+        Assert.Equal(11, probe.Messages);
+        second.ReceiveMessage(new("https://example.invalid/"), "43");
+        Assert.Equal(12, probe.Messages);
+        surface.Dispose();
+        second.ReceiveMessage(new("https://example.invalid/"), "44");
+        Assert.Equal(12, probe.Messages);
+        Assert.Equal(UiWebViewState.Ready, second.State);
+    }
+
     private static UiApplicationBuilder Builder()
     {
         UiApplicationBuilder builder = UiApplication.CreateBuilder().UseHeadless().Configure(new() { FrameInterval = TimeSpan.FromMilliseconds(1) });

@@ -113,10 +113,23 @@ internal sealed class CefWebViewParticipant(CefWebViewOptions options, IUiDispat
                 entry.AdvanceUpload(window.Closing);
                 if (entry.Engine.TryTakeSnapshot(out HelperSnapshot state))
                 {
+                    entry.Session.InputAvailable = (entry.Engine.Features & 1) != 0;
+                    entry.Session.ScriptAvailable = (entry.Engine.Features & 2) != 0;
+                    entry.Session.HostMessagesAvailable = (entry.Engine.Features & 4) != 0 && entry.Engine.MessagesEnabled;
                     entry.Session.NotifyPixelsChanged();
 
                     // Native close is phase one; only phase two publishes Closed.
                     entry.Session.Update(state.State == UiWebViewState.Closed ? UiWebViewState.Closing : state.State, state.Uri, state.Loading, state.Back, state.Forward, state.FailureCode, state.Sequence);
+                }
+
+                while (entry.Engine.TryTakeMessage(out (long Epoch, Uri Source, string Json) message))
+                {
+                    entry.Session.ReceiveMessage(message.Source, message.Json);
+                }
+
+                while (entry.Engine.TryTakeFocusReturn(out bool forward))
+                {
+                    entry.Session.ReturnFocus(forward);
                 }
             }
         }
@@ -159,6 +172,7 @@ internal sealed class CefWebViewParticipant(CefWebViewOptions options, IUiDispat
                 entry.Session.PopupImage = null;
                 entry.Session.Host = null;
                 entry.Session.CancelHost = null;
+                entry.Session.EvaluateScript = null;
                 entry.Engine.Dispose();
                 entry.Session.Update(UiWebViewState.Closed);
             }
@@ -202,6 +216,7 @@ internal sealed class CefWebViewParticipant(CefWebViewOptions options, IUiDispat
         var session = new UiWebViewSession(uri, context.CheckOwner, engine.Send);
         var entry = new Entry(context, session, engine, _cpu, _gpu);
         session.NavigationCommandsAvailable = false;
+        session.EvaluateScript = engine.EvaluateAsync;
         session.Host = entry;
         session.CancelHost = engine.Close;
         window.Entries.Add(key, entry);
@@ -273,6 +288,7 @@ internal sealed class CefWebViewParticipant(CefWebViewOptions options, IUiDispat
 
         private float _scale = 1;
         private Vector2 _size;
+        private Vector2 _wheelResidual;
         private bool _visible;
         private bool _uploadFaulted;
 
@@ -318,14 +334,62 @@ internal sealed class CefWebViewParticipant(CefWebViewOptions options, IUiDispat
             }
         }
 
-        // The software helper is explicitly read-only; no silently successful input forwarding.
         public void Focus(bool focused)
         {
+            window.CheckOwner();
+            if (!focused)
+            {
+                _wheelResidual = default;
+            }
+
+            if (Session.State != UiWebViewState.Ready || !Session.InputAvailable)
+            {
+                return;
+            }
+
+            try
+            {
+                Engine.SendInput([CefInputCodec.Focus(focused, Engine.DocumentEpoch)]);
+            }
+            catch (InvalidOperationException)
+            {
+                Session.ReportUnsupportedInput();
+            }
         }
 
-        public void Detach() => Viewport(_size, false);
+        public void Detach()
+        {
+            Focus(false);
+            Viewport(_size, false);
+        }
 
-        public void Input(UiInput input, Vector2? localPosition) => Session.ReportUnsupportedInput();
+        public void Input(UiInput input, Vector2? localPosition)
+        {
+            window.CheckOwner();
+            if (input is UiFocusLostInput or UiKeyCancelInput or UiPointerInput { Phase: UiPointerPhase.Cancel })
+            {
+                _wheelResidual = default;
+            }
+
+            byte[][] bodies = [];
+            bool encoded = Session.State == UiWebViewState.Ready && Session.InputAvailable && (input is UiWheelInput wheel
+                ? CefInputCodec.TryEncodeWheel(wheel, localPosition, _scale, Engine.DocumentEpoch, ref _wheelResidual, out bodies)
+                : CefInputCodec.TryEncode(input, localPosition, _scale, Engine.DocumentEpoch, out bodies));
+            if (!encoded)
+            {
+                Session.ReportUnsupportedInput();
+                return;
+            }
+
+            try
+            {
+                Engine.SendInput(bodies);
+            }
+            catch (InvalidOperationException)
+            {
+                Session.ReportUnsupportedInput();
+            }
+        }
 
         internal void RefreshViewport(bool closing)
         {

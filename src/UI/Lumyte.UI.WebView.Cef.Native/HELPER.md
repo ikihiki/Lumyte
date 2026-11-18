@@ -89,16 +89,32 @@ One session (1). u32LE packet size excludes its 4-byte prefix. Accepted control
 bodies are at most4096 bytes; frame-notice bodies are empty. Pixel data lives
 only in the mapping described by [the shared-frame ABI](SHARED-FRAMES.md).
 Legacy frame-sized pipe bodies and old helper capabilities are rejected.
-40-byte payload header: u32 kind, u64 session, i64 generation, i64 sequence,
-i32 width, i32 height, u32 body length. Bodies are bytes, URLs/reasons UTF-8.
+40-byte payload header: u32 kind, u64 protocol version (2), i64 viewport
+generation, i64 sequence, i32 width, i32 height, u32 body length. The separate
+shared-frame ABI remains version1. Old control protocol/version1 helpers are
+explicitly incompatible; rebuild and select the matching helper.
+
 Commands 1 start, 2 navigate, 3 viewport, 4 close, 5 back, 6 forward, 7 reload,
-8 stop. Events 101 native-created Ready, 102 main-frame load-end observed URL,
-103 empty-body shared-frame notice, 104 short fault, 105 closed after shutdown.
-Ready101 carries the8-byte LUMYSHM1 magic and16-byte current mapping nonce.
+8 stop, 9 owner-routed input, 10 main-frame expression evaluation. Start1 is
+bounded UTF-8 JSON containing url and exact allowed message origins, supplied
+before browser/context creation. Input type11 is a whole committed-text batch:
+a48-byte validated header plus strict UTF-8 text, bounded to1024 UTF-16 units
+and3072 UTF-8 bytes; ordinary fixed input types have48-byte bodies. No partial
+Unicode batch or physical-key-derived duplicate character is accepted.
+
+Events 101 native-created Ready, 102 main-frame load-end observed URL,
+103 empty-body shared-frame notice, 104 short fault, 105 closed after shutdown,
+106 evaluation result, 107 page message, 108 document revision and109 focus return.
+Ready101 carries the8-byte LUMYSHM1 magic and16-byte current mapping nonce, then
+u32 protocol version2 and u32 capability bits (input1, script2, host-message4).
+A capability is negotiated rather than inferred from the helper path.
 Shared slots contain premultiplied packed top-down BGRA8. Loaded is not a paint or successful HTTP-status guarantee.
 
-Input bodies are at most4096 bytes; non-URL commands require empty bodies.
-Input generation and sequence must be nonnegative. Viewport generations must
+All control bodies remain at most4096 bytes. Input/script bodies have their
+validated typed layouts; commands without payload still require empty bodies.
+Input generation and sequence must be nonnegative. Document revision and native
+context identity are independent of viewport generation. Current-main-frame
+identity, origin and context binding are checked before accepting page callbacks. Viewport generations must
 strictly increase; positive dimensions <=4096 and packed bytes <=packet limit.
 Old-size paints are discarded; accepted frames carry current owner-thread
 geometry/generation and monotonically increasing event sequence. The managed fallback exposes initial navigation only; subsequent navigation/history/reload/stop commands are explicitly unavailable until command/load correlation is qualified. CEF does not
@@ -121,8 +137,11 @@ bootstrap cannot emit a fault; process exit/EOF is the authoritative failure.
 ## Policy and remaining work
 
 Popups/downloads/file dialogs/JS dialogs/media and permission prompts are denied;
-before-unload is accepted for close. No input injection, clipboard, devtools,
-custom-scheme, profile, accelerated OSR or Windows bootstrap capability. Initial
+before-unload is accepted for close. Primary mouse, wheel, focus, physical keys
+and committed Unicode are available through bounded owner-routed input. Touch,
+pen, secondary buttons, full IME preedit/caret integration, clipboard-script
+permissions, remote devtools, custom schemes, persistent profiles, accelerated
+OSR and Windows bootstrap remain unavailable. Initial
 and explicit navigations require HTTP/S; navigation callback rejects other
 schemes. This is **not network isolation**, a URL authority/security policy,
 subresource filtering, complete browser hardening, or proof for arbitrary

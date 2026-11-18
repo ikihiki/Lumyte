@@ -3,6 +3,9 @@ namespace Lumyte.UI.Application.WebView.Cef;
 /// <summary>Explicit experimental CEF runtime configuration; not a production recommendation.</summary>
 public sealed record CefWebViewOptions
 {
+    /// <summary>Gets exact HTTP(S) origins permitted to post untrusted JSON. Empty disables the bridge.</summary>
+    public IReadOnlyList<string> AllowedMessageOrigins { get; init; } = [];
+
     /// <summary>Gets the absolute optional helper path. Null leaves the browser unavailable.</summary>
     public string? HelperExecutablePath { get; init; }
 

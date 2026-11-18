@@ -23,9 +23,18 @@ public sealed class UiWebViewSession
     /// <summary>Raised on the owner after a state snapshot changes.</summary>
     public event EventHandler? StateChanged;
 
+    /// <summary>Raised on the owner for untrusted JSON from an explicitly allowed main document.</summary>
+    public event EventHandler<UiWebMessageReceivedEventArgs>? WebMessageReceived;
+
     internal event Action? PixelsChanged;
 
     internal event Action<bool>? FocusReturn;
+
+    /// <summary>Gets a value indicating whether synchronous main-frame evaluation was negotiated.</summary>
+    public bool ScriptAvailable { get; internal set; }
+
+    /// <summary>Gets a value indicating whether origin-restricted page messages were negotiated and enabled.</summary>
+    public bool HostMessagesAvailable { get; internal set; }
 
     /// <summary>Gets the browser lifetime.</summary>
     public UiWebViewState State { get; private set; }
@@ -48,7 +57,7 @@ public sealed class UiWebViewSession
     /// <summary>Gets a value indicating whether a verified native IME path is available.</summary>
     public bool ImeAvailable => false;
 
-    /// <summary>Gets a value indicating whether browser input is connected. The optional helper is read-only.</summary>
+    /// <summary>Gets a value indicating whether primary mouse, physical keys and committed text input were negotiated.</summary>
     public bool InputAvailable { get; internal set; }
 
     /// <summary>Gets a value indicating whether separate browser popup surfaces are connected.</summary>
@@ -59,6 +68,8 @@ public sealed class UiWebViewSession
 
     /// <summary>Gets the last unsupported capability request.</summary>
     public string? UnsupportedCapability { get; private set; }
+
+    internal Func<string, TimeSpan, CancellationToken, Task<string>>? EvaluateScript { get; set; }
 
     internal Action? CancelHost { get; set; }
 
@@ -112,12 +123,56 @@ public sealed class UiWebViewSession
         Update(UiWebViewState.Faulted, failureCode: "browser-cancelled");
     }
 
+    /// <summary>Evaluates a synchronous main-frame expression as JSON. Promises are not awaited; work is never replayed.</summary>
+    /// <param name="script">An expression bounded to 3072 strict UTF-8 bytes.</param>
+    /// <param name="timeout">A positive deadline up to 30 seconds, default five seconds.</param>
+    /// <param name="cancellationToken">Cancels waiting, not already executing JavaScript.</param>
+    /// <returns>The JSON result or a typed evaluation failure.</returns>
+    public Task<string> EvaluateScriptAsync(string script, TimeSpan? timeout = null, CancellationToken cancellationToken = default)
+    {
+        _checkOwner();
+        cancellationToken.ThrowIfCancellationRequested();
+        ArgumentException.ThrowIfNullOrWhiteSpace(script);
+        if (new System.Text.UTF8Encoding(false, true).GetByteCount(script) > 3072)
+        {
+            throw new ArgumentOutOfRangeException(nameof(script));
+        }
+
+        TimeSpan deadline = timeout ?? TimeSpan.FromSeconds(5);
+        if (deadline <= TimeSpan.Zero || deadline > TimeSpan.FromSeconds(30))
+        {
+            throw new ArgumentOutOfRangeException(nameof(timeout));
+        }
+
+        ObjectDisposedException.ThrowIf(State is UiWebViewState.Closing or UiWebViewState.Closed, this);
+        if (State != UiWebViewState.Ready)
+        {
+            throw new InvalidOperationException("cef-script-not-ready");
+        }
+
+        if (!ScriptAvailable || EvaluateScript is null)
+        {
+            throw new NotSupportedException("cef-script-unavailable");
+        }
+
+        return EvaluateScript(script, deadline, cancellationToken);
+    }
+
     internal static void ValidateUri(Uri uri)
     {
         ArgumentNullException.ThrowIfNull(uri);
         if (!uri.IsAbsoluteUri || (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps))
         {
             throw new ArgumentException("An absolute HTTP(S) address is required.", nameof(uri));
+        }
+    }
+
+    internal void ReceiveMessage(Uri source, string json)
+    {
+        _checkOwner();
+        if (State == UiWebViewState.Ready && HostMessagesAvailable)
+        {
+            WebMessageReceived?.Invoke(this, new(source, json));
         }
     }
 

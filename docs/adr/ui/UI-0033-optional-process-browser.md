@@ -67,9 +67,21 @@ Window contextは実root Widgetを変更・置換せずsurface環境として保
 
 宣言は接続先と配置を保持する。読込・現在URL・エラーはSessionの読み取り専用snapshotで観測し、StateChangedをowner上で通知する。UIからの明示Cancelはhelperを停止し、アプリ全体の停止を要求しない。購読の寿命は利用者のWindow・モデル寿命に合わせる。
 
-初期対応はHTTP/Sの初期文書の受動表示に限定する。InputAvailable、PopupAvailable、ImeAvailable、NavigationCommandsAvailableは対応能力を示す。このhelperではすべてfalseで、戻る・進む・reload・postcreation Navigate等を成功したnoopとして受理しない。明示操作はNotSupportedException、入力未接続はUnsupportedCapabilityとして表す。roleやfocus指定で未対応のブラウザ入力を有効化しない。
+HTTP/S文書の表示に加え、通常UIからのprimary mouse、wheel、focus、物理キーと確定済みUnicode文字をhelperへ転送する。InputAvailable、ScriptAvailable、HostMessagesAvailableは互換helperとの能力交換を経て公開し、helperパスやrole指定だけでは有効にしない。PopupAvailable、ImeAvailableと明示的なNavigationCommandsAvailableは未対応のままとし、戻る・進む・reload・postcreation Navigate等を成功したnoopとして受理しない。未対応の明示操作はNotSupportedException、入力未接続はUnsupportedCapabilityで表す。
 
 一般のSession命令APIは拡張用に維持するが、能力falseのbackendでは利用できない。URLの遷移要求と、ブラウザから観測したURLを同じ双方向の値として扱わない。load-endはHTTP成功・画素描画・提示完了を意味しない。
+
+### 入力とJavaScriptの接続
+
+入力は既存のhit test、focus、pointer/key captureを通す。要素ローカル座標とviewportのscaleを対応させ、物理キーから文字を重複生成しない。確定文字はUTF-16として正しい文字列全体を一命令で受け入れ、1024 code unitかつUTF-8で3072 bytes以下に制限する。focus喪失・取消・detachで押下状態を解放する。wheelの小数残差を保持し、通常UIで既に換算した量を二重に倍率変換しない。touch、pen、secondary buttonは対象外とし、確定済み日本語入力をIMEのpreedit・caret連携の成立と同一視しない。
+
+EvaluateScriptAsyncは現在の主文書で同期的なJavaScript式を評価し、JSON文字列を非同期で返す。Promiseの完了待ちは含めない。式・結果をUTF-8で3072 bytes以下、未完了要求を16件以下、期限を既定5秒・上限30秒にする。期限と取消は待機を制限するもので、既に実行中のV8を強制中断する保証ではない。受理後の式を自動再送しない。例外・JSON深さ上限は要求単位の失敗とし、無関係な要求やSession全体へ誤って波及させない。
+
+ページからの通知はwindow.lumyte.postMessage(value)による有界JSONとし、AllowedMessageOriginsへ完全一致するHTTP/S originを明示した場合だけ許可する。既定の空集合では無効で、subframeは同originでも受け入れない。CEFが報告した実frameの有効性・主frame識別・現在のbrowser・URLをnative側で検証し、managed側もoriginを確認する。payloadが自称する送信元は権限判定に使わず、受信JSONを.NETオブジェクトやメソッド呼出しへ自動変換しない。
+
+関数内で取得したSessionは、例えばイベント内のawait browser.EvaluateScriptAsync("document.title")に使う。ページ通知はWebViewのonWebMessageReceived宣言へ結び、受信内容でlocal Signalを更新できる。elementは一つの安定した購読をmount時に取得し、再構築後は最新callbackを参照し、unmount・Session交換で旧購読を解放する。関数評価ごとのイベント加算や、Window・Sessionの子への引数転送を要求しない。
+
+文書の識別はviewport generationと分け、現在のV8 contextに結び付いたtokenとbrowser側の文書revisionで相関する。renderer processの交換で局所counterが戻ることを許容しつつ、旧contextの結果・通知・解放が新文書へ影響しないようにする。許可された遷移・文書終了・closeで未完了要求を中止し、拒否されたURLへの遷移は生存中の文書と要求を無効化しない。通知と状態更新は既存の有界受信列からUI ownerへ渡す。
 
 ### helperの起動と失敗境界
 
@@ -101,9 +113,9 @@ CEF callbackが借用するBGRA画素はcallback内で共有slotへ直接コピ�
 
 ### 安全性と未対応範囲
 
-helperのsandboxは既定で有効にする。起動不能な環境はUIを継続してbackendだけを失敗させる。アプリがAllowUnsandboxed=trueを明示した場合に限り、当面の局所的な選択としてsandboxなしで実行できる。起動失敗からの自動切替は行わない。sandboxなしは信頼できるコンテンツ向けであり、別process・private HOME・read-only表示は悪意あるページからの防御境界ではない。HTTP/SのURL検査もネットワーク隔離やlocalhost制限ではない。native bootstrapが成立しないWindows、IME要求、永続profileは現在のhelperでは未対応として明示する。明示unsafeモードは通常の製品helperで実装・検証し、診断用一時コピーの結果を流用しない。unsafeモードの成功からsandbox付き配布の成立を推測しない。
+helperのsandboxは既定で有効にする。起動不能な環境はUIを継続してbackendだけを失敗させる。アプリがAllowUnsandboxed=trueを明示した場合に限り、当面の局所的な選択としてsandboxなしで実行できる。起動失敗からの自動切替は行わない。sandboxなしは信頼できるコンテンツ向けであり、別process・private HOME・表示や入力の制限は悪意あるページからの防御境界ではない。HTTP/SのURL検査もネットワーク隔離やlocalhost制限ではない。native bootstrapが成立しないWindows、IME要求、永続profileは現在のhelperでは未対応として明示する。明示unsafeモードは通常の製品helperで実装・検証し、診断用一時コピーの結果を流用しない。unsafeモードの成功からsandbox付き配布の成立を推測しない。
 
-popup、download、ファイル・JavaScriptのdialog、media・permission要求を既定拒否し、audioをmuteする。HTTP/S以外への遷移を拒否するが、これは通信先ネットワークの隔離や完全なブラウザhardeningではない。DOM automation、OSアクセシビリティ橋渡し、JavaScript/host RPC、対話入力、GPU共有、任意の信頼できないページへの製品保証は含めない。
+popup、download、ファイル・JavaScriptのdialog、media・permission要求を既定拒否し、audioをmuteする。HTTP/S以外への遷移を拒否するが、これは通信先ネットワークの隔離や完全なブラウザhardeningではない。一般的なDOM automation、OSアクセシビリティ橋渡し、任意の.NET host objectを公開するRPC、OS IME、GPU共有、任意の信頼できないページへの製品保証は含めない。有界な式評価とorigin制限付きJSON通知のために、clipboard・debug port・web security・証明書検証の設定を緩和しない。
 
 CEF・binding・helperは互換性を固定して明示的に取得し、ライセンス・第三者通知を含めて配布を検証する。helperが欠ける通常UI利用者へruntime取得や新しいデスクトップサービスを要求しない。
 
@@ -134,11 +146,16 @@ CEF・binding・helperは互換性を固定して明示的に取得し、ライ�
 +        public bool CanGoForward { get; }
 +        public string? FailureCode { get; }
 +        public bool InputAvailable { get; }
++        public bool ScriptAvailable { get; }
++        public bool HostMessagesAvailable { get; }
 +        public bool PopupAvailable { get; }
 +        public bool ImeAvailable { get; }
 +        public bool NavigationCommandsAvailable { get; }
 +        public string? UnsupportedCapability { get; }
 +        public event EventHandler? StateChanged;
++        public event EventHandler<UiWebMessageReceivedEventArgs>? WebMessageReceived;
++        // owner上で呼ぶ。同期式のJSON結果。Promise待機・受理後の自動再送はしない。
++        public Task<string> EvaluateScriptAsync(string script, TimeSpan? timeout = null, CancellationToken cancellationToken = default);
 +        public void Cancel();
 +        // helperの能力falseでは、受理せずNotSupportedExceptionとする。
 +        public ValueTask NavigateAsync(Uri uri, CancellationToken cancellationToken = default);
@@ -146,6 +163,18 @@ CEF・binding・helperは互換性を固定して明示的に取得し、ライ�
 +        public ValueTask GoForwardAsync(CancellationToken cancellationToken = default);
 +        public ValueTask ReloadAsync(CancellationToken cancellationToken = default);
 +        public ValueTask StopLoadingAsync(CancellationToken cancellationToken = default);
++    }
++    // page由来JSONは信頼しない。Sourceはengineが観測した現在の主文書。
++    public sealed class UiWebMessageReceivedEventArgs(Uri source, string json) : EventArgs
++    {
++        public Uri Source { get; }
++        public string Json { get; }
++        public bool IsMainFrame { get; } // 常にtrue、subframeは通知しない
++    }
++    public sealed class UiWebViewScriptException(string code, string? scriptMessage = null) : Exception
++    {
++        public string Code { get; } // 機密情報を含まない失敗種別
++        public string? ScriptMessage { get; } // untrustedなJavaScript例外本文
 +    }
 +    public static partial class Compose
 +    {
@@ -155,6 +184,7 @@ CEF・binding・helperは互換性を固定して明示的に取得し、ライ�
 +            public partial class WebView : Lumyte.UI.Compose.Definitions.Widget
 +            {
 +                [ComposeParameter] public UiWebViewSession? Session { get; set; }
++                [ComposeParameter] public Action<UiWebMessageReceivedEventArgs>? OnWebMessageReceived { get; set; }
 +            }
 +        }
 +    }
@@ -166,6 +196,7 @@ CEF・binding・helperは互換性を固定して明示的に取得し、ライ�
 +        public string? HelperExecutablePath { get; init; }
 +        public string? SupervisorExecutablePath { get; init; }
 +        public bool AllowUnsandboxed { get; init; } = false; // 信頼コンテンツ向けの明示選択のみ
++        public IReadOnlyList<string> AllowedMessageOrigins { get; init; } = []; // 既定無効、主文書の完全一致originのみ
 +        public TimeSpan StartupTimeout { get; init; } = TimeSpan.FromSeconds(10);
 +        public TimeSpan NavigationTimeout { get; init; } = TimeSpan.FromSeconds(15);
 +        public int MaximumSessions { get; init; } = 1;
@@ -199,6 +230,6 @@ CEF・binding・helperは互換性を固定して明示的に取得し、ライ�
 
 ## 結果と影響
 
-通常UIはブラウザの可用性に依存せず、ブラウザを使う場合だけhelper・runtime・必要な局所launcherを明示する。代わりに、初期対応は受動表示へ限定し、未対応の操作は能力として公開する。フォールバックであることは安全設定の自動無効化や、失敗を成功として扱う許可ではない。
+通常UIはブラウザの可用性に依存せず、ブラウザを使う場合だけhelper・runtime・必要な局所launcherを明示する。代わりに、接続できる入力と有界な式評価・JSON通知を能力として公開し、未対応の操作を成功したnoopにしない。フォールバックであることは安全設定の自動無効化や、失敗を成功として扱う許可ではない。
 
 受け入れ確認では、fake helperの異常終了・不正packet・無応答・取消を使い、実際のUI ownerが更新を継続することを確認する。native helperのsandbox異常も主UIへ波及しないことを別に検査する。実ページの描画・resize・close、sandbox付き配布、他RID、局所session launcherは、それぞれ実行条件を分けて検証し、engine-free testの成功から推測しない。
