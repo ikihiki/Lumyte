@@ -175,3 +175,21 @@ test("Browser diagnostics use a non-console binding before navigation", async ()
         assert.doesNotMatch(verifier, /console.log\(JSON.stringify\(\{ check: "browser-ui-transitions-(?:gpu|png)"/);
     }
 });
+
+test("critical records survive ordinary host and GPU ring saturation with identities", async () => {
+    let output;
+    const reporter = createCaptureTraceReporter({ emit: value => { output = value; }, maxRecords: 4 });
+    reporter.observeGpu('Browser GPU trace: ' + JSON.stringify({ method: 'deviceLost', status: 'resolved', elapsedMs: 0, critical: true, deviceId: 2, queueId: 2, submitSequence: 80, regularDropped: 1 }));
+    for (let i = 0; i < 2500; i++) reporter.observeGpu('Browser GPU trace: ' + JSON.stringify({ method: 'submit', status: 'start', elapsedMs: 0, id: i }));
+    await reporter.failure(); assert.equal(output.critical.length, 1); assert.equal(output.critical[0].event.deviceId, 2);
+    assert.equal(output.critical[0].event.submitSequence, 80); assert.equal(output.criticalDropped, 0); assert.ok(output.dropped > 0);
+    for (let i = 0; i < 30; i++) reporter.observeGpu('Browser GPU trace: ' + JSON.stringify({ method: 'uncapturedError', status: 'observed', elapsedMs: 0, critical: true, id: i }));
+    await reporter.failure(); assert.equal(output.critical.length, 16); assert.equal(output.criticalDropped, 15);
+});
+test("failure JSON is capped with explicit ordinary truncation without dropping critical ring", async () => {
+    let output; const reporter = createCaptureTraceReporter({ emit: value => { output = value; }, maxRecords: 256 });
+    for (let i = 0; i < 256; i++) reporter.observe('UI Capture trace: ' + JSON.stringify({ eventId: 1, name: 'StageBegin', ticks: i, frequency: 1, data: { value: 'x'.repeat(2048) } }));
+    reporter.observeGpu('Browser GPU trace: ' + JSON.stringify({ method: 'deviceLost', status: 'resolved', elapsedMs: 0, critical: true }));
+    await reporter.failure(); assert.ok(Buffer.byteLength(JSON.stringify(output)) <= 256 * 1024);
+    assert.ok(output.outputDropped.records > 0); assert.equal(output.critical[0].event.method, 'deviceLost');
+});

@@ -248,9 +248,13 @@ public sealed partial class Renderer2D
                                     {
                                         while (index < transformed.Commands.Count)
                                         {
+                                            RenderPreparationContext2D batchContext = context;
                                             if (context.EnforceWorkingBudget)
                                             {
-                                                context.OtherWorkingBytes = checked(captureBytes + DrawingWorkingBudget2D.OwnedBytes(assets.Select(asset => asset.Batch).Concat(batches), context.ArgumentPlan));
+                                                // Deferred uploads retain this batch's prior-owner scalar,
+                                                // while its own pages and shared plan remain live estimates.
+                                                batchContext = context.SnapshotWorkingBudget();
+                                                batchContext.OtherWorkingBytes = checked(captureBytes + DrawingWorkingBudget2D.OwnedBytes(assets.Select(asset => asset.Batch).Concat(batches), context.ArgumentPlan));
                                             }
                                             else
                                             {
@@ -259,11 +263,11 @@ public sealed partial class Renderer2D
 
                                             if (IsBuiltinRenderer(transformed.Commands[index]) && context.RecordResources() is not null)
                                             {
-                                                batches.Add(await PreparedRecordBatch2D.PrepareAsync(context, TakeBuiltinBatch(transformed, ref index, transformed.Commands.Count), cancellationToken).ConfigureAwait(false));
+                                                batches.Add(await PreparedRecordBatch2D.PrepareAsync(batchContext, TakeBuiltinBatch(transformed, ref index, transformed.Commands.Count), cancellationToken).ConfigureAwait(false));
                                                 continue;
                                             }
 
-                                            batches.Add(await PrepareRetainedBatchAsync(context, transformed, index, cancellationToken).ConfigureAwait(false));
+                                            batches.Add(await PrepareRetainedBatchAsync(batchContext, transformed, index, cancellationToken).ConfigureAwait(false));
                                             if (batches[^1] is IPreparedWorkingBudget2D { EnforcesWorkingBudget: true })
                                             {
                                                 plan.EnableWorkingReferenceBudget();

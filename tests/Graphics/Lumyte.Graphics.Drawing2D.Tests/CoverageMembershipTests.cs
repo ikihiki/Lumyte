@@ -27,13 +27,15 @@ public sealed class CoverageMembershipTests
             reads++;
             return 300;
         });
-        RenderPreparationContext2D fork = context.WithShapeMembership(service).WithArgumentPlan(plan).WithWorkingLimit(500);
+        RenderPreparationContext2D fork = context.WithShapeMembership(service).WithArgumentPlan(plan).WithWorkingLimit(500).SnapshotWorkingBudget();
         Assert.Equal(0, reads);
         Assert.Equal(0, context.OtherWorkingBytes);
         Assert.Equal(0, reads);
         Assert.True(fork.ComputeShapeMembership);
         Assert.True(fork.EnforceWorkingBudget);
         Assert.Same(service, fork.MembershipService);
+        Assert.Same(plan, fork.ArgumentPlan);
+        Assert.Same(fork.Clips, fork.SnapshotWorkingBudget().Clips);
         Assert.Equal(500, fork.MaxWorkingBytes);
         Assert.Equal(300, fork.OtherWorkingBytes);
         Assert.Equal(300, fork.OtherWorkingBytes);
@@ -63,7 +65,10 @@ public sealed class CoverageMembershipTests
                 reads++;
                 return 300;
             });
-            fork = context.WithShapeMembership(service).WithArgumentPlan(otherPlan).WithWorkingLimit(500);
+            fork = context.WithShapeMembership(service).WithArgumentPlan(otherPlan).WithWorkingLimit(500).SnapshotWorkingBudget();
+            Assert.True(fork.ComputeShapeMembership);
+            Assert.Same(service, fork.MembershipService);
+            Assert.Same(otherPlan, fork.ArgumentPlan);
             Assert.Equal(0, reads);
             if (resolve)
             {
