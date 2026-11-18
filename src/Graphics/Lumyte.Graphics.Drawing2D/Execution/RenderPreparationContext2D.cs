@@ -21,6 +21,23 @@ public sealed class RenderPreparationContext2D
         ArgumentPlan.RegisterPreparationCache(Clips);
     }
 
+    // A budget snapshot copies scalars, not mutable owner/plan state. It shares the
+    // preparation's clip cache and invalidatable source indirection without adding
+    // another cache registration or resource lifetime token.
+    private RenderPreparationContext2D(RenderPreparationContext2D source)
+    {
+        Device = source.Device;
+        Target = source.Target;
+        _resources = source._resources;
+        _allowReturnedResources = source._allowReturnedResources;
+        ArgumentPlan = source.ArgumentPlan;
+        Clips = source.Clips;
+        EnforceWorkingBudget = source.EnforceWorkingBudget;
+        MaxWorkingBytes = source.MaxWorkingBytes;
+        _otherWorkingBytes = source._otherWorkingBytes;
+        _otherWorkingBytesSource = source._otherWorkingBytesSource;
+    }
+
     /// <summary>Gets the borrowed device.</summary>
     public IGraphicDevice Device { get; }
 
@@ -90,6 +107,8 @@ public sealed class RenderPreparationContext2D
 
         return CopyWorkingBudget(new(Device, Target, _resources, argumentPlan, _allowReturnedResources) { EnforceWorkingBudget = EnforceWorkingBudget, MaxWorkingBytes = MaxWorkingBytes });
     }
+
+    internal RenderPreparationContext2D SnapshotWorkingBudget() => new(this);
 
     internal RenderPreparationContext2D WithWorkingLimit(long maximum)
         => CopyWorkingBudget(new(Device, Target, _resources, ArgumentPlan, _allowReturnedResources) { EnforceWorkingBudget = true, MaxWorkingBytes = Math.Min(MaxWorkingBytes, maximum) });

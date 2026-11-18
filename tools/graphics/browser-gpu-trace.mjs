@@ -17,32 +17,47 @@ export function browserGpuTraceEnabled(environment = process.env) {
 export function installBrowserGpuTrace(target = globalThis) {
     const limit = 2000;
     let count = 0;
-    let nextId = 0;
+    let nextId = 0, nextDevice = 0, criticalCount = 0, regularDropped = 0;
     const seen = new WeakSet();
+    const criticalState = { records: [], dropped: 0 };
+    try { target.__lumyteBrowserGpuCritical = criticalState; } catch {}
     const safely = action => { try { return action(); } catch {} };
     const now = () => safely(() => target.performance.now()) ?? 0;
     const emit = value => safely(() => {
-        if (count >= limit) return;
+        if (count >= limit) { regularDropped++; return; }
         count++;
         target.__lumyteCaptureDiagnosticEvent?.("Browser GPU trace: " + JSON.stringify({ ...value,
             ...(count === limit ? { truncated: true } : {}) }));
     });
-    function wrap(object, name, asyncResult = false, observe) {
+    function terminal(value) {
+        safely(() => {
+            const event = { ...value, critical: true, atMs: now(), elapsedMs: 0, regularDropped };
+            criticalState.records.push(event);
+            if (criticalState.records.length > 16) { criticalState.records.shift(); criticalState.dropped++; }
+            // Stream a bounded first16; failure snapshot preserves latest16 even after thiscap.
+            if (criticalCount >= 16) return;
+            criticalCount++;
+            target.__lumyteCaptureDiagnosticEvent?.("Browser GPU trace: " + JSON.stringify({ ...event,
+                ...(criticalCount === 16 ? { criticalTruncated: true } : {}) }));
+        });
+    }
+    function wrap(object, name, asyncResult = false, observe, identity) {
         safely(() => {
             const original = object?.[name];
             if (typeof original !== "function") return;
             object[name] = function (...args) {
                 const id = ++nextId;
                 const start = now();
-                emit({ id, method: name, status: "start", elapsedMs: 0, atMs: start });
+                const metadata = safely(() => identity?.(name)) ?? {};
+                emit({ id, ...metadata, method: name, status: "start", elapsedMs: 0, atMs: start });
                 let result;
                 try {
                     result = Reflect.apply(original, this, args);
                 } catch (error) {
-                    emit({ id, method: name, status: "throw", elapsedMs: now() - start });
+                    emit({ id, ...metadata, method: name, status: "throw", elapsedMs: now() - start });
                     throw error;
                 }
-                const finish = status => emit({ id, method: name, status, elapsedMs: now() - start, atMs: now() });
+                const finish = status => emit({ id, ...metadata, method: name, status, elapsedMs: now() - start, atMs: now() });
                 if (asyncResult) {
                     safely(() => result.then(value => {
                         safely(() => observe?.(value));
@@ -64,6 +79,16 @@ export function installBrowserGpuTrace(target = globalThis) {
     function device(value) {
         if (!value || seen.has(value)) return;
         seen.add(value);
+        const deviceId = ++nextDevice, queueId = deviceId;
+        let submitSequence = 0;
+        const identity = name => ({ deviceId, queueId, submitSequence: name === "submit" ? ++submitSequence : submitSequence });
+        safely(() => value.lost?.then(info => safely(() => terminal({ method: "deviceLost", status: "resolved", deviceId,
+            reason: typeof info?.reason === "string" ? info.reason.slice(0, 80) : "unknown" })),
+            () => terminal({ method: "deviceLost", status: "rejected", deviceId })));
+        safely(() => value.addEventListener?.("uncapturederror", () => {
+            // Do not preventDefault or serialize the error payload; preserve browser handling.
+            terminal({ method: "uncapturedError", status: "observed", deviceId });
+        }));
         wrap(value, "createRenderPipeline");
         wrap(value, "createRenderPipelineAsync", true);
         // Do not log buffer creation itself; only install the map observer.
@@ -77,8 +102,8 @@ export function installBrowserGpuTrace(target = globalThis) {
             };
         });
         safely(() => {
-            wrap(value.queue, "submit");
-            wrap(value.queue, "onSubmittedWorkDone", true);
+            wrap(value.queue, "submit", false, undefined, identity);
+            wrap(value.queue, "onSubmittedWorkDone", true, undefined, identity);
         });
     }
     function adapter(value) {
