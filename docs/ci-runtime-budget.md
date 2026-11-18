@@ -114,3 +114,47 @@ Release builds, managed formatting, YAML parsing/shell syntax, the configured
 mirror throughput, cache save/restore behavior, the full published Chrome
 samples, and all remote Windows/ARM/AOT/package gates still require the new
 required-CI run. These local results do not establish a ten-minute hosted run.
+
+## Diagnostic browser startup follow-up (PR 183)
+
+Required CI run `44227864237` failed the Linux x64 diagnostic UI step at the
+15-second Chromium startup deadline. Its final browser artifact contains a valid
+`DevTools listening` line, but that line has no receipt timestamp; it does not
+prove the endpoint was available before the deadline. The regex matches the
+artifact. The runner browser version was not recorded. Neither a regex defect
+nor a particular Chrome-version regression has been reproduced.
+
+The diagnostic UI now installs the same pinned Chrome for Testing
+`156.0.8078.47` as the Browser matrix, records its version, suppresses first-run
+and default-browser prompts, and discovers Chrome through the owned profile
+`DevToolsActivePort` rendezvous file. Success requires both a page target and an
+open page CDP WebSocket within the original 15-second budget, including discovery
+and connection. Spawn errors and early exits fail immediately. Bounded startup
+milestones use elapsed receipt times; stderr is retained separately. There is no
+second browser launch, GPU fallback, timeout increase, or relaxed UI assertion.
+Existing repository Node CDP verifiers already use built-in fetch/WebSocket;
+this narrowly scoped helper reuses that approach without adding a second browser
+automation dependency (the Python audio lane separately uses Playwright).
+
+Local verification with SDK `10.0.403` and existing Release/native assets:
+
+- All 236 Browser contract tests passed, including eight startup contracts and a
+  real pinned full-Chrome startup/transport check; no skips.
+- The build-orchestration Release project compiled with zero warnings/errors;
+  all 289 orchestration tests passed without skips. YAML parsing, the configured
+  364-file Markdown lint, and diff whitespace checks also passed.
+- Full Chrome `156.0.8078.47` opened CDP in 162 ms, but the complete UI verifier
+  hit the existing 10-second `Page.navigate` deadline both before and after this
+  change. This local navigation issue is not attributed to the CI startup failure.
+- An explicit local headless-shell control (`156.0.8078.4`, not the CI browser
+  and not a fallback in the verifier) passed every original UI assertion: HTTP
+  and MagicOnion operations, settings, animation, render-graph capture, dashboard
+  isolation, Blazor authentication/logout, and zero browser errors. Its page CDP
+  transport opened in 107 ms.
+
+Raw local logs and galleries are under
+`artifacts/ci-runtime-review/diagnostics-ui-{before,after,headless-control}`
+(and `diagnostics-ui-headless-final-receipts` for the final receipt logging);
+contract/build logs use the `diagnostics-startup-` prefix there. These results
+validate the startup protocol and preserve functional coverage; only the next
+required hosted CI run can establish the repair on the failing runner.

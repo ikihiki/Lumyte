@@ -42,7 +42,7 @@ internal sealed partial class Build
     private async Task TestBrowserContractsAsync()
     {
         string[] setupContracts = OperatingSystem.IsLinux() ? ["tools/setup/ci-apt.test.mjs"] : [];
-        await NodeAsync(["--test", .. setupContracts, "tools/graphics/browser-gpu.test.mjs", "tools/graphics/browser-gpu-trace.test.mjs", "tools/graphics/browser-capture-trace.test.mjs", "tools/graphics/browser-flight-recorder.test.mjs", "tools/graphics/browser-process-recorder.test.mjs", "tools/graphics/browser-known-timeout.test.mjs", "tools/graphics/browser-timeout-quarantine.test.mjs"]).ConfigureAwait(false);
+        await NodeAsync(["--test", .. setupContracts, "tools/diagnostics/browser-startup.test.mjs", "tools/graphics/browser-gpu.test.mjs", "tools/graphics/browser-gpu-trace.test.mjs", "tools/graphics/browser-capture-trace.test.mjs", "tools/graphics/browser-flight-recorder.test.mjs", "tools/graphics/browser-process-recorder.test.mjs", "tools/graphics/browser-known-timeout.test.mjs", "tools/graphics/browser-timeout-quarantine.test.mjs"]).ConfigureAwait(false);
         await NodeAsync("--test", "tests/Graphics/Lumyte.Graphics.Hosting.Tests/browser-device-loss.test.mjs").ConfigureAwait(false);
         await NodeAsync("--test", "tests/Audio/browser-audio.test.mjs").ConfigureAwait(false);
         await NodeAsync("--test", "tests/Platform/browser-windowing.test.mjs").ConfigureAwait(false);
