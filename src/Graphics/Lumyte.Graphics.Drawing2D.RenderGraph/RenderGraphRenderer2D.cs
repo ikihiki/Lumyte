@@ -629,13 +629,11 @@ public sealed class RenderGraphRenderer2D(DrawingCommandRenderers2D renderers, R
             }
 
             cancellationToken.ThrowIfCancellationRequested();
-            if (batch is PreparedRecordBatch2D { HasShapeMembership: true })
-            {
-                // Record is outside an active pass: this one prepared group owns
-                // its internal copy, compute producer and correlated raster consumer.
-                AppendBatch(graph, target, bindings, batch, argumentPlan.Reservations.Skip(firstReservation).ToArray(), argumentPlan);
-            }
-            else if (batch is PreparedRecordBatch2D records)
+
+            // Each page is a separate graph binding operation. Its page view records
+            // that page's copy, private compute producer and correlated raster consumer
+            // together, outside any active pass; the containing batch owns all pages once.
+            if (batch is PreparedRecordBatch2D records)
             {
                 foreach ((IPreparedCommandBatch2D page, IReadOnlyList<ShaderResources> reservations) in records.GraphPages)
                 {

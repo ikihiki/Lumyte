@@ -54,11 +54,6 @@ internal sealed class PreparedRecordBatch2D : IRetainedCommandBatch2D, IRetained
     {
         get
         {
-            if (HasShapeMembership)
-            {
-                throw new NotSupportedException("Frame-private membership must be recorded as one whole prepared group.");
-            }
-
             for (int i = 0; i < _pages.Count; i++)
             {
                 yield return (new PageView(this, i), _pages[i].Scopes);
