@@ -132,6 +132,7 @@ public sealed class InvalidationTests
 
     /// <summary>Checks mutation stamps remain distinct when writers move between threads.</summary>
     /// <returns>The asynchronous verification.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task DifferentThreadsKeepDistinctStampsAsync()
     {

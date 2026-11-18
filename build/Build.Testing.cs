@@ -13,9 +13,12 @@ internal sealed partial class Build
     [Parameter("Test suite: managed, ui, aot, browser, wasm, browser-contracts, browser-audio, diagnostics-processes, diagnostics-ui, signals, text, windowing, rust.")]
     public string Suite { get; set; } = "managed";
 
-    private static readonly string[] _browserCases = ["contracts", "graphics", "text", "ui-application", "ui-navigation", "ui-pages", "ui-transitions", "audio"];
+    [Parameter("Integration platform: host or browser. Browser executes only real browser API checks.")]
+    public string Platform { get; set; } = "host";
 
-    [Parameter("Independent browser case: contracts, graphics, text, ui-application, ui-navigation, ui-pages, ui-transitions, or audio. Omit for the complete suite.")]
+    private static readonly string[] _browserCases = ["graphics", "text", "ui-application", "ui-navigation", "ui-pages", "ui-transitions", "audio"];
+
+    [Parameter("Independent browser API case: graphics, text, ui-application, ui-navigation, ui-pages, ui-transitions, or audio. Omit for the complete suite.")]
     public string? BrowserCase { get; set; }
 
     [Parameter("UI feature: layout, controls, media, scroll, menus, tabs, collections, virtualization, numeric, application, navigation, or pages.")]
@@ -47,9 +50,15 @@ internal sealed partial class Build
 
     private void ValidateTestSelection()
     {
-        if (BrowserCase is not null && (Suite != "browser" || !_browserCases.Contains(BrowserCase, StringComparer.Ordinal)))
+        bool browserPlatform = Platform == "browser";
+        if (Platform is not ("host" or "browser") || (browserPlatform && (Lane != "integration" || Suite != "managed" || Project is not null)))
         {
-            throw new ArgumentException("--browser-case requires --suite browser and an exact supported case.");
+            throw new ArgumentException("--platform browser requires --lane integration, the managed default suite, and no --project.");
+        }
+
+        if (BrowserCase is not null && ((!browserPlatform && Suite != "browser") || !_browserCases.Contains(BrowserCase, StringComparer.Ordinal)))
+        {
+            throw new ArgumentException("--browser-case requires browser integration and an exact supported API case.");
         }
 
         if (PipelineValidation && (Suite != "managed" || Lane != "gpu"))
@@ -92,10 +101,17 @@ internal sealed partial class Build
         }
     }
 
-    private bool TestNeedsCompilation => Suite is not ("aot" or "browser" or "wasm" or "browser-contracts" or "browser-audio" or "rust") && !Aot;
+    private bool TestNeedsCompilation => Platform != "browser" && Suite is not ("aot" or "browser" or "wasm" or "browser-contracts" or "browser-audio" or "rust") && !Aot;
 
     private async Task RunSelectedTestsAsync()
     {
+        if (Platform == "browser")
+        {
+            await InstallWasmToolsAsync().ConfigureAwait(false);
+            await TestWasmAsync().ConfigureAwait(false);
+            return;
+        }
+
         switch (Suite)
         {
             case "managed":
@@ -112,16 +128,8 @@ internal sealed partial class Build
             case "ui": await RunUiFeatureAsync().ConfigureAwait(false); break;
             case "aot": await TestAotAsync().ConfigureAwait(false); break;
             case "browser":
-                if (BrowserCase is null or "contracts")
-                {
-                    await TestBrowserContractsAsync().ConfigureAwait(false);
-                }
-
-                if (BrowserCase != "contracts")
-                {
-                    await InstallWasmToolsAsync().ConfigureAwait(false);
-                    await TestWasmAsync().ConfigureAwait(false);
-                }
+                await InstallWasmToolsAsync().ConfigureAwait(false);
+                await TestWasmAsync().ConfigureAwait(false);
                 break;
             case "wasm":
                 await InstallWasmToolsAsync().ConfigureAwait(false);
@@ -232,6 +240,13 @@ internal sealed partial class Build
             new XElement("Error", new XAttribute("Condition", "'$(IsTestProject)' == 'true' and '$(LumyteLaneSelected)' != 'true'"),
                 new XAttribute("Text", "The solution filter scheduled an unselected test project: $(MSBuildProjectFullPath)"))));
         await File.WriteAllTextAsync(targetsFile, new XDocument(targets).ToString()).ConfigureAwait(false);
+        Directory.CreateDirectory(Path.Combine(ArtifactRoot, "test-results", lane.ToLowerInvariant()));
+        // Reject stale evidence: every selected project must produce fresh nonempty results.
+        foreach (var entry in selections)
+        {
+            File.Delete(Path.Combine(ArtifactRoot, "test-results", lane.ToLowerInvariant(), Path.GetFileNameWithoutExtension(entry.Path) + ".trx"));
+        }
+
         // One SDK invocation owns every selected project. -m:1 retains cross-project
         // serial boundaries; the CPU xUnit adapter handles bounded method concurrency.
         await DotNetWithEnvironmentAsync(environment, "test", filterFile, "--configuration", Configuration, "--no-build", "--no-restore", "-m:1",
@@ -242,6 +257,12 @@ internal sealed partial class Build
             if (!File.Exists(inventoryFile))
             {
                 throw new InvalidDataException($"Missing real xUnit discovery inventory for {entry.Path}; rebuild the test project.");
+            }
+
+            string trx = Path.Combine(ArtifactRoot, "test-results", lane.ToLowerInvariant(), Path.GetFileNameWithoutExtension(entry.Path) + ".trx");
+            if (!File.Exists(trx) || !XDocument.Load(trx).Descendants().Any(element => element.Name.LocalName == "Counters" && int.TryParse(element.Attribute("total")?.Value, out int total) && total > 0))
+            {
+                throw new InvalidDataException($"Missing or empty lane TRX for {entry.Path}.");
             }
 
             using var inventory = JsonDocument.Parse(await File.ReadAllTextAsync(inventoryFile).ConfigureAwait(false));

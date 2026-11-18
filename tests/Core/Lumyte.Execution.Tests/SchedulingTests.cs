@@ -7,6 +7,7 @@ public sealed class SchedulingTests
 {
     /// <summary>A new CPU command uses an available worker while earlier work is still executing.</summary>
     /// <returns>The completed concurrency check.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task NewCpuCommandUsesAvailableConcurrencyAsync()
     {
@@ -33,6 +34,7 @@ public sealed class SchedulingTests
 
     /// <summary>Repeated range requeues finish exactly once and leave shutdown able to drain.</summary>
     /// <returns>The completed shutdown check.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task RequeuedRangesCompleteBeforeShutdownAsync()
     {

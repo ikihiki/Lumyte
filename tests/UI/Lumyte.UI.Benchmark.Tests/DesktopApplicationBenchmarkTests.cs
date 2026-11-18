@@ -41,6 +41,7 @@ public sealed class DesktopApplicationBenchmarkTests(ITestOutputHelper output)
 
     /// <summary>Proves a concurrent application owner cannot select the native host request's frame.</summary>
     /// <returns>The deterministic thread-identity acknowledgment check.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task ForeignOwnerCannotSelectAcceptedFrameAsync()
     {

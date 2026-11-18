@@ -44,9 +44,17 @@ internal static class Program
                 Directory.CreateDirectory(inventoryDirectory);
                 using var catalog = JsonDocument.Parse(File.ReadAllText(Environment.GetEnvironmentVariable("LUMYTE_LANE_CATALOG")!));
                 string root = Path.GetDirectoryName(Path.GetDirectoryName(Environment.GetEnvironmentVariable("LUMYTE_LANE_CATALOG")))!;
+                int resultsIndex = Array.IndexOf(args, "--results-directory");
+                string results = args[resultsIndex + 1];
+                Directory.CreateDirectory(results);
                 foreach (JsonElement entry in catalog.RootElement.EnumerateArray())
                 {
                     string project = Path.GetFullPath(entry.GetProperty("Project").GetString()!, root);
+                    if (Environment.GetEnvironmentVariable("LUMYTE_TEST_EMPTY_TRX") != "1")
+                    {
+                        File.WriteAllText(Path.Combine(results, Path.GetFileNameWithoutExtension(project) + ".trx"), "<TestRun><ResultSummary><Counters total=\"1\" /></ResultSummary></TestRun>");
+                    }
+
                     File.WriteAllText(Path.Combine(inventoryDirectory, Path.GetFileName(project) + ".json"), JsonSerializer.Serialize(new { Project = project, Error = (string?)null }));
                 }
             }

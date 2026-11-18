@@ -11,6 +11,7 @@ public sealed class ResourceAcquisitionLifetimeTests
 
     /// <summary>Reload and reclamation cannot remove the current value while its first acquisition is completing.</summary>
     /// <returns>Completion of initial publication, replacement, reclamation and final release.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task PendingAcquisitionRetainsReplacementAcrossReloadAndTrimAsync()
     {
@@ -53,6 +54,7 @@ public sealed class ResourceAcquisitionLifetimeTests
 
     /// <summary>Canceling one shared waiter releases only its logical ownership and preserves the remaining acquisition.</summary>
     /// <returns>Completion of cancellation, the shared build and resource reclamation.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task CanceledWaiterDoesNotLeakOwnershipOrCancelOtherWaitersAsync()
     {
@@ -86,6 +88,7 @@ public sealed class ResourceAcquisitionLifetimeTests
 
     /// <summary>A failed shared build returns every waiting owner's reservation and permits a clean retry.</summary>
     /// <returns>Completion of shared failure, successful retry and manager shutdown.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task FailedBuildReturnsAllPendingOwnershipBeforeRetryAsync()
     {

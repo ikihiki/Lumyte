@@ -11,7 +11,6 @@ public sealed class BrowserCaseTests
     /// <returns>The completed process assertions.</returns>
     [Theory]
     [InlineData(null)]
-    [InlineData("contracts")]
     [InlineData("graphics")]
     [InlineData("text")]
     [InlineData("ui-application")]
@@ -28,7 +27,7 @@ public sealed class BrowserCaseTests
         StageAudioPython(fixture);
 
         string[] selected = selection is null ? [] : ["--browser-case", selection];
-        BuildFixture.ProcessResult result = await fixture.RunAsync("Test", ["--suite", "browser", .. selected, "--dotnet-path", fixture.DotnetTool, "--node", fixture.Node, "--python", fixture.Python]);
+        BuildFixture.ProcessResult result = await fixture.RunAsync("Test", ["--lane", "integration", "--platform", "browser", .. selected, "--dotnet-path", fixture.DotnetTool, "--node", fixture.Node, "--python", fixture.Python]);
         Assert.True(result.ExitCode == 0, result.Output + result.Error);
         string[][] dotnet = Records(fixture, "dotnet").Select(Arguments).ToArray();
         string[] expectedProjects = new (string Case, string Project)[]
@@ -44,15 +43,31 @@ public sealed class BrowserCaseTests
         }.Where(value => selection is null || selection == value.Case).Select(value => "samples/" + value.Project).ToArray();
         Assert.Equal(expectedProjects, dotnet.Where(call => call[0] == "publish").Select(call => call[1]));
         Assert.All(dotnet.Where(call => call[0] == "publish"), call => Assert.Contains("-m:1", call));
-        Assert.Equal(selection == "contracts" ? 0 : 1, dotnet.Count(call => call[0] == "workload"));
+        Assert.Equal(1, dotnet.Count(call => call[0] == "workload"));
         string[][] nodes = Records(fixture, "node").Select(Arguments).ToArray();
-        Assert.Equal(selection is null or "contracts" ? 4 : 0, nodes.Count(call => call[0] == "--test"));
+        Assert.DoesNotContain(nodes, call => call[0] == "--test");
         string[] expectedVerifiers = expectedProjects.Where(project => !project.Contains("Audio", StringComparison.Ordinal))
             .Select(project => project == "samples/Lumyte.Graphics.Browser.Sample" ? "tools/graphics/verify-browser.mjs" : project + "/verify-browser.mjs").ToArray();
         string[][] verifies = nodes.Where(call => call[0] != "--test").ToArray();
         Assert.Equal(expectedVerifiers, verifies.Where(call => call.Length == 2).Select(call => call[0]));
         Assert.Equal(selection is null or "ui-transitions" ? new[] { "--sequential", "--same-content" } : [], verifies.Where(call => call.Length == 3).Select(call => call[2]));
         Assert.Equal(selection is null or "audio" ? 2 : 0, Records(fixture, "python").Count(record => Arguments(record)[0] == "tools/audio/verify_browser.py"));
+    }
+
+    /// <summary>Pure mocked bridge contracts run on the host without publishing or launching Chrome.</summary>
+    /// <returns>The completed isolated assertion.</returns>
+    [Fact]
+    [Trait("Execution", "Integration")]
+    public async Task MockContractsRunOnlyOnHostAsync()
+    {
+        using var fixture = new BuildFixture();
+        fixture.Environment["LUMYTE_TEST_QUALITY_TOOLS"] = "1";
+        BuildFixture.ProcessResult result = await fixture.RunAsync("Test", "--suite", "browser-contracts", "--dotnet-path", fixture.DotnetTool, "--node", fixture.Node);
+        Assert.True(result.ExitCode == 0, result.Output + result.Error);
+        Assert.Empty(Records(fixture, "dotnet"));
+        string[][] nodes = Records(fixture, "node").Select(Arguments).ToArray();
+        Assert.Equal(4, nodes.Length);
+        Assert.All(nodes, call => Assert.Equal("--test", call[0]));
     }
 
     /// <summary>An invalid shard or incompatible suite cannot install workloads or start a child tool.</summary>

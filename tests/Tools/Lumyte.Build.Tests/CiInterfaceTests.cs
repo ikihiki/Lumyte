@@ -21,7 +21,7 @@ public sealed class CiInterfaceTests
         Assert.DoesNotContain("integration", cpuJob, StringComparison.OrdinalIgnoreCase);
         foreach (string contract in new[]
         {
-            "--lane cpu", "--lane integration", "--lane gpu", "--pipeline-validation", "--suite browser", "--suite aot",
+            "--lane cpu", "--lane integration", "--lane gpu", "--pipeline-validation", "--platform browser", "--suite browser-contracts", "--suite aot",
             "--suite windowing", "--suite diagnostics-processes", "--suite diagnostics-ui",
             "--distribution-output diagnostic-gallery", "'--distribution-output', 'window-sample'", "'--distribution-output', 'packages'",
             "'--quality-scope', 'managed'", "--target Quality --configuration", "--restore-metadata",
@@ -216,12 +216,15 @@ public sealed class CiInterfaceTests
     {
         string workflow = File.ReadAllText(Path.Combine(GetRepository(), ".github", "workflows", "composition.yml"));
         string browser = workflow[workflow.IndexOf("  browser:", StringComparison.Ordinal)..workflow.IndexOf("  aot:", StringComparison.Ordinal)];
-        Assert.Contains("case: [contracts, graphics, text, ui-application, ui-navigation, ui-pages, ui-transitions, audio]", browser, StringComparison.Ordinal);
-        Assert.Contains("--suite browser --browser-case ${{ matrix.case }}", browser, StringComparison.Ordinal);
+        Assert.Contains("case: [graphics, text, ui-application, ui-navigation, ui-pages, ui-transitions, audio]", browser, StringComparison.Ordinal);
+        Assert.Contains("--lane integration --platform browser --browser-case ${{ matrix.case }}", browser, StringComparison.Ordinal);
         Assert.Contains("name: test-results-browser-${{ matrix.case }}", browser, StringComparison.Ordinal);
         Assert.Contains("fail-fast: false", browser, StringComparison.Ordinal);
+        Assert.DoesNotContain("--suite browser-contracts", browser, StringComparison.Ordinal);
+        string linux = workflow[workflow.IndexOf("  linux:", StringComparison.Ordinal)..workflow.IndexOf("  windows:", StringComparison.Ordinal)];
+        Assert.Contains("--suite browser-contracts", linux, StringComparison.Ordinal);
         Assert.Contains("timeout-minutes: 30", browser, StringComparison.Ordinal);
-        Assert.True(browser.IndexOf("mode: save", StringComparison.Ordinal) < browser.IndexOf("Browser / contracts", StringComparison.Ordinal));
+        Assert.True(browser.IndexOf("mode: save", StringComparison.Ordinal) < browser.IndexOf("Browser / platform API integration", StringComparison.Ordinal));
         string cache = File.ReadAllText(Path.Combine(GetRepository(), ".github", "actions", "cache-dependencies", "action.yml"));
         Assert.Contains("actions/cache/save@", cache, StringComparison.Ordinal);
         Assert.Contains("ci-apt/archives/*.deb", cache, StringComparison.Ordinal);

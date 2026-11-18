@@ -22,6 +22,7 @@ public sealed class TypedStageRuntimeTests
 
     /// <summary>Existing pipeline registration supports typed source and transform stages, including async continuations.</summary>
     /// <returns>Completion of construction and manager cleanup.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task SourceAndTransformReceiveTheirDeclaredRuntimeAsync()
     {
@@ -53,6 +54,7 @@ public sealed class TypedStageRuntimeTests
     /// <summary>Wrong explicit bindings and incompatible defaults fail before any stage is dispatched.</summary>
     /// <param name="explicitBinding">Whether the incompatible runtime was explicitly selected.</param>
     /// <returns>Completion of the borrowed host's shutdown.</returns>
+    [Trait("Execution", "Integration")]
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
@@ -75,6 +77,7 @@ public sealed class TypedStageRuntimeTests
 
     /// <summary>A stage may declare the shared default runtime type without selecting an override.</summary>
     /// <returns>Completion of the default build and cleanup.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task TypedStageCanUseTheDefaultEnvironmentAsync()
     {

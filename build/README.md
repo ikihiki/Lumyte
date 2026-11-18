@@ -109,7 +109,7 @@ MSBuild hookは`Native --native-backend ...`と`Setup --setup-tool wasm-python`�
 | `Test --lane cpu` | managed契約。Linux x64のみで実行 |
 | `Test --lane integration` | 外部tool・process・native libraryの契約 |
 | `Test --lane gpu` | 実backend・pixel/readback。既存opt-in条件を維持 |
-| `Test --suite browser` | JavaScript契約・WebGPU・Browser Audio。Wasm toolsの導入を共有 |
+| `Test --lane integration --platform browser` | Browser API依存のWebGPU・WebAudio・DOM/input/history/interopのみ。hostのmock契約を含まない |
 | `Distribution` | sample実行・NuGet pack |
 | `Quality` | C#・C/C++・Markdownの書式検査 |
 
@@ -128,7 +128,7 @@ Platformのテストprojectもhost用の参照とソースだけをコンパイ�
 共通projectの追加は正本への登録だけで反映されます。OS専用projectを追加した場合は`Build.Ci.cs`の分類も更新してください。
 引数を省略した通常のsolution操作は従来どおり全projectを対象にします。
 
-Browserは独立したLinux x64 jobで、nativeのLinux／Windows jobと並列に実行します。
+BrowserはLinux／Windowsと同じplatform integrationとして、API別のLinux x64 jobで並列実行します。Node mock契約はhost統合jobで一度だけ実行します。
 Browser jobはsolution全体をビルドせず、検証するBrowser sampleとその依存だけをpublishします。
 共通のsample・package検証はnativeのLinux x64で実行します。
 AOTは独立したLinux x64 jobで、対象sampleだけをpublish・実行します。

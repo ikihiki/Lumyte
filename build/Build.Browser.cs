@@ -4,13 +4,8 @@ internal sealed partial class Build
 {
     private async Task TestWasmAsync()
     {
-        foreach (string browserCase in _browserCases.Where(value => (Suite == "browser" || value != "audio") && (BrowserCase is null || BrowserCase == value)))
+        foreach (string browserCase in _browserCases.Where(value => (Platform == "browser" || Suite == "browser" || value != "audio") && (BrowserCase is null || BrowserCase == value)))
         {
-            if (browserCase == "contracts")
-            {
-                continue;
-            }
-
             if (browserCase == "audio")
             {
                 await TestBrowserAudioAsync().ConfigureAwait(false);

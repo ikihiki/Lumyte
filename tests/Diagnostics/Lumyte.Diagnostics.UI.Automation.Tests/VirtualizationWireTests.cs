@@ -13,6 +13,7 @@ public sealed class VirtualizationWireTests
 {
     /// <summary>Observations do not realize offscreen items; authorized input reveals and clicks them.</summary>
     /// <returns>The asynchronous check.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task KeyObservationAndInputHaveSeparateAuthorityAsync()
     {

@@ -161,7 +161,7 @@
         },
         "BrowserCase": {
           "type": "string",
-          "description": "Independent browser case: contracts, graphics, text, ui-application, ui-navigation, ui-pages, ui-transitions, or audio. Omit for the complete suite"
+          "description": "Independent browser API case: graphics, text, ui-application, ui-navigation, ui-pages, ui-transitions, or audio. Omit for the complete suite"
         },
         "Cache": {
           "type": "string",
@@ -226,6 +226,10 @@
         "PipelineValidation": {
           "type": "boolean",
           "description": "Capture the Vulkan pipeline validation output after the managed GPU lane"
+        },
+        "Platform": {
+          "type": "string",
+          "description": "Integration platform: host or browser. Browser executes only real browser API checks"
         },
         "Project": {
           "type": "string",

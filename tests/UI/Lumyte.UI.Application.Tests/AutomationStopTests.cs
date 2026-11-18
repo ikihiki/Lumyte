@@ -11,6 +11,7 @@ public sealed class AutomationStopTests
 {
     /// <summary>Checks owner-forced cleanup and a concurrent external lease return share one completion.</summary>
     /// <returns>The verification.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task ClickThatStopsTheApplicationCanReturnItsLeaseAsync()
     {

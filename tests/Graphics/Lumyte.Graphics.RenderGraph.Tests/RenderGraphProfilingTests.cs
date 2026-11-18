@@ -115,6 +115,7 @@ public sealed class RenderGraphProfilingTests
 
     /// <summary>Uses compile-time correlation after recording on another thread under a different Activity.</summary>
     /// <returns>The asynchronous recording verification.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task DelayedRecordRetainsCompileCorrelationAcrossThreadsAsync()
     {

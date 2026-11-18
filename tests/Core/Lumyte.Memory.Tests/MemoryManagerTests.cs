@@ -141,6 +141,7 @@ public sealed class MemoryManagerTests
 
     /// <summary>Concurrent reservations cannot consume the same remaining hard-limit capacity.</summary>
     /// <returns>Completion of all competing reservations.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task ConcurrentReservationsShareOneBudgetAsync()
     {

@@ -14,6 +14,7 @@ public sealed class ApplicationRetirementTests
     /// <summary>Retirement cannot make a quiescent content producer eligible for Advance again.</summary>
     /// <param name="mode">Fixed, finite, or spatial session construction.</param>
     /// <returns>The real headless application shutdown oracle.</returns>
+    [Trait("Execution", "Integration")]
     [Theory]
     [InlineData(0)]
     [InlineData(1)]

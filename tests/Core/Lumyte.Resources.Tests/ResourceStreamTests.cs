@@ -18,6 +18,7 @@ public sealed class ResourceStreamTests
 
     /// <summary>Each session has its own cursor and prefetching stops at the configured buffer bound.</summary>
     /// <returns>Completion of the independent-reader checks.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task IndependentSessionsHaveBoundedPrefetchAsync()
     {
@@ -42,6 +43,7 @@ public sealed class ResourceStreamTests
 
     /// <summary>Reload changes new sessions while an existing reader keeps its old revision, input and cursor.</summary>
     /// <returns>Completion of the old and new streaming generation checks.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task ReloadPreservesExistingSessionAndUpdatesNewSessionsAsync()
     {
@@ -89,6 +91,7 @@ public sealed class ResourceStreamTests
 
     /// <summary>Short reads preserve ordering and distinguish buffered underflow from the end of input.</summary>
     /// <returns>Completion of the sequential-read checks.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task ShortReadsAndEndOfStreamPreserveSequenceAsync()
     {
@@ -110,6 +113,7 @@ public sealed class ResourceStreamTests
 
     /// <summary>Repeated ring wraparound preserves all elements without growing the buffer budget.</summary>
     /// <returns>Completion of the sustained read checks.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task LongStreamReusesFixedBufferBudgetAsync()
     {
@@ -135,6 +139,7 @@ public sealed class ResourceStreamTests
 
     /// <summary>A cancelled consumer wait does not stop the producer or consume any elements.</summary>
     /// <returns>Completion of the read cancellation checks.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task ReadCancellationOnlyCancelsItsWaitAsync()
     {
@@ -158,6 +163,7 @@ public sealed class ResourceStreamTests
 
     /// <summary>Canceling an old read token cannot cancel the next notification wait.</summary>
     /// <returns>Completion of repeated canceled waits followed by a successful read.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task CanceledReadNotificationsCanBeReusedAsync()
     {
@@ -186,6 +192,7 @@ public sealed class ResourceStreamTests
 
     /// <summary>Reading buffered elements preserves their sequence without calling the input reader.</summary>
     /// <returns>Completion of the callback checks.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task ReadAvailableConsumesBufferedSequenceWithoutReadingInputAsync()
     {
@@ -206,6 +213,7 @@ public sealed class ResourceStreamTests
 
     /// <summary>Releasing a full block wakes prefetching without calling the reader inline.</summary>
     /// <returns>Completion of the producer notification checks.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task ReleasingBlockWakesProducerWithoutInlineReaderAsync()
     {
@@ -238,6 +246,7 @@ public sealed class ResourceStreamTests
 
     /// <summary>A single-block ring repeatedly resumes its producer without losing notifications.</summary>
     /// <returns>Completion of the single-block ordering checks.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task SingleBlockWakeupsPreserveSequenceAsync()
     {
@@ -259,6 +268,7 @@ public sealed class ResourceStreamTests
 
     /// <summary>Stopping a producer waiting for space does not require consumption to wake it.</summary>
     /// <returns>Completion of the full-buffer shutdown checks.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task FullBufferDisposalStopsWithoutConsumptionAsync()
     {
@@ -272,6 +282,7 @@ public sealed class ResourceStreamTests
 
     /// <summary>Seeking discards prefetched elements and resets the public position independently.</summary>
     /// <returns>Completion of the seek checks.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task SeekReplacesPrefetchedDataAsync()
     {
@@ -288,6 +299,7 @@ public sealed class ResourceStreamTests
 
     /// <summary>Seeking cancels an in-flight producer read before moving the reader's cursor.</summary>
     /// <returns>Completion of the producer coordination checks.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task SeekWaitsForBlockedProducerToStopAsync()
     {
@@ -305,6 +317,7 @@ public sealed class ResourceStreamTests
 
     /// <summary>An unsuccessful seek faults later reads while retaining cleanup ownership.</summary>
     /// <returns>Completion of the fault checks.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task FailedSeekFaultsSessionAsync()
     {
@@ -316,6 +329,7 @@ public sealed class ResourceStreamTests
 
     /// <summary>A reader error faults only its session and propagates the original error.</summary>
     /// <returns>Completion of the producer fault checks.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task ProducerFailureIsObservableAsync()
     {
@@ -329,6 +343,7 @@ public sealed class ResourceStreamTests
 
     /// <summary>A failed reader disposal retains both the memory budget and the factory lease until retry.</summary>
     /// <returns>Completion of the cleanup retry checks.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task FailedDisposalRetainsBuffersUntilRetryAsync()
     {
@@ -349,6 +364,7 @@ public sealed class ResourceStreamTests
 
     /// <summary>Concurrent disposal calls share the same task and release the reader only once.</summary>
     /// <returns>Completion of the concurrent disposal checks.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task ConcurrentDisposalSharesCompletionAsync()
     {
@@ -366,6 +382,7 @@ public sealed class ResourceStreamTests
 
     /// <summary>A token supplied for opening cannot cancel a session after it has been returned.</summary>
     /// <returns>Completion of the creation token checks.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task CreationCancellationDoesNotBecomeSessionCancellationAsync()
     {
@@ -381,6 +398,7 @@ public sealed class ResourceStreamTests
 
     /// <summary>Cancellation while waiting for the first block closes the reader and returns its buffers.</summary>
     /// <returns>Completion of the interrupted initialization checks.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task CancelledCreationReleasesSessionOwnershipAsync()
     {
@@ -397,6 +415,7 @@ public sealed class ResourceStreamTests
 
     /// <summary>A factory failure releases buffers even when it never returns a reader.</summary>
     /// <returns>Completion of the failed initialization checks.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task FailedReaderCreationReleasesAllocatedBuffersAsync()
     {
@@ -408,6 +427,7 @@ public sealed class ResourceStreamTests
 
     /// <summary>An empty reader completes opening without allocating additional blocks or inventing data.</summary>
     /// <returns>Completion of the empty stream checks.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task EmptyStreamIsAtEndImmediatelyAsync()
     {
@@ -420,6 +440,7 @@ public sealed class ResourceStreamTests
 
     /// <summary>Failed initialization cleanup remains owned by the manager until a later trim succeeds.</summary>
     /// <returns>Completion of the abandoned session retry checks.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task ManagerRetainsFailedInitializationCleanupAsync()
     {
@@ -435,6 +456,7 @@ public sealed class ResourceStreamTests
 
     /// <summary>A nonseekable stream rejects seeking while preserving its buffered data.</summary>
     /// <returns>Completion of the nonseekable checks.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task UnsupportedSeekPreservesSessionAsync()
     {
@@ -449,6 +471,7 @@ public sealed class ResourceStreamTests
 
     /// <summary>Invalid buffering limits are rejected before a reader or memory scope is acquired.</summary>
     /// <returns>Completion of the options checks.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task InvalidOptionsAreRejectedAsync()
     {

@@ -180,3 +180,68 @@ Its exception assertions remain unchanged; no test is skipped or serialized to
 mask the issue. SDK fixture build workers disable node reuse/shared compilation
 only for their own child process, avoiding inherited redirected-stream lifetimes;
 no host settings or production build policy is changed.
+
+## 2026-11-18 CPU bodies / platform integration correction
+
+Baseline `fa7e3aa8`: 57 catalog projects, CPU 50, integration 13, GPU 10;
+existing CPU TRX held 4,240 passing rows. New catalog keeps 57 / CPU 50 /
+GPU 10 and expands integration to 32 (30 supported on Linux). CPU methods
+remain parallel at concurrency 4; code-under-test worker/scheduler/thread races
+move to integration. See [thread mapping](../docs/thread-coverage-map.md) and
+[browser mapping](../docs/browser-coverage-map.md) for exact method/scenario transfers.
+
+Browser now selects `Test --lane integration --platform browser`; seven real
+API cases remain. The eighth, mocked Node contracts, runs once on the Linux x64
+host integration job without Chrome or WASM publication. No new task targets: the
+public four-task CI interface / total 18 targets are regression-tested.
+
+Fresh full xUnit inventories now include each discovered case ID/name/lane. Each
+selected project must emit a fresh, nonempty TRX (old TRX removed before launch),
+plus complete discovery matching the declared lane inventory; missing/empty
+evidence is fail-closed. The ordinary category still uses one SDK test / `.slnf`.
+
+Verified locally with the existing `/tmp/lumyte-lanes-env.sh` native/DXC paths:
+
+- Host solution compilation: passed with analyzers; no global setup/config changes.
+- Full CPU lane: 50 projects, 3,817 passed, zero failures/skips; `/tmp/lumyte-reclassification-cpu-authoritative.log`.
+- Full orchestration suite: 296 passed, zero failures/skips; `/tmp/lumyte-orchestration-complete-final.log`.
+- Runner contracts: 10 passed; the barrier/overlap proof is an Integration fixture
+  invoking the CPU method runner, not a CPU test body. Synthetic SDK CPU payloads
+  no longer contain a barrier.
+- Host Node contracts: 235 passed, one existing opt-in skip, zero failures across
+  four groups (201+8+17+9); `/tmp/lumyte-platform-node-contracts.log`.
+- Extracted exact Parley shaping oracle: 1 passed; native integration.
+- Extracted deterministic transition lifetime oracle: 1 passed; CPU.
+- Extracted 28-mode / 10 blend-boundary / 14 gradient native pixel oracle: passed.
+  It first failed unchanged on identical radial circles; explicit exact-circle
+  early transparency fixed native optimizer contraction without changing oracle,
+  tolerance, deadlines or skips.
+- Fresh Pages WASM publish and actual WebGPU/DOM input/history/stop smoke: passed;
+  `/tmp/lumyte-reclassification-browser-pages-api.log`.
+- Real diagnostics HTTP + MagicOnion + Blazor WebSocket / Fluent UI browser
+  integration: passed, zero browser errors (headless Chrome);
+  `artifacts/test-results/diagnostics-reclassification-headless/results.json`.
+  Full Chrome attempt first hit Page.navigate CDP timeout; no timeout changed.
+- JS syntax / whitespace validation / `git diff --check`: passed.
+
+GPU correctness remains a separate lane. A first local full GPU attempt used
+the physical default driver and failed two unchanged Vulkan depth-format cases;
+both passed with explicit CI-equivalent lavapipe `/usr/share/vulkan/icd.d/lvp_icd.json`.
+No skips or CI backend conditions were widened. Full software-GPU rerun and final
+integration receipts are recorded below when complete. GitHub Actions on this new
+commit is not locally verified; requester owns push and terminal CI monitoring.
+
+Coverage reconciliation compares baseline/new CPU TRX **multisets**, not only
+source names: 426 original rows no longer appear under their old CPU names;
+422 match executed integration rows exactly. Four old theory names map to the
+two cooperative CPU + two ThreadPool integration facts, all executed. No
+unaccounted original rows remain. Machine-readable local evidence:
+`artifacts/reclassification-coverage-reconciliation.json`. Three added CPU
+rows explain 4,240 − 426 + 3 = 3,817 (two renamed cooperative facts and the
+transferred deterministic transition oracle).
+
+Final host integration: **30 projects, 911 passed, 16 existing opt-in skips,
+zero failures/empty TRX**, fresh discovery accepted;
+`/tmp/lumyte-reclassification-integration-authoritative.log`. CPU and integration
+full invocations each use one SDK test. New freshness guard also passed fresh
+CPU 2 / integration 8 runner-project invocations from an empty state directory.

@@ -13,7 +13,7 @@ namespace Lumyte.Graphics.Text.Parley.Browser.Sample;
 internal static partial class Program
 {
     private const uint Width = 900;
-    private const uint Height = 1700;
+    private const uint Height = 1000;
     private static string _report = string.Empty;
     private static string _pixels = string.Empty;
 
@@ -45,8 +45,7 @@ internal static partial class Program
         string khmer = AddFont(engine, "NotoSansKhmer");
         string color = AddFont(engine, "ColorFontTest");
         var options = new ParleyTextOptions2D { FontFamily = family, FontSize = 26 };
-        CheckShaping(engine, options, japanese);
-        Console.WriteLine("Parley font registration and paragraph shaping checks passed.");
+        Console.WriteLine("Bundled fonts registered through the WASM C ABI.");
         var ink = PaintGraph2D.Solid(new SRgba<float>(0.1f, 0.15f, 0.25f, 1));
         TextLayout2D counter = engine.CreateLayout("O", options with { FontSize = 100 }, ink);
         TextLayout2D smallCounter = engine.CreateLayout("O", options with { FontSize = 20 }, ink);
@@ -106,9 +105,8 @@ internal static partial class Program
 
         CheckForeground(pixels, translucent.Drawings.OfType<TextPaintGeometry2D>().Single().Bounds, new Vector2(24, 780), foreground, foreground, 80);
         CheckForeground(pixels, gradient.Drawings.OfType<TextPaintGeometry2D>().Single().Bounds, new Vector2(230, 780), foreground, foregroundEnd, 80);
-        CheckBackendPaintPixels(pixels);
         _pixels = Convert.ToBase64String(pixels);
-        _report = $"Parley WASM text rendering passed: {inkPixels} ink pixels ({textInkPixels} in the text panel). csbindgen C ABI, ligatures, Japanese fallback, bidi clusters and wrapping. MSDF/MTSDF x4 counters, COLRv1 vector gradients and multiply, translucent and gradient currentColor. Backend checks: all 28 composite modes, isolated backdrops, clip masks and gradient edge cases. Layouts survive engine disposal.";
+        _report = $"Parley WASM text rendering passed: {inkPixels} ink pixels ({textInkPixels} in the text panel). csbindgen WASM C ABI and bundled font registration. MSDF/MTSDF x4 counters, COLRv1 vector gradients and multiply, translucent and gradient currentColor. Layouts survive engine disposal.";
         Console.WriteLine(_report);
     }
 
@@ -116,35 +114,6 @@ internal static partial class Program
     {
         using Stream stream = Assembly.GetExecutingAssembly().GetManifestResourceStream($"Lumyte.Parley.Sample.{name}.ttf") ?? throw new InvalidOperationException($"The bundled font {name} is missing.");
         return engine.AddFont(stream);
-    }
-
-    private static void CheckShaping(ParleyTextEngine2D engine, ParleyTextOptions2D options, string japanese)
-    {
-        ParleyTextLayout2D ligatures = engine.CreateDetailedLayout("office", options);
-        ParleyTextLayout2D unjoined = engine.CreateDetailedLayout("office", options with { FontFeatures = [new("liga", 0)] });
-        if (ligatures.Glyphs.Count >= unjoined.Glyphs.Count)
-        {
-            throw new InvalidOperationException("OpenType ligatures did not affect shaping.");
-        }
-
-        ParleyTextLayout2D fallback = engine.CreateDetailedLayout("日本語", options with { FallbackFontFamilies = [japanese] });
-        if (fallback.Glyphs.Count != 3 || fallback.Glyphs.Any(glyph => glyph.GlyphId == 0 || glyph.FontFamily != japanese))
-        {
-            throw new InvalidOperationException("Explicit Japanese fallback was not used.");
-        }
-
-        ParleyTextLayout2D bidi = engine.CreateDetailedLayout("ABC אבג", options);
-        int[] rtlClusters = bidi.Glyphs.Where(glyph => glyph.Utf16Start >= 4).Select(glyph => glyph.Utf16Start).ToArray();
-        if (!rtlClusters.SequenceEqual([6, 5, 4]))
-        {
-            throw new InvalidOperationException("Bidi source clusters did not follow visual glyph order.");
-        }
-
-        TextLayout2D wrapped = engine.CreateLayout("Parley shapes a paragraph and wraps its positioned glyphs.", options with { WrappingLength = 230 });
-        if (wrapped.LineCount < 2)
-        {
-            throw new InvalidOperationException("Paragraph wrapping did not create multiple lines.");
-        }
     }
 
     private static DrawList2D BuildDrawing(ParleyTextEngine2D engine, ParleyTextOptions2D options, string japanese, string khmer, TextLayout2D counter, TextLayout2D color, TextLayout2D translucent, TextLayout2D gradient, DistanceFieldText2D msdf, DistanceFieldText2D mtsdf)
@@ -190,7 +159,6 @@ internal static partial class Program
         canvas.DrawText(engine.CreateLayout("currentColor: alpha 0.5 / gradient", options with { FontSize = 22 }, ink), new Vector2(24, 730));
         canvas.DrawText(translucent, new Vector2(24, 780));
         canvas.DrawText(gradient, new Vector2(230, 780));
-        BuildBackendPaintChecks(canvas, engine, options);
         return canvas.End();
     }
 

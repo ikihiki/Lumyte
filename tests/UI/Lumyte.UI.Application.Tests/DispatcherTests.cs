@@ -9,6 +9,7 @@ public sealed class DispatcherTests
 {
     /// <summary>Checks cancellation before start skips work while cancellation after start preserves its actual result.</summary>
     /// <returns>The verification.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task CancellationOnlySkipsWorkThatHasNotStartedAsync()
     {
@@ -54,6 +55,7 @@ public sealed class DispatcherTests
 
     /// <summary>Checks external queue capacity rejects excess work without running it.</summary>
     /// <returns>The verification.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task FullQueueRejectsBeforeMutationAsync()
     {

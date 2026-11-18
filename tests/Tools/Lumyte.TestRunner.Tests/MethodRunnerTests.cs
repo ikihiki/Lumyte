@@ -11,6 +11,7 @@ namespace Lumyte.TestRunner.Tests;
 
 /// <summary>Exercises the real xUnit method/case runners without spawning per-method processes.</summary>
 [Collection("Runner contracts")]
+[Trait("Execution", "Integration")]
 public sealed class MethodRunnerTests
 {
     /// <summary>Two methods in one class must meet a barrier, with shared and per-test async lifetimes intact.</summary>
@@ -34,6 +35,11 @@ public sealed class MethodRunnerTests
         Assert.Equal(1, SharedFixture.Disposed);
         Assert.Equal(new[] { "First output" + Environment.NewLine, "Second output" + Environment.NewLine }, messages.Output.Order());
     }
+
+    /// <summary>Proves the CPU scheduling policy from an integration fixture, not a CPU test body.</summary>
+    /// <returns>The real nested runner execution.</returns>
+    [Fact]
+    public Task CpuMethodSchedulerOverlapsMethodsAsync() => SameClassMethodsOverlapAndPreserveLifetimesAsync();
 
     /// <summary>The bound includes async methods suspended at an await, not just active threads.</summary>
     /// <returns>The bounded execution.</returns>

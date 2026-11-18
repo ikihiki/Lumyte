@@ -14,6 +14,7 @@ public sealed class WindowTests
 {
     /// <summary>Checks simultaneous publications, independent Back and a fresh navigator after a keyed window is reopened.</summary>
     /// <returns>The verification.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task EachWindowOwnsItsHistoryAndActivationLifetimeAsync()
     {
