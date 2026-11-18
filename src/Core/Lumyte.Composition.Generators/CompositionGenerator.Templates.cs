@@ -22,6 +22,30 @@ public sealed partial class CompositionGenerator
             ? named : null;
     }
 
+    private static bool InheritsSlotBridge(INamedTypeSymbol component, string name, Compilation compilation)
+    {
+        for (INamedTypeSymbol? ancestor = component.BaseType; ancestor is not null; ancestor = ancestor.BaseType)
+        {
+            // Referenced assemblies already contain their generated bridges. Internal
+            // accessibility (including friend assemblies) must be checked on the symbol.
+            if (ancestor.GetMembers("__LumyteSlot" + name).Any(member => compilation.IsSymbolAccessibleWithin(member, component)))
+            {
+                return true;
+            }
+
+            // Source generators see the input compilation, not one another's output.
+            // Predict the internal bridge only for a source component in this assembly.
+            if (SymbolEqualityComparer.Default.Equals(ancestor.ContainingAssembly, compilation.Assembly)
+                && ancestor.DeclaringSyntaxReferences.Length != 0 && HasAttribute(ancestor, "Composable")
+                && ancestor.GetMembers(name).OfType<IMethodSymbol>().Any(method => HasAttribute(method, "ComposeSlot")))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     private static string SlotType(IMethodSymbol slot, Compilation compilation)
     {
         string target = TypeName(slot.Parameters[0].Type);

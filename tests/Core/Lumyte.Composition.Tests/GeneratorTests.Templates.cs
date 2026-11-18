@@ -237,6 +237,79 @@ public sealed partial class GeneratorTests
         Assert.DoesNotContain(output.GetDiagnostics(), diagnostic => diagnostic.Severity >= DiagnosticSeverity.Warning);
     }
 
+    /// <summary>Checks repeated private slots explicitly hide only their generated bridges across three levels.</summary>
+    /// <param name="slotType">The existing child or typed template contract.</param>
+    /// <param name="slotName">The repeated slot name.</param>
+    [Theory]
+    [InlineData("CompositionTemplate<T, Base<T>, Widget>", "Item")]
+    [InlineData("Widget[]", "Background")]
+    public void ReexportedSlotBridgesHideAccessibleSourceBridges(string slotType, string slotName)
+    {
+        string source = "using Lumyte.Composition; public class Widget { } public static partial class Compose { public static partial class Definitions { "
+            + "[Composable] public partial class Base<T> where T : notnull { [ComposeSlot] private static void " + slotName + "(Base<T> target, " + slotType + " value) { } } "
+            + "[Composable] public partial class Derived<T> : Base<T> where T : notnull { [ComposeSlot] private static void " + slotName + "(Derived<T> target, " + slotType + " value) { } } "
+            + "[Composable] public partial class Leaf<T> : Derived<T> where T : notnull { [ComposeSlot] private static void " + slotName + "(Leaf<T> target, " + slotType + " value) { } } } }";
+        GeneratorDriverRunResult result = Run(source, out Compilation output);
+        Assert.Empty(result.Diagnostics);
+        Assert.DoesNotContain(output.GetDiagnostics(), diagnostic => diagnostic.Severity >= DiagnosticSeverity.Warning);
+        Assert.Equal(2, result.GeneratedTrees.Count(tree => tree.ToString().Contains("internal new static", StringComparison.Ordinal)));
+        AssertOriginalSlotBridgeWouldWarn(output);
+    }
+
+    /// <summary>Checks an inaccessible compiled internal bridge does not induce an unnecessary new modifier.</summary>
+    /// <param name="friend">Whether the compiled base grants internal access to the consumer.</param>
+    /// <param name="slotType">The child or typed template contract.</param>
+    [Theory]
+    [InlineData(false, "CompositionTemplate<int, string, object>")]
+    [InlineData(true, "CompositionTemplate<int, string, object>")]
+    [InlineData(false, "object[]")]
+    [InlineData(true, "object[]")]
+    public void ReexportedSlotBridgesRespectCompiledBaseAccessibility(bool friend, string slotType)
+    {
+        string baseSource = "using Lumyte.Composition; "
+            + (friend ? "[assembly: System.Runtime.CompilerServices.InternalsVisibleTo(\"SlotConsumer\")] " : string.Empty)
+            + "namespace Library { public static partial class Compose { public static partial class Definitions { [Composable] public partial class Base { [ComposeSlot] private static void Row(Base target, " + slotType + " value) { } } } } }";
+        GeneratorDriverRunResult baseResult = Run(baseSource, out Compilation baseOutput);
+        Assert.Empty(baseResult.Diagnostics);
+        Assert.DoesNotContain(baseOutput.GetDiagnostics(), diagnostic => diagnostic.Severity >= DiagnosticSeverity.Warning);
+        using var stream = new MemoryStream();
+        Microsoft.CodeAnalysis.Emit.EmitResult emit = baseOutput.Emit(stream);
+        Assert.True(emit.Success, string.Join(Environment.NewLine, emit.Diagnostics));
+        string source = "using Lumyte.Composition; public static partial class Compose { public static partial class Definitions { [Composable] public partial class Derived : Library.Compose.Definitions.Base { [ComposeSlot] private static void Row(Derived target, " + slotType + " value) { } } } }";
+        var options = new Microsoft.CodeAnalysis.CSharp.CSharpParseOptions(Microsoft.CodeAnalysis.CSharp.LanguageVersion.Latest);
+        var compilation = Microsoft.CodeAnalysis.CSharp.CSharpCompilation.Create(
+            "SlotConsumer",
+            [Microsoft.CodeAnalysis.CSharp.CSharpSyntaxTree.ParseText(source, options)],
+            baseOutput.References.Append(MetadataReference.CreateFromImage(stream.ToArray())),
+            new Microsoft.CodeAnalysis.CSharp.CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary, nullableContextOptions: NullableContextOptions.Enable));
+        GeneratorDriver driver = Microsoft.CodeAnalysis.CSharp.CSharpGeneratorDriver.Create(
+            [new Generators.CompositionGenerator().AsSourceGenerator()], parseOptions: options);
+        driver = driver.RunGeneratorsAndUpdateCompilation(compilation, out Compilation output, out _);
+        GeneratorDriverRunResult result = driver.GetRunResult();
+        Assert.Empty(result.Diagnostics);
+        Assert.DoesNotContain(output.GetDiagnostics(), diagnostic => diagnostic.Severity >= DiagnosticSeverity.Warning);
+        Assert.Equal(friend, result.GeneratedTrees.Single().ToString().Contains("internal new static", StringComparison.Ordinal));
+        if (friend)
+        {
+            AssertOriginalSlotBridgeWouldWarn(output);
+        }
+    }
+
+    private static void AssertOriginalSlotBridgeWouldWarn(Compilation output)
+    {
+        // Recreate the old generator output without weakening the passing compilation.
+        Compilation original = output;
+        foreach (SyntaxTree tree in output.SyntaxTrees.Where(tree => tree.ToString().Contains("internal new static", StringComparison.Ordinal)))
+        {
+            SyntaxTree oldTree = Microsoft.CodeAnalysis.CSharp.CSharpSyntaxTree.ParseText(
+                tree.ToString().Replace("internal new static", "internal static", StringComparison.Ordinal),
+                (Microsoft.CodeAnalysis.CSharp.CSharpParseOptions)tree.Options);
+            original = original.ReplaceSyntaxTree(tree, oldTree);
+        }
+
+        Assert.Contains(original.GetDiagnostics(), diagnostic => diagnostic.Id == "CS0108" && diagnostic.GetMessage().Contains("__LumyteSlot", StringComparison.Ordinal));
+    }
+
     private static bool ExecuteTemplateConsumer(string source)
     {
         GeneratorDriverRunResult result = Run(source, out Compilation output);

@@ -488,7 +488,8 @@ public sealed partial class CompositionGenerator : IIncrementalGenerator
             RenderSlotIndexer(builder, type, content, InheritsCompositionChild(component, compilation), slots.Any(slot => slot.Name == "Item"));
             foreach (IMethodSymbol slot in slots)
             {
-                builder.Append("internal static ").Append(SlotType(slot, compilation)).Append(" ").Append(Escape("__LumyteSlot" + slot.Name))
+                builder.Append(InheritsSlotBridge(component, slot.Name, compilation) ? "internal new static " : "internal static ")
+                    .Append(SlotType(slot, compilation)).Append(" ").Append(Escape("__LumyteSlot" + slot.Name))
                     .Append(TemplateType(slot.Parameters[1].Type, compilation) is not null
                         ? "() => new(static (target, children) => " : "() => new((target, children) => ")
                     .Append(Escape(slot.Name)).AppendLine("(target, children));");
