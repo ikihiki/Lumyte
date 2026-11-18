@@ -240,7 +240,16 @@ public sealed class ShaderToolOutputPathTests
     public async Task UncertainPathPermissionsRebuildAsync(bool partialPermissions)
         => await VerifyCompilerLookupAsync(false, false, partialPermissions: partialPermissions);
 
-    private static async Task VerifyCompilerLookupAsync(bool absoluteCompiler, bool currentShadow, bool shellOutsideProject = false, bool executableShadow = false, bool wrappedHost = false, bool partialPermissions = false)
+    /// <summary>Shell-normalized backslash arguments must not cache an unexecuted compiler identity.</summary>
+    /// <param name="hostArgument">Whether the backslashes belong to the host rather than the compiler.</param>
+    /// <returns>The isolated shell argument identity verification.</returns>
+    [LinuxTheory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ShellBackslashIdentityConservativelyRebuildsAsync(bool hostArgument)
+        => await VerifyCompilerLookupAsync(hostArgument, false, shellCompiler: !hostArgument, shellHost: hostArgument);
+
+    private static async Task VerifyCompilerLookupAsync(bool absoluteCompiler, bool currentShadow, bool shellOutsideProject = false, bool executableShadow = false, bool wrappedHost = false, bool partialPermissions = false, bool shellCompiler = false, bool shellHost = false)
     {
         if (OperatingSystem.IsWindows())
         {
@@ -353,8 +362,39 @@ public sealed class ShaderToolOutputPathTests
                 File.SetUnixFileMode(hostCompiler, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
             }
 
-            string log = executableShadow ? hostLog : currentShadow ? cwdLog : pathLog;
-            var environment = new Dictionary<string, string> { ["PATH"] = tools + Path.PathSeparator + Environment.GetEnvironmentVariable("PATH"), ["LUMYTE_FAKE_SLANG_LOG"] = pathLog, ["LUMYTE_FAKE_CWD_SLANG_LOG"] = cwdLog, ["LUMYTE_FAKE_CHILD_RUNTIME"] = runtimeLog, ["LUMYTE_FAKE_HOST_SLANG_LOG"] = hostLog };
+            string shellActualLog = Path.Combine(directory, "shell-actual-invocations.txt");
+            string shellActual = Path.Combine(tools, "shell" + (char)92 + "tool");
+            string shellTracked = Path.Combine(tools, "shell" + new string((char)92, 2) + "tool");
+            string shellHostMarker = Path.Combine(directory, "shell-host-invocations.txt");
+            string shellNormalizedLog = Path.Combine(directory, "shell-normalized-invocations.txt");
+            string shellNormalizedHostLog = Path.Combine(directory, "shell-normalized-host-invocations.txt");
+            string observedShellHostLog = shellHostMarker;
+            string shellUnusedLog = Path.Combine(directory, "shell-unused-invocations.txt");
+            string shellNormalized = Path.Combine(tools, "shell", "tool");
+            if (shellCompiler || shellHost)
+            {
+                string script = fakeScript.Replace("LUMYTE_FAKE_SLANG_LOG", "LUMYTE_FAKE_SHELL_SLANG_LOG", StringComparison.Ordinal);
+                if (shellHost)
+                {
+                    script = "#!/bin/sh\nprintf 'host\\n' >> \"$LUMYTE_FAKE_SHELL_HOST_LOG\"\nexec \"" + Environment.ProcessPath + "\" \"$@\"\n";
+                }
+
+                await File.WriteAllTextAsync(shellTracked, script.Replace("LUMYTE_FAKE_SHELL_", "LUMYTE_FAKE_UNUSED_", StringComparison.Ordinal));
+                await File.WriteAllTextAsync(shellActual, script);
+                File.SetUnixFileMode(shellTracked, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+                File.SetUnixFileMode(shellActual, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+
+                // MSBuild's filesystem input normalization can interpret backslashes
+                // as separators. Keep that unrelated alias present too: it must not
+                // accidentally hide a stale hit by forcing a missing-input rebuild.
+                string aliasDirectory = Path.Combine(tools, "shell");
+                Directory.CreateDirectory(aliasDirectory);
+                await File.WriteAllTextAsync(shellNormalized, script.Replace("LUMYTE_FAKE_SHELL_SLANG_LOG", "LUMYTE_FAKE_NORMALIZED_SLANG_LOG", StringComparison.Ordinal).Replace("LUMYTE_FAKE_SHELL_HOST_LOG", "LUMYTE_FAKE_NORMALIZED_HOST_LOG", StringComparison.Ordinal));
+                File.SetUnixFileMode(shellNormalized, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+            }
+
+            string log = shellCompiler ? shellActualLog : executableShadow ? hostLog : currentShadow ? cwdLog : pathLog;
+            var environment = new Dictionary<string, string> { ["PATH"] = tools + Path.PathSeparator + Environment.GetEnvironmentVariable("PATH"), ["LUMYTE_FAKE_SLANG_LOG"] = pathLog, ["LUMYTE_FAKE_CWD_SLANG_LOG"] = cwdLog, ["LUMYTE_FAKE_CHILD_RUNTIME"] = runtimeLog, ["LUMYTE_FAKE_HOST_SLANG_LOG"] = hostLog, ["LUMYTE_FAKE_SHELL_SLANG_LOG"] = shellActualLog, ["LUMYTE_FAKE_SHELL_HOST_LOG"] = shellHostMarker, ["LUMYTE_FAKE_NORMALIZED_SLANG_LOG"] = shellNormalizedLog, ["LUMYTE_FAKE_NORMALIZED_HOST_LOG"] = shellNormalizedHostLog, ["LUMYTE_FAKE_UNUSED_SLANG_LOG"] = shellUnusedLog, ["LUMYTE_FAKE_UNUSED_HOST_LOG"] = shellUnusedLog };
             string offlineFeed = Path.Combine(directory, "offline-feed");
             Directory.CreateDirectory(offlineFeed);
             await RunWithEnvironmentAsync(directory, true, environment, "restore", Path.Combine(directory, "tools/shaders/Lumyte.ShaderCompiler/Lumyte.ShaderCompiler.csproj"), "-p:Configuration=Release", "--verbosity:quiet", "--source", offlineFeed);
@@ -369,10 +409,61 @@ public sealed class ShaderToolOutputPathTests
                 build = [.. build, "-p:DotNetHostPath=" + childHost];
             }
 
+            if (shellCompiler)
+            {
+                build = [.. build, "-p:SlangCompilerPath=" + shellTracked];
+            }
+            else if (shellHost)
+            {
+                build = [.. build, "-p:DotNetHostPath=" + shellTracked];
+            }
+
             // Start MSBuild outside the project directory for the CWD-shadow case.
             string buildDirectory = shellOutsideProject ? Path.GetDirectoryName(directory)! : directory;
             string first = await RunWithEnvironmentAsync(buildDirectory, true, environment, build);
+            if (shellCompiler && File.Exists(shellNormalizedLog))
+            {
+                // Some MSBuild versions normalize command paths before the shell.
+                // Observe the actual callee, rather than assuming either transform.
+                log = shellNormalizedLog;
+                shellActual = shellNormalized;
+            }
+            else if (shellHost && File.Exists(shellNormalizedHostLog))
+            {
+                shellActual = shellNormalized;
+                observedShellHostLog = shellNormalizedHostLog;
+            }
+
             Assert.Single(await File.ReadAllLinesAsync(log));
+            if (shellCompiler || shellHost)
+            {
+                await File.AppendAllTextAsync(shellActual, "\n# only the post-shell selected executable changes\n");
+                File.SetLastWriteTimeUtc(shellActual, DateTime.UtcNow.AddDays(-1));
+                string changed = await RunWithEnvironmentAsync(buildDirectory, true, environment, build);
+                string? shellEvidence = Environment.GetEnvironmentVariable("LUMYTE_SHADER_INCREMENTAL_EVIDENCE");
+                if (shellEvidence is not null)
+                {
+                    Directory.CreateDirectory(shellEvidence);
+                    File.Copy(targets, Path.Combine(shellEvidence, "tested-Slang.targets"), true);
+                    File.Copy(log, Path.Combine(shellEvidence, "actual-invocations.txt"), true);
+                    File.Copy(Path.Combine(directory, "evaluated-compiler.txt"), Path.Combine(shellEvidence, "evaluated-compiler.txt"), true);
+                    await File.WriteAllTextAsync(Path.Combine(shellEvidence, "second.log"), changed);
+                }
+
+                Assert.Equal(2, (await File.ReadAllLinesAsync(log)).Length);
+                Assert.False(File.Exists(shellUnusedLog));
+                if (shellCompiler)
+                {
+                    Assert.False(File.Exists(pathLog));
+                }
+                else
+                {
+                    Assert.Equal(2, (await File.ReadAllLinesAsync(observedShellHostLog)).Length);
+                }
+
+                return;
+            }
+
             string second = await RunWithEnvironmentAsync(buildDirectory, true, environment, build);
             string? evidence = Environment.GetEnvironmentVariable("LUMYTE_SHADER_INCREMENTAL_EVIDENCE");
             if (evidence is not null)

@@ -58,3 +58,26 @@ Hosted build-time improvement and whether actual CI repeated the same evaluated
 output remain unmeasured. Other RID/configuration/SDK publish passes can be valid.
 Keep all real build/verifier passes and CI deadlines; real compiler cold/warm
 artifact comparison requires separate authorization.
+
+## Shell identity boundary
+
+The unchanged Exec uses quoted shell arguments. On Linux, any backslash-bearing
+compiler or host string is therefore unqualified for caching: task/file identity
+is not assumed to equal the post-MSBuild/post-shell identity. Original/raw property
+Contains checks travel as boolean metadata, because normalized task parameters
+alone may already have lost those characters. This does not reject execution or
+escape/rewrite user commands; it forces the existing conservative rebuild path.
+Windows path separators are excluded from this Linux-only decision.
+
+The related boundary audit retains existing rejection of dollar expansion,
+backticks, embedded double quotes and CR/LF; compiler semicolons remain unqualified
+as MSBuild list boundaries. Glob characters, apostrophes and ordinary whitespace
+inside the existing double quotes are not newly interpreted or rewritten.
+
+Fake fixtures include literal two-backslash and one-backslash filenames plus an
+executable normalized directory alias, and observe the actual callee with separate
+ledgers. This SDK normalizes command paths, so the review's literal compiler-only
+stale case was not demonstrated: that control rebuilt after the change. The host
+argument control did fail before repair (one compile instead of two after only the
+selected host changed). It now conservatively rebuilds, with all ordinary
+incremental controls retained. Neither result is a real shader timing claim.

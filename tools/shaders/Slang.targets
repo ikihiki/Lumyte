@@ -41,6 +41,9 @@ public sealed class ResolveSlangCompilerInput : Microsoft.Build.Utilities.Task {
   [Microsoft.Build.Framework.Required] public string DotnetHost { get; set; }
   [Microsoft.Build.Framework.Required] public string ShaderTool { get; set; }
   [Microsoft.Build.Framework.Required] public string WorkingDirectory { get; set; }
+  public bool CompilerHasBackslash { get; set; }
+  public bool HostHasBackslash { get; set; }
+  public bool DeclaredHostHasBackslash { get; set; }
   [Microsoft.Build.Framework.Output] public string CompilerInput { get; set; }
   [Microsoft.Build.Framework.Output] public string Identity { get; set; }
   [System.Runtime.InteropServices.DllImport("libc", EntryPoint = "faccessat", SetLastError = true)]
@@ -86,6 +89,9 @@ public sealed class ResolveSlangCompilerInput : Microsoft.Build.Utilities.Task {
     bool windows = System.Runtime.InteropServices.RuntimeInformation.IsOSPlatform(System.Runtime.InteropServices.OSPlatform.Windows);
     bool linux = System.Runtime.InteropServices.RuntimeInformation.IsOSPlatform(System.Runtime.InteropServices.OSPlatform.Linux);
     try {
+      // Linux task strings and the existing shell command need not preserve
+      // backslashes identically. Decline caching, never rewrite accepted argv.
+      if (linux && (CompilerHasBackslash || HostHasBackslash || DeclaredHostHasBackslash || Compiler.IndexOf((char)92) >= 0 || DotnetHost.IndexOf((char)92) >= 0)) throw new System.InvalidOperationException();
       if (Compiler.IndexOfAny(new char[] { '$', (char)96, '"', ';', '\r', '\n' }) >= 0 ||
           DotnetHost.IndexOfAny(new char[] { '$', (char)96, '"', '\r', '\n' }) >= 0) throw new System.InvalidOperationException();
       if (System.IO.Path.IsPathRooted(Compiler)) {
@@ -161,7 +167,7 @@ public sealed class ResolveSlangCompilerInput : Microsoft.Build.Utilities.Task {
       <_LumyteShaderTool>@(_LumyteShaderToolTarget->'%(FullPath)')</_LumyteShaderTool>
       <_LumyteShaderToolDirectory>$([System.IO.Path]::GetDirectoryName('$(_LumyteShaderTool)'))</_LumyteShaderToolDirectory>
     </PropertyGroup>
-    <ResolveSlangCompilerInput Compiler="$(SlangCompilerPath)" IntermediateDirectory="$(IntermediateOutputPath)Slang" DotnetHost="$(_LumyteShaderDotnet)" ShaderTool="$(_LumyteShaderTool)" WorkingDirectory="$(MSBuildProjectDirectory)" Condition="'$(NoBuild)' != 'true'">
+    <ResolveSlangCompilerInput Compiler="$(SlangCompilerPath)" IntermediateDirectory="$(IntermediateOutputPath)Slang" DotnetHost="$(_LumyteShaderDotnet)" ShaderTool="$(_LumyteShaderTool)" WorkingDirectory="$(MSBuildProjectDirectory)" CompilerHasBackslash="$(SlangCompilerPath.Contains('\'))" HostHasBackslash="$(_LumyteShaderDotnet.Contains('\'))" DeclaredHostHasBackslash="$(DotNetHostPath.Contains('\'))" Condition="'$(NoBuild)' != 'true'">
       <Output TaskParameter="CompilerInput" PropertyName="_LumyteSlangCompilerInput" />
       <Output TaskParameter="Identity" PropertyName="_LumyteSlangCompilerIdentity" />
     </ResolveSlangCompilerInput>
