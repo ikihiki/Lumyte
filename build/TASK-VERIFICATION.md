@@ -245,3 +245,9 @@ zero failures/empty TRX**, fresh discovery accepted;
 `/tmp/lumyte-reclassification-integration-authoritative.log`. CPU and integration
 full invocations each use one SDK test. New freshness guard also passed fresh
 CPU 2 / integration 8 runner-project invocations from an empty state directory.
+
+Fresh reduced Parley WASM publish + real browser C ABI/font/WebGPU text
+readback/DOM ImageData/screenshot gate: passed (`/tmp/lumyte-reclassification-browser-text-api-final.log`).
+The first execution detected the extracted fixture height still hard-coded as
+1700 in main.js/index.html; those DOM dimensions now match the retained 1000px
+API fixture. No assertion was removed to hide the mismatch.

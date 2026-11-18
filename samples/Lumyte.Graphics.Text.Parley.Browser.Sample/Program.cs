@@ -71,7 +71,7 @@ internal static partial class Program
         Console.WriteLine("MTSDF atlas prepared.");
         DrawList2D drawing = BuildDrawing(engine, options, japanese, khmer, counter, colorLayout, translucent, gradient, msdf, mtsdf);
 
-        Console.WriteLine("Text and backend paint drawing built.");
+        Console.WriteLine("Browser text API drawing built.");
 
         // A layout owns managed geometry and paint snapshots, independent of Rust font memory.
         engine.Dispose();
