@@ -55,11 +55,16 @@ def output(arguments, environment):
     return subprocess.check_output(arguments, env=environment, encoding="utf-8", errors="replace", stderr=subprocess.STDOUT).strip()
 
 
-def tool_identity(command, arguments, environment):
+def executable_identity(command, environment):
     path = shutil.which(command, path=environment.get("PATH"))
-    if not path:
+    if not path or not Path(path).is_file():
         raise RuntimeError("Native cache identity tool not found: " + command)
-    return [str(Path(path).resolve()), digest(Path(path)), output([path, *arguments], environment)]
+    return [str(Path(path).resolve()), digest(Path(path))]
+
+
+def tool_identity(command, arguments, environment):
+    identity = executable_identity(command, environment)
+    return [*identity, output([identity[0], *arguments], environment)]
 
 
 def tool_identities(root, environment):
@@ -89,13 +94,11 @@ def tool_identities(root, environment):
         tools["packages"] = output(["dpkg-query", "-W", "-f=" + chr(36) + "{Package}=" + chr(36) + "{Version}\n"], environment)
     elif platform.system() == "Windows":
         # Compiler/SDK initialized by activate.ps1, exactly as in Compile.
-        # cl without sources returns failure; hash the executable and use SDK
-        # versions/INCLUDE/LIB plus runner image identity instead.
-        compiler = shutil.which("cl", path=environment.get("PATH"))
-        if not compiler:
-            raise RuntimeError("Activate the VS compiler before cache restore")
-        tools["cl"] = [compiler, digest(Path(compiler))]
-        tools["link"] = tool_identity("link", ["/?"], environment)
+        # MSVC tools need not return success for help/version requests through
+        # redirected streams. Hash both actual executables; VS/SDK versions,
+        # INCLUDE/LIB and the runner image remain part of the cache identity.
+        tools["cl"] = executable_identity("cl", environment)
+        tools["link"] = executable_identity("link", environment)
     else:
         raise RuntimeError("Native CI cache supports Linux and Windows")
     return tools

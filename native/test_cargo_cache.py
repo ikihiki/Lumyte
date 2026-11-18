@@ -92,6 +92,43 @@ class CargoCacheTests(unittest.TestCase):
         self.assertEqual(target.read_text(), "key=" + self.key() + "\n")
         self.assertEqual(report["paths"], list(cargo_cache.TARGETS))
 
+    def test_windows_compiler_identity_never_executes_help(self):
+        cargo_home = self.root / "tool-cache"
+        bin_dir = cargo_home / "bin"
+        bin_dir.mkdir(parents=True)
+        suffix = ".exe" if os.name == "nt" else ""
+        (bin_dir / ("rustup" + suffix)).write_bytes(b"rustup")
+        sysroot = self.root / "rust-sysroot"
+        (sysroot / "lib").mkdir(parents=True)
+        binaries = {}
+        for name in ("cargo", "rustc", "cl", "link"):
+            binary = self.root / (name + ".exe")
+            binary.write_bytes(name.encode())
+            binaries[name] = str(binary)
+        calls = []
+
+        def tool_output(arguments, environment):
+            calls.append(arguments)
+            if arguments[0] in (binaries["cl"], binaries["link"]):
+                raise subprocess.CalledProcessError(1100, arguments, output="redirected help failed")
+            if "which" in arguments:
+                return binaries[arguments[-1]]
+            if "--print" in arguments:
+                return str(sysroot)
+            return "pinned Rust 1.99.1"
+
+        environment = dict(self.environment, CARGO_HOME=str(cargo_home))
+        with patch.object(cargo_cache.platform, "system", return_value="Windows"), \
+                patch.object(cargo_cache.shutil, "which", side_effect=lambda name, **kwargs: binaries.get(name)), \
+                patch.object(cargo_cache, "output", side_effect=tool_output):
+            tools = cargo_cache.tool_identities(self.root, environment)
+            for name in ("cl", "link"):
+                self.assertEqual(tools[name], [str(Path(binaries[name]).resolve()), cargo_cache.digest(Path(binaries[name]))])
+            self.assertFalse(any(call[0] in (binaries["cl"], binaries["link"]) for call in calls))
+            previous = cargo_cache.identity(self.root, environment, tools)
+            Path(binaries["link"]).write_bytes(b"updated linker")
+            self.assertNotEqual(previous, cargo_cache.identity(self.root, environment, cargo_cache.tool_identities(self.root, environment)))
+
     def test_action_only_caches_standard_targets_and_never_skips_compile(self):
         action = Path(__file__).resolve().parents[1] / ".github/actions/cache-native/action.yml"
         content = action.read_text()
