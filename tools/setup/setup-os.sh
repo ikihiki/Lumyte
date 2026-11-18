@@ -19,14 +19,36 @@ packages=(build-essential pkg-config curl ca-certificates git
     unzip zip tar python3 fontconfig fonts-noto-cjk libicu-dev libssl-dev zlib1g-dev libvulkan-dev
     mesa-vulkan-drivers vulkan-tools)
 
+# Bounded constants only: never expose raw environment, paths or source/proxy data.
+# Diagnostic I/O must not turn acquisition success/failure into a different result.
+report_acquisition_route() {
+    local gha hosted os arch
+    case "${GITHUB_ACTIONS:-}" in true) gha=yes ;; '') gha=unknown ;; *) gha=no ;; esac
+    case "${RUNNER_ENVIRONMENT:-}" in github-hosted) hosted=github ;; self-hosted) hosted=self ;; '') hosted=unset ;; *) hosted=other ;; esac
+    case "$ID" in ubuntu) os=ubuntu ;; debian) os=debian ;; *) os=other ;; esac
+    case "$dotnet_arch" in x64) arch=x64 ;; arm64) arch=arm64 ;; *) arch=other ;; esac
+    printf 'APT acquisition route: route=%s reason=%s gha=%s hosted=%s os=%s arch=%s privilege=%s pyProbe=%s\n' \
+        "$1" "$2" "$gha" "$hosted" "$os" "$arch" "$3" "$4" >&2 || :
+}
+
 # Only explicitly hosted Ubuntu x64 with an already available privileged Python
 # selects private sources. Missing/old Python or other runners keep native APT.
 # Keep native package/signature/version policy and the original rootless path.
 install_system_packages() {
+    local privilege reason py_probe
+    if [[ "$#" == 0 ]]; then privilege=root; else privilege=sudo; fi
     if [[ "${GITHUB_ACTIONS:-}" == true && "${RUNNER_ENVIRONMENT:-}" == github-hosted && "$ID" == ubuntu && "$dotnet_arch" == x64 ]] \
         && "$@" /bin/sh -c 'command -v python3 >/dev/null 2>&1 && python3 -c "import sys; sys.exit(sys.version_info < (3, 8))"'; then
+        report_acquisition_route helper_selected eligible "$privilege" compatible
         "$@" python3 "$script_dir/ci-apt-sources.py" "${packages[@]}"
     else
+        py_probe=not-run
+        if [[ "${GITHUB_ACTIONS:-}" != true ]]; then reason=not_github_actions
+        elif [[ "${RUNNER_ENVIRONMENT:-}" != github-hosted ]]; then reason=not_github_hosted
+        elif [[ "$ID" != ubuntu || "$dotnet_arch" != x64 ]]; then reason=unsupported_os_arch
+        else reason=python_probe_unavailable_or_old; py_probe=not-compatible
+        fi
+        report_acquisition_route native "$reason" "$privilege" "$py_probe"
         "$@" apt-get update -o APT::Update::Error-Mode=any
         "$@" env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends "${packages[@]}"
     fi
@@ -40,6 +62,7 @@ elif [[ "${LUMYTE_SETUP_ROOTLESS:-0}" != 1 ]] && command -v sudo >/dev/null && s
     sudo_proxy=(sudo -n --preserve-env=HTTP_PROXY,HTTPS_PROXY,NO_PROXY,http_proxy,https_proxy,no_proxy)
     install_system_packages "${sudo_proxy[@]}"
 else
+    report_acquisition_route rootless rootless rootless not-run
     # Bootstrap requirements are normally present in cloud images. Fail clearly
     # rather than replacing signature or TLS verification with an unsafe route.
     for command in /usr/bin/apt-get dpkg-deb curl git gcc g++; do
