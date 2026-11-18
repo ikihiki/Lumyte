@@ -83,6 +83,7 @@ public sealed partial class UiSurface
                 }
             }
 
+            ProcessContentRefreshes();
             ProcessSignals(true);
             ReconcileVisuals();
         }
@@ -130,7 +131,7 @@ public sealed partial class UiSurface
     internal void RefreshElementContent(UiElement element)
     {
         ThrowIfDisposed();
-        if (_layoutPass is not null || _applyingRebuild || _dispatchDepth != 0 || !ReferenceEquals(element.PreparationSurface, this))
+        if (_layoutPass is not null || _applyingRebuild || _dispatchDepth != 0 || _recordDepth != 0 || !ReferenceEquals(element.PreparationSurface, this))
         {
             throw new InvalidOperationException("Content preparation requires an idle owning surface.");
         }

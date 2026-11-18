@@ -61,6 +61,17 @@ public static partial class Compose
             [ComposeParameter]
             public Action<SliderRange>? OnCommitted { get; set; }
 
+            internal CompositionTemplate<RangeSliderThumbContext, Widget>? TrackTemplate { get; private set; }
+
+            internal CompositionTemplate<RangeSliderThumbContext, Widget>? ThumbTemplate { get; private set; }
+
+            internal CompositionTemplate<RangeSliderThumbContext, Widget>? LowerThumbTemplate { get; private set; }
+
+            internal CompositionTemplate<RangeSliderThumbContext, Widget>? UpperThumbTemplate { get; private set; }
+
+            /// <inheritdoc/>
+            protected override bool RebuildsChildren => true;
+
             /// <inheritdoc/>
             protected override UiElement CreateElement() => new RangeSliderElement(this);
 
@@ -73,6 +84,18 @@ public static partial class Compose
                     throw new ArgumentOutOfRangeException(nameof(Value));
                 }
             }
+
+            [ComposeSlot]
+            private static void Track(RangeSlider target, CompositionTemplate<RangeSliderThumbContext, Widget> template) => target.RegisterTemplateSlot(template, static (RangeSlider next, CompositionTemplate<RangeSliderThumbContext, Widget> value) => next.TrackTemplate = value);
+
+            [ComposeSlot]
+            private static void Thumb(RangeSlider target, CompositionTemplate<RangeSliderThumbContext, Widget> template) => target.RegisterTemplateSlot(template, static (RangeSlider next, CompositionTemplate<RangeSliderThumbContext, Widget> value) => next.ThumbTemplate = value);
+
+            [ComposeSlot]
+            private static void LowerThumb(RangeSlider target, CompositionTemplate<RangeSliderThumbContext, Widget> template) => target.RegisterTemplateSlot(template, static (RangeSlider next, CompositionTemplate<RangeSliderThumbContext, Widget> value) => next.LowerThumbTemplate = value);
+
+            [ComposeSlot]
+            private static void UpperThumb(RangeSlider target, CompositionTemplate<RangeSliderThumbContext, Widget> template) => target.RegisterTemplateSlot(template, static (RangeSlider next, CompositionTemplate<RangeSliderThumbContext, Widget> value) => next.UpperThumbTemplate = value);
         }
     }
 }

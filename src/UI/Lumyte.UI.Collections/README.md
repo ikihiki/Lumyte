@@ -24,3 +24,15 @@ var list = ListBox<int>(items: Enumerable.Range(0, 10000).ToArray(),
 ```
 
 ItemExtentは有限かつ正、Overscanは0〜1024です。縦横の固定間隔を使い、可変高さの測定はしません。接続したListBoxElementのBringIntoView(key)は前の項目を構築せず位置を予約し、次のUpdateLayoutで対象範囲を準備します。非同期版は明示dispatcherとモデル世代を検査します。AutomationのSelectOptionAsyncは通常の入力leaseと実際のwindow hitで対象キーを表示してからpointer操作します。
+
+## 型付き Item Slot
+
+ItemsRepeater、ListBox、ComboBox の各具体的ファクトリは、値と受け取り側の宣言を渡す Item Slot を公開します。ComboBox は SelectedItem と Empty も提供します。Slot は同じ役割の旧 Func 引数より優先し、未指定なら旧引数を使います。
+
+```csharp
+ListBoxFactory<Person>().Item()[
+    (person, owner) => Text(value: person.Name, layoutProvider: provider)
+]
+```
+
+owner は現在の宣言であり、選択やスクロールの実体ではありません。生成は通常表示・仮想化・復元・ポップアップの既存の準備境界で行います。項目の根は従来どおり新鮮で交わらない必要があり、同じ固定 Widget を複数項目で使っても複製されません。Slot 設定は宣言の再構築にも引き継がれます。

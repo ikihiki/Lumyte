@@ -80,3 +80,16 @@ ProgressBarはValue、BusyIndicatorはIsIndeterminateをimmutable snapshotとwir
 共通runnerのTest --suite ui --feature mediaと各test projectで検証します。
 Textは選択/編集なし、Imageはload/decodeなし、IconはButtonなしです。
 Windows、Browser、NativeAOTとGPUの実行可否は各実行記録で区別します。
+
+## ProgressBar の表示 Slot
+
+Track と Fill に固定の構成を指定できます。各 Slot の容量は1で、未指定は既定の矩形描画、明示的な空配列は対応する矩形を隠します。Fill は実体が Value に応じた幅へ配置・クリップします。装飾の希望サイズは部品の計測を変えず、装飾は入力・フォーカス・自動操作の対象になりません。
+
+```csharp
+ProgressBar(value: 0.5)[
+    ProgressBar.Track()[Rectangle(fill: trackColor)],
+    ProgressBar.Fill()[Rectangle(fill: fillColor)]
+]
+```
+
+Text・Image・Icon は描画末端として従来の契約を維持します。BusyIndicator の phase 駆動テンプレートはこの変更には含めません。
