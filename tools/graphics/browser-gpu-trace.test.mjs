@@ -140,3 +140,45 @@ test("Transitions injects conditionally before navigation, retains capture and k
     assert.match(source, /stage === "entry-midpoint-png" && failure instanceof BrowserEvaluationFailure/);
     assert.ok(!source.includes('stage = "connected-'));
 });
+
+test("queue identity and submit sequence describe actual original calls only", async () => {
+    const f = fixture(); installBrowserGpuTrace(f.page); await connect(f);
+    f.queue.submit(f.descriptor); const p = f.queue.onSubmittedWorkDone(f.descriptor); assert.equal(p, f.promises.at(-1)); await p;
+    f.queue.submit(f.descriptor);
+    const starts = f.logs.filter(row => row.status === "start" && ["submit", "onSubmittedWorkDone"].includes(row.method));
+    assert.deepEqual(starts.map(row => row.submitSequence), [1, 1, 2]);
+    assert.ok(starts.every(row => row.deviceId === 1 && row.queueId === 1));
+    assert.equal(f.calls.filter(name => name === "submit").length, 2);
+    assert.equal(f.calls.filter(name => name === "onSubmittedWorkDone").length, 1);
+});
+test("actual lost promise and uncaptured error are passive, protected after ordinary saturation", async () => {
+    const f = fixture(); let resolveLost, handler, prevented = 0;
+    const lost = new Promise(resolve => { resolveLost = resolve; }); f.device.lost = lost;
+    f.device.addEventListener = (name, callback) => { assert.equal(name, "uncapturederror"); handler = callback; };
+    installBrowserGpuTrace(f.page); await connect(f); assert.equal(f.device.lost, lost);
+    for (let i = 0; i < 1100; i++) f.queue.submit(f.descriptor);
+    handler({ preventDefault() { prevented++; }, get error() { throw new Error("must not inspect payload"); } });
+    resolveLost({ reason: "destroyed" }); await lost; await Promise.resolve();
+    assert.equal(prevented, 0); assert.ok(f.logs.some(row => row.method === "deviceLost" && row.critical));
+    assert.ok(f.logs.some(row => row.method === "uncapturedError" && row.critical));
+    assert.equal(f.calls.filter(name => name === "submit").length, 1100);
+    assert.equal(f.calls.filter(name => name === "onSubmittedWorkDone").length, 0);
+});
+test("latest16 critical snapshot survives a saturated bounded critical stream", async () => {
+    const f = fixture(); let handler, rejectLost;
+    const lost = new Promise((_, reject) => { rejectLost = reject; }); f.device.lost = lost;
+    f.device.addEventListener = (_, callback) => { handler = callback; };
+    installBrowserGpuTrace(f.page); await connect(f);
+    for (let i = 0; i < 50; i++) handler({});
+    rejectLost(f.error); await assert.rejects(lost, error => error === f.error); await Promise.resolve();
+    assert.equal(f.logs.filter(row => row.critical).length, 16);
+    assert.equal(f.page.__lumyteBrowserGpuCritical.records.length, 16);
+    assert.equal(f.page.__lumyteBrowserGpuCritical.dropped, 35);
+    assert.equal(f.page.__lumyteBrowserGpuCritical.records.at(-1).method, "deviceLost");
+    assert.equal(f.page.__lumyteBrowserGpuCritical.records.at(-1).status, "rejected");
+});
+test("throwing loss metadata and reporting errors do not create a rejected observer reaction", async () => {
+    const f = fixture(); let done; const lost = new Promise(resolve => { done = resolve; }); f.device.lost = lost;
+    installBrowserGpuTrace(f.page); await connect(f); done({ get reason() { throw f.error; } }); await lost; await Promise.resolve();
+    assert.equal(f.device.createRenderPipeline(f.descriptor), f.pipeline);
+});
