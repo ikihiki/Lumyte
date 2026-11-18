@@ -19,15 +19,26 @@ packages=(build-essential pkg-config curl ca-certificates git
     unzip zip tar python3 fontconfig fonts-noto-cjk libicu-dev libssl-dev zlib1g-dev libvulkan-dev
     mesa-vulkan-drivers vulkan-tools)
 
+# Only explicitly hosted Ubuntu x64 with an already available privileged Python
+# selects private sources. Missing/old Python or other runners keep native APT.
+# Keep native package/signature/version policy and the original rootless path.
+install_system_packages() {
+    if [[ "${GITHUB_ACTIONS:-}" == true && "${RUNNER_ENVIRONMENT:-}" == github-hosted && "$ID" == ubuntu && "$dotnet_arch" == x64 ]] \
+        && "$@" /bin/sh -c 'command -v python3 >/dev/null 2>&1 && python3 -c "import sys; sys.exit(sys.version_info < (3, 8))"'; then
+        "$@" python3 "$script_dir/ci-apt-sources.py" "${packages[@]}"
+    else
+        "$@" apt-get update -o APT::Update::Error-Mode=any
+        "$@" env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends "${packages[@]}"
+    fi
+}
+
 if [[ "${LUMYTE_SETUP_ROOTLESS:-0}" != 1 ]] && [[ "$EUID" == 0 ]]; then
-    apt-get update -o APT::Update::Error-Mode=any
-    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends "${packages[@]}"
+    install_system_packages
 elif [[ "${LUMYTE_SETUP_ROOTLESS:-0}" != 1 ]] && command -v sudo >/dev/null && sudo -n true 2>/dev/null; then
     # Preserve only proxy routing settings; sudo normally drops these, breaking
     # package retrieval in managed remote environments.
     sudo_proxy=(sudo -n --preserve-env=HTTP_PROXY,HTTPS_PROXY,NO_PROXY,http_proxy,https_proxy,no_proxy)
-    "${sudo_proxy[@]}" apt-get update -o APT::Update::Error-Mode=any
-    "${sudo_proxy[@]}" env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends "${packages[@]}"
+    install_system_packages "${sudo_proxy[@]}"
 else
     # Bootstrap requirements are normally present in cloud images. Fail clearly
     # rather than replacing signature or TLS verification with an unsafe route.
