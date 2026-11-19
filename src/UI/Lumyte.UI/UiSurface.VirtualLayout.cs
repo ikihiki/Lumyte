@@ -10,6 +10,9 @@ public sealed partial class UiSurface
     private int _viewportPreparationDepth;
     private bool _preparingVirtualDeclaration;
 
+    // Includes declaration construction before projected layout begins; excludes adopted callbacks.
+    internal bool HasUnpublishedViewportPreparation => _preparingVirtualDeclaration || IsPreparingViewportLayout;
+
     internal UiElement? DeferredViewportFocus => _viewportDeferredFocusRequest == _focusRequest ? _viewportDeferredFocus : null;
 
     private static Dictionary<UiElement, UiElementContent> ViewportContentState(IEnumerable<ElementUpdate> updates)
@@ -181,6 +184,7 @@ public sealed partial class UiSurface
                     {
                         var reachable = new HashSet<UiElement>(nodes, ReferenceEqualityComparer.Instance);
                         combined.Updates.RemoveAll(update => !reachable.Contains(update.Element));
+                        combined.RetainReachable(reachable);
                         PrepareAnimationUpdates(combined);
                         combined.Prepare();
                         PrepareSignalUpdates(combined);

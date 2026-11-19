@@ -86,4 +86,10 @@ public enum UiRole
 
     /// <summary>A passive contextual tooltip with its anchor.</summary>
     Tooltip,
+
+    /// <summary>A hierarchical collection.</summary>
+    Tree,
+
+    /// <summary>A hierarchical item.</summary>
+    TreeItem,
 }

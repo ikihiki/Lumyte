@@ -7,6 +7,18 @@ namespace Lumyte.Samples.Tests;
 /// <summary>Tests launcher selection, argument isolation, and catalog coverage.</summary>
 public sealed class LauncherTests
 {
+    /// <summary>TreeView selects the public headless hierarchy consumer.</summary>
+    [Fact]
+    public void TreeViewSampleSelectsHeadlessConsumer()
+    {
+        using var console = new TestConsole();
+        (SampleDefinition sample, SampleBackend backend) = SampleSelector.Select(SampleCatalog.All, SampleOptions.Parse(["--sample", "ui-treeview"]), console);
+        Assert.Equal("ui-treeview", sample.Id);
+        Assert.Equal("headless", backend.Id);
+        Assert.Equal("samples/Lumyte.UI.TreeView.Sample", backend.Project);
+        Assert.Empty(console.Output);
+    }
+
     /// <summary>Dialogs and notifications use the standard headless application consumer.</summary>
     [Fact]
     public void DialogsSampleSelectsHeadlessConsumer()

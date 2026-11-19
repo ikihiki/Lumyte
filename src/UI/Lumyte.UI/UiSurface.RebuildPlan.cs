@@ -270,7 +270,7 @@ public sealed partial class UiSurface
 
         internal Dictionary<UiElement, IReadOnlyList<UiElement>> CollectionItemRootUpdates { get; } = new(ReferenceEqualityComparer.Instance);
 
-        internal UiElement[] Removed { get; }
+        internal UiElement[] Removed { get; private set; }
 
         public void Dispose()
         {
@@ -323,6 +323,8 @@ public sealed partial class UiSurface
         }
 
         internal UiProposedTree Projection() => new(Root, Updates.Select(update => (update.Element, update.Next, update.Slots)));
+
+        internal void RetainReachable(HashSet<UiElement> reachable) => Removed = Removed.Where(element => !reachable.Contains(element)).ToArray();
 
         internal void FinalizeScrollBindings()
         {

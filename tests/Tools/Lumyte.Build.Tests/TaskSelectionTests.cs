@@ -101,6 +101,7 @@ public sealed class TaskSelectionTests
     [InlineData("tabs", "UI.Controls,UI.TextEditing", "Tabs")]
     [InlineData("collections", "UI.Collections", "Collections")]
     [InlineData("virtualization", "UI.Collections,UI.Automation,UI.Windowing,UI.TextEditing,Diagnostics.UI.Automation", "Virtualization")]
+    [InlineData("treeview", "UI.Collections,UI.Automation,UI.Windowing,UI.TextEditing,Diagnostics.UI.Automation", "TreeView")]
     [InlineData("numeric", "UI.Controls,UI.TextEditing,UI.Automation", "Numeric")]
     [InlineData("application", "UI.Application", "Application.Headless")]
     [InlineData("navigation", "UI.Navigation", "Navigation")]
@@ -116,7 +117,7 @@ public sealed class TaskSelectionTests
         Assert.Equal(projects.Split(',').Select(name => (name.StartsWith("Diagnostics.", StringComparison.Ordinal) ? "tests/Diagnostics/Lumyte." : "tests/UI/Lumyte.") + name + ".Tests"), calls.Where(call => call[0] == "test").Select(call => call[1]));
         Assert.Equal(samples.Split(',').Select(name => "samples/Lumyte.UI." + name + ".Sample"), calls.Where(call => call[0] == "run").Select(call => call[Array.IndexOf(call, "--project") + 1]));
         Assert.Equal(projects.Split(',').Length + samples.Split(',').Length, calls.Length);
-        if (feature is "controls" or "media" or "scroll" or "menus" or "tabs" or "collections" or "virtualization" or "numeric")
+        if (feature is "controls" or "media" or "scroll" or "menus" or "tabs" or "collections" or "virtualization" or "treeview" or "numeric")
         {
             Assert.All(calls.Where(call => call[0] == "run"), call => Assert.Contains("tests/Graphics/Lumyte.Graphics.Text.Parley.Tests/Fonts/DejaVuSans.ttf", call));
         }
@@ -133,6 +134,7 @@ public sealed class TaskSelectionTests
     [InlineData("tabs")]
     [InlineData("collections")]
     [InlineData("virtualization")]
+    [InlineData("treeview")]
     [InlineData("numeric")]
     [Trait("Execution", "Integration")]
     public async Task AotFeatureRetainsStrictPublicationAsync(string feature)

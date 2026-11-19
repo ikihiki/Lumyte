@@ -369,6 +369,51 @@ public sealed class DialogTests
         Assert.Equal(2, fixture.Dialogs.CaptureDialogs().Count);
     }
 
+    /// <summary>Portal ownership, virtual tree projections and passive labels survive expansion and reopening together.</summary>
+    [Fact]
+    public void VirtualTreeWithLabelRecipeSurvivesDialogLifecycle()
+    {
+        using var fixture = new DialogFixture();
+        var open = Signal.Create(true);
+        Widget CreateContent() => Collections.Compose.TreeView<string>(
+            roots: new[] { "root" },
+            keySelector: value => value,
+            childrenSelector: _ => Enumerable.Range(0, 100).Select(value => "child" + value).ToArray(),
+            hasChildren: value => value == "root",
+            itemTemplate: value => UiRecipes.FormRow(SizedBox(width: 10, height: 20), Button(automationName: value, height: 20), "Label " + value),
+            width: 100,
+            height: 60,
+            virtualization: new Collections.UiItemVirtualization(20, 0));
+        fixture.Set(Panel()[Dialog("tree", "Tree", isOpen: open, initialClientSize: new(120, 80))[CreateContent()]]);
+        for (int cycle = 0; cycle < 2; cycle++)
+        {
+            fixture.Pump();
+            UiDialogOpened dialog = Assert.Single(fixture.Dialogs.CaptureDialogs());
+            Assert.True(fixture.Dialogs.TryGetSurface(dialog.DialogId, out UiSurface? content));
+            UiAutomationNode treeNode = content!.CaptureAutomationSnapshot().Nodes.Single(node => node.Role == UiRole.Tree);
+            Collections.TreeViewElement<string> tree = Assert.IsType<Collections.TreeViewElement<string>>(content.FindElement(treeNode.Id));
+            Assert.True(tree.SetExpanded("root", true));
+            fixture.Pump();
+            Assert.Equal(101, tree.VisibleKeys.Count);
+            UiAutomationNode editor = content.CaptureAutomationSnapshot().Nodes.First(node => node.Role == UiRole.Button && content.FindElement(node.Id)?.Widget.AutomationName == "root");
+            UiElement row = content.FindElement(editor.Id)!.Parent!;
+            Assert.Equal(new UiLabelAssociation(0, 1, "Label root"), row.Widget.LabelAssociation);
+            Assert.True(tree.BringPathIntoView(new[] { "root", "child99" }));
+            fixture.Pump();
+            Assert.Contains(content.CaptureAutomationSnapshot().Nodes, node => node.OptionKey == "child99" && node.ActionableBounds.Height > 0);
+            Assert.True(tree.SetExpanded("root", false));
+            fixture.Pump();
+            Assert.Single(tree.VisibleKeys);
+            open.Value = false;
+            fixture.Pump();
+            Assert.Empty(fixture.Dialogs.CaptureDialogs());
+            if (cycle == 0)
+            {
+                open.Value = true;
+            }
+        }
+    }
+
     private sealed class DelayedLifetime(Task gate) : IAsyncDisposable
     {
         public ValueTask DisposeAsync() => new(gate);

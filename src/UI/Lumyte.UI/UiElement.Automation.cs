@@ -28,6 +28,8 @@ public partial class UiElement
 
     internal bool? SemanticAutomationExpanded => AutomationExpanded;
 
+    internal UiTreeItemState? SemanticTreeItem => AutomationTreeItem;
+
     internal bool? SemanticAutomationChecked => AutomationChecked;
 
     internal bool? SemanticAutomationSelected => AutomationSelected;
@@ -37,6 +39,9 @@ public partial class UiElement
     internal string? SemanticAutomationOptionKey => AutomationOptionKey;
 
     internal string? SemanticAutomationSelectedKey => AutomationSelectedKey;
+
+    /// <summary>Gets logical tree parent keys and depth without requiring ancestor realizations.</summary>
+    protected virtual UiTreeItemState? AutomationTreeItem => null;
 
     /// <summary>Gets the body-local region used to choose ordinary automation input points.</summary>
     protected virtual Lumyte.Graphics.Drawing2D.Rect2D AutomationActionRegion => new(0, 0, ContentSize.X, ContentSize.Y);

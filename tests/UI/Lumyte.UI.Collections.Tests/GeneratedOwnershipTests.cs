@@ -10,6 +10,19 @@ namespace Lumyte.UI.Collections.Tests;
 /// <summary>Checks ownership after actual component preparation, not just declaration slots.</summary>
 public sealed class GeneratedOwnershipTests
 {
+    /// <summary>Tree rows validate generated descendants through the same ownership scope.</summary>
+    [Fact]
+    public void TreeFunctionsCannotShareGeneratedDescendants()
+    {
+        Widget shared = SizedBox();
+        Assert.Throws<InvalidOperationException>(() => new UiSurface(TreeView<string>(
+            roots: new[] { "a", "b" },
+            keySelector: key => key,
+            childrenSelector: _ => Array.Empty<string>(),
+            hasChildren: _ => false,
+            itemTemplate: _ => Generated(() => shared))));
+    }
+
     /// <summary>Fresh function declarations cannot hide a shared generated result.</summary>
     [Fact]
     public void FreshFunctionsCannotReturnTheSameDescendant()

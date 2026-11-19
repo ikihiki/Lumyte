@@ -14,6 +14,7 @@ internal sealed partial class Build
         ["tabs"] = new(["tests/UI/Lumyte.UI.Controls.Tests", "tests/UI/Lumyte.UI.TextEditing.Tests"], ["samples/Lumyte.UI.Tabs.Sample"], true, true),
         ["collections"] = new(["tests/UI/Lumyte.UI.Collections.Tests"], ["samples/Lumyte.UI.Collections.Sample"], true, true),
         ["virtualization"] = new(["tests/UI/Lumyte.UI.Collections.Tests", "tests/UI/Lumyte.UI.Automation.Tests", "tests/UI/Lumyte.UI.Windowing.Tests", "tests/UI/Lumyte.UI.TextEditing.Tests", "tests/Diagnostics/Lumyte.Diagnostics.UI.Automation.Tests"], ["samples/Lumyte.UI.Virtualization.Sample"], true, true),
+        ["treeview"] = new(["tests/UI/Lumyte.UI.Collections.Tests", "tests/UI/Lumyte.UI.Automation.Tests", "tests/UI/Lumyte.UI.Windowing.Tests", "tests/UI/Lumyte.UI.TextEditing.Tests", "tests/Diagnostics/Lumyte.Diagnostics.UI.Automation.Tests"], ["samples/Lumyte.UI.TreeView.Sample"], true, true),
         ["numeric"] = new(["tests/UI/Lumyte.UI.Controls.Tests", "tests/UI/Lumyte.UI.TextEditing.Tests", "tests/UI/Lumyte.UI.Automation.Tests"], ["samples/Lumyte.UI.Numeric.Sample"], true, true),
         ["controls"] = new(["tests/UI/Lumyte.UI.Controls.Tests"], ["samples/Lumyte.UI.Controls.Sample"], true, true),
         ["application"] = new(["tests/UI/Lumyte.UI.Application.Tests"], ["samples/Lumyte.UI.Application.Headless.Sample"], false, false),
