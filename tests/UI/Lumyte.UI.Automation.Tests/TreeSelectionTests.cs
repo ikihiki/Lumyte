@@ -33,6 +33,7 @@ public sealed class TreeSelectionTests
         Assert.True(row.ActionableBounds.X >= 64);
         Assert.DoesNotContain(fixture.Host.Sent, input => input is UiCheckInput);
         await fixture.Page.GetByTestId("tree").GetByItemKey("3").ExpandAsync();
+        fixture.Surface.UpdateLayout();
         Assert.Contains("3", tree.ExpandedKeys);
         Assert.Equal("3", tree.SelectedKey);
     }
@@ -42,7 +43,7 @@ public sealed class TreeSelectionTests
     [Fact]
     public async Task NonvirtualSelectOptionRevealsActionableRowAsync()
     {
-        await using var fixture = new Fixture(TreeView<string>(roots: new[] { "root" }, keySelector: x => x, childrenSelector: _ => Enumerable.Range(0, 100).Select(i => "leaf" + i).ToArray(), hasChildren: x => x == "root", itemTemplate: _ => SizedBox(height: 20), testId: "tree", height: 60));
+        await using var fixture = new Fixture(TreeView<string>(roots: new[] { "root" }, keySelector: x => x, childrenSelector: _ => Enumerable.Range(0, 100).Select(i => "leaf" + i).ToArray(), hasChildren: x => x == "root", keyPathSelector: key => new[] { "root", key }, itemTemplate: _ => SizedBox(height: 20), testId: "tree", height: 60));
         await fixture.Page.GetByTestId("tree").SelectOptionAsync("leaf99");
         TreeViewElement<string> tree = Assert.IsType<TreeViewElement<string>>(fixture.Surface.RootElement);
         Assert.Equal("leaf99", tree.SelectedKey);
