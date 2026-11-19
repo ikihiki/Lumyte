@@ -98,27 +98,19 @@ def git(root, *args):
     return subprocess.check_output(['git', '-C', str(root), *args])
 
 
-def source_content(path, name):
-    data = path.read_bytes()
-    if name == '.fallout/build.schema.json':
-        # Fallout rewrites this tracked JSON with Environment.NewLine. Its
-        # .gitattributes eol=lf checkout and Windows-generated CRLF form are
-        # identical source metadata, but all content edits remain hash-bound.
-        # This narrow text-only rule never changes source or payload files.
-        json.loads(data)
-        data = data.replace(bytes((13, 10)), bytes((10,)))
-    return data
-
-
 def identity(root, nuget, rid, configuration, sdk):
     closure = []
     for name in sorted(filter(None, git(root, 'ls-files', '-z').decode().split(chr(0)))):
+        # Fallout regenerates this metadata; it is output, not a build input.
+        # Skip before filesystem checks so a fresh consumer may lack it entirely.
+        if name == '.fallout/build.schema.json':
+            continue
         p = root / name
         require(p.exists() or p.is_symlink(), 'missing tracked source: ' + name)
         require(not p.is_dir(), 'submodules unsupported: ' + name)
         no_link_parents(p.parent)
         closure.append([name, 'link' if p.is_symlink() else 'file',
-                        digest(os.readlink(p).encode() if p.is_symlink() else source_content(p, name)),
+                        digest(os.readlink(p).encode() if p.is_symlink() else p.read_bytes()),
                         bool(p.lstat().st_mode & 0o111)])
     run = os.environ.get('GITHUB_RUN_ID', '')
     require(run, 'GITHUB_RUN_ID is required')

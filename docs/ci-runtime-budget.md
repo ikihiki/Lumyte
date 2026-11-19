@@ -43,11 +43,21 @@ interchanged. Default developer commands still build/publish and test. Explicit
 Standard pinned Actions upload/download-artifact transports a standard gzip-compressed tar.
 The small stdlib helper validates the entire payload before extraction, retaining
 executable modes and safe relative symlinks. It binds actual checkout HEAD
-(including PR synthetic merge SHA), tracked source contents/modes (with generated-schema newline canonicalization),
-OS/architecture,
+(including PR synthetic merge SHA), tracked source bytes/modes except exactly
+.fallout/build.schema.json, OS/architecture,
 RID, configuration, SDK, publication kind, run ID, absolute workspace and
 NuGet root. Hashes protect integrity, not against replacement by an untrusted
 publisher; normal Actions same-run/ref trust remains essential.
+
+The exact .fallout/build.schema.json path is mutable Fallout-generated output,
+excluded from the source fingerprint before existence, content or mode checks.
+Regeneration, newline changes or absence at the same HEAD do not invalidate a
+producer archive; extraction never copies or restores this tracked file. This is
+not a .fallout directory or generated-file wildcard exception: all other tracked
+files remain byte/mode-bound, including build CLI parameters, pins, settings and
+other JSON/binary files. Actual HEAD and all other identity, source-overwrite,
+path/symlink, provenance, archive hash/closure and no-build/no-restore checks
+remain strict.
 
 Consumer-only retries may reuse the matching producer artifact from an earlier
 attempt of the same run: producer attempt is informational, not consumer identity.
@@ -254,8 +264,10 @@ seventeen parallel consumers; no fallback product restore/build was added.
   Changing only .fallout/build.schema.json from LF to Fallout's Windows-generated
   CRLF reproduces the actual producer hash
   c99550ab8665d4dbc4b5d2d806b637d7b6f8fde2a2ce1d1a375567ca93423108 exactly.
-  Only that known generated JSON metadata is fingerprinted with LF, consistent
-  with its Git text policy. Its meaningful content edits still fail; code/binary
+  The historical repair canonicalized only that generated JSON metadata to LF
+  and still rejected meaningful schema edits. That policy is superseded by the
+  exact-path generated-output exclusion documented above; the recorded hashes
+  describe the historical algorithm, not the current fingerprint. Code/binary
   bytes, executable modes, SDK roots, actual merge SHA, run/RID/config/ABI checks
   remain strict. No source or archive payload is rewritten. Identity errors now
   name differing fields and safe producer/consumer values. Reproduction log:
