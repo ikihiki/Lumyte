@@ -362,6 +362,7 @@ public class ListBoxElement<T> : ItemsRepeaterElement<T>, IUiItemViewport
         {
             SelectedKey = selection;
             _activeKey = active;
+
             // The tree already queued its explicit target for this generation; automatic restoration must not replace it.
             if (focusedKey is not null && ((Compose.Definitions.ListBox<T>)declaration).HierarchyNavigationRequest != focusRequest)
             {
