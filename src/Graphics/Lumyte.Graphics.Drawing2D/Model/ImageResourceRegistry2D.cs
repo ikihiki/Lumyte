@@ -10,9 +10,12 @@ internal static class ImageResourceRegistry2D
     internal static Resource Register(Image2D image)
     {
         var resource = new Resource();
-        _resources.Add(image, resource);
+        Register(image, resource);
         return resource;
     }
+
+    // All descriptors borrowing one live allocation must share its admission gate, including old recordings.
+    internal static void Register(Image2D image, Resource resource) => _resources.Add(image, resource);
 
     internal static IDisposable Retain(IEnumerable<DrawList2D> contents)
     {
@@ -33,13 +36,81 @@ internal static class ImageResourceRegistry2D
 
     internal sealed class Resource
     {
+        private readonly object _gate = new();
         private int _references;
+        private bool _writing;
+        private bool _retired;
 
-        internal bool IsReferenced => Volatile.Read(ref _references) != 0;
+        internal bool IsReferenced
+        {
+            get
+            {
+                lock (_gate)
+                {
+                    return _references != 0;
+                }
+            }
+        }
 
-        internal void Retain() => Interlocked.Increment(ref _references);
+        internal WriteLease? TryAcquireWrite()
+        {
+            lock (_gate)
+            {
+                if (_references != 0 || _writing || _retired)
+                {
+                    return null;
+                }
 
-        internal void Release() => Interlocked.Decrement(ref _references);
+                _writing = true;
+                return new(this);
+            }
+        }
+
+        internal void Retain()
+        {
+            lock (_gate)
+            {
+                if (_writing || _retired)
+                {
+                    throw new InvalidOperationException("The live image is being updated or its producer has retired the allocation.");
+                }
+
+                _references++;
+            }
+        }
+
+        internal void Release()
+        {
+            lock (_gate)
+            {
+                _references--;
+            }
+        }
+
+        internal sealed class WriteLease(Resource resource) : IDisposable
+        {
+            private Resource? _resource = resource;
+
+            public void Dispose()
+            {
+                if (Interlocked.Exchange(ref _resource, null) is { } owner)
+                {
+                    lock (owner._gate)
+                    {
+                        owner._writing = false;
+                    }
+                }
+            }
+
+            internal void Invalidate()
+            {
+                Resource owner = _resource ?? throw new ObjectDisposedException(nameof(WriteLease));
+                lock (owner._gate)
+                {
+                    owner._retired = true;
+                }
+            }
+        }
     }
 
     private sealed class Lease : IDisposable
@@ -48,10 +119,25 @@ internal static class ImageResourceRegistry2D
 
         internal Lease(Resource[] resources)
         {
-            _resources = resources;
-            foreach (Resource resource in resources)
+            int retained = 0;
+            try
             {
-                resource.Retain();
+                foreach (Resource resource in resources)
+                {
+                    resource.Retain();
+                    retained++;
+                }
+
+                _resources = resources;
+            }
+            catch
+            {
+                for (int i = 0; i < retained; i++)
+                {
+                    resources[i].Release();
+                }
+
+                throw;
             }
         }
 

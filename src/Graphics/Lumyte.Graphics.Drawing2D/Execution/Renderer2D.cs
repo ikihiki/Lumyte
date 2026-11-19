@@ -57,8 +57,10 @@ public sealed partial class Renderer2D(IGraphicDevice device, DrawingCommandRend
             }
 
             var batches = new List<IPreparedCommandBatch2D>();
+            IDisposable? imageResources = null;
             try
             {
+                imageResources = ImageResourceRegistry2D.Retain([list]);
                 _retained.BindStorageOwner(_resources);
                 _retained.RetryCleanup();
                 var plan = new DrawingArgumentPlan2D(_device) { ArgumentTableMode = ArgumentTableMode };
@@ -109,7 +111,9 @@ public sealed partial class Renderer2D(IGraphicDevice device, DrawingCommandRend
                 await plan.SealAsync(cancellationToken).ConfigureAwait(false);
                 cancellationToken.ThrowIfCancellationRequested();
                 profile?.Success();
-                return new PreparedDraw2D(target, batches, profile?.Context);
+                var prepared = new PreparedDraw2D(target, batches, profile?.Context, imageResources);
+                imageResources = null;
+                return prepared;
             }
             catch (Exception preparationFailure)
             {
@@ -127,6 +131,7 @@ public sealed partial class Renderer2D(IGraphicDevice device, DrawingCommandRend
             }
             finally
             {
+                imageResources?.Dispose();
                 Volatile.Write(ref _preparing, 0);
             }
         }

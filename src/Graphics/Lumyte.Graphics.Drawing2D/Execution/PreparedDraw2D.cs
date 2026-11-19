@@ -9,12 +9,14 @@ public sealed class PreparedDraw2D : IDisposable
     private readonly RenderTarget2D _target;
     private readonly IReadOnlyList<IPreparedCommandBatch2D> _batches;
     private readonly DrawingProfileContext? _profileContext;
+    private IDisposable? _imageResources;
     private bool _disposed;
     private bool _recorded;
     private List<IPreparedCommandBatch2D>? _unreleased;
 
-    internal PreparedDraw2D(RenderTarget2D target, IReadOnlyList<IPreparedCommandBatch2D> batches, DrawingProfileContext? profileContext = null)
+    internal PreparedDraw2D(RenderTarget2D target, IReadOnlyList<IPreparedCommandBatch2D> batches, DrawingProfileContext? profileContext = null, IDisposable? imageResources = null)
     {
+        _imageResources = imageResources;
         _target = target with { };
         _batches = batches;
         _profileContext = profileContext ?? default(DrawingProfileContext);
@@ -64,6 +66,8 @@ public sealed class PreparedDraw2D : IDisposable
                 throw new AggregateException("Failed to release drawing resources.", errors);
             }
 
+            _imageResources?.Dispose();
+            _imageResources = null;
             profile?.Success();
         }
         catch (Exception error)

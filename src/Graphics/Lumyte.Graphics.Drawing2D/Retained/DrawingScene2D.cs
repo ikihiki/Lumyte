@@ -218,7 +218,15 @@ public sealed class DrawingScene2D : IDisposable
             ObjectDisposedException.ThrowIf(_disposed, this);
             EnsurePlan();
             _borrows++;
-            return new(this, _revision, _view);
+            try
+            {
+                return new(this, _revision, _view);
+            }
+            catch
+            {
+                _borrows--;
+                throw;
+            }
         }
     }
 
@@ -355,25 +363,34 @@ public sealed class DrawingScene2D : IDisposable
             EnsureWritable();
             Node destination = Resolve(parent);
             ValidateIndex(index, destination.Children.Count);
-            int slot = _free.Count == 0 ? _nodes.Count : _free.Pop();
-            if (slot == _nodes.Count)
+            IDisposable? resources = content is null ? null : ImageResourceRegistry2D.Retain([content]);
+            try
             {
-                _nodes.Add(null);
-                _generations.Add(1);
-            }
+                int slot = _free.Count == 0 ? _nodes.Count : _free.Pop();
+                if (slot == _nodes.Count)
+                {
+                    _nodes.Add(null);
+                    _generations.Add(1);
+                }
 
-            var id = new DrawingNodeId2D(_owner, slot, _generations[slot]);
-            ulong revision = ++_revision;
-            var node = new Node(id, destination, content)
+                var id = new DrawingNodeId2D(_owner, slot, _generations[slot]);
+                ulong revision = ++_revision;
+                var node = new Node(id, destination, content, resources)
+                {
+                    ContentRevision = revision,
+                    PropertyRevision = revision,
+                };
+                resources = null;
+                _nodes[slot] = node;
+                destination.Children.Insert(index, node);
+                _topologyRevision = revision;
+                _planDirty = true;
+                return id;
+            }
+            finally
             {
-                ContentRevision = revision,
-                PropertyRevision = revision,
-            };
-            _nodes[slot] = node;
-            destination.Children.Insert(index, node);
-            _topologyRevision = revision;
-            _planDirty = true;
-            return id;
+                resources?.Dispose();
+            }
         }
     }
 
@@ -472,7 +489,7 @@ public sealed class DrawingScene2D : IDisposable
         _planDirty = false;
     }
 
-    private sealed class Node(DrawingNodeId2D id, Node? parent, DrawList2D? content)
+    private sealed class Node(DrawingNodeId2D id, Node? parent, DrawList2D? content, IDisposable? resources = null)
     {
         internal DrawingNodeId2D Id { get; } = id;
 
@@ -480,7 +497,7 @@ public sealed class DrawingScene2D : IDisposable
 
         internal DrawList2D? Content { get; set; } = content;
 
-        internal IDisposable? Resources { get; set; } = content is null ? null : ImageResourceRegistry2D.Retain([content]);
+        internal IDisposable? Resources { get; set; } = resources;
 
         internal List<Node> Children { get; } = [];
 

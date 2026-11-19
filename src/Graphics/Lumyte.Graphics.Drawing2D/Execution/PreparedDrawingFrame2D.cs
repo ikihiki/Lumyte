@@ -14,11 +14,13 @@ public sealed class PreparedDrawingFrame2D : IDisposable
     private Action<bool>? _release;
     private IGraphicsCommandBuffer? _commands;
     private IGraphicsSubmission? _submission;
+    private IDisposable? _imageResources;
     private bool _released;
     private bool _recordSucceeded;
 
-    internal PreparedDrawingFrame2D(IGraphicDevice device, RenderTarget2D target, IReadOnlyList<IPreparedCommandBatch2D> batches, Action<bool> release, DrawingProfileContext? profileContext = null, RetainedDrawingCache2D? cache = null)
+    internal PreparedDrawingFrame2D(IGraphicDevice device, RenderTarget2D target, IReadOnlyList<IPreparedCommandBatch2D> batches, Action<bool> release, DrawingProfileContext? profileContext = null, RetainedDrawingCache2D? cache = null, IDisposable? imageResources = null)
     {
+        _imageResources = imageResources;
         _device = device;
         _profileContext = profileContext ?? default(DrawingProfileContext);
         _cache = cache;
@@ -224,6 +226,8 @@ public sealed class PreparedDrawingFrame2D : IDisposable
     private void Release(bool completed)
     {
         _release!(completed);
+        _imageResources?.Dispose();
+        _imageResources = null;
         _release = null;
         _released = true;
         _drawing = null;
