@@ -56,6 +56,13 @@ public sealed partial class UiLocator
         }
 
         UiAutomationNode? target = options.SingleOrDefault();
+        if (target?.Role == UiRole.GridRow)
+        {
+            UiAutomationId rowId = target.Id;
+            var parents = snapshot.Nodes.ToDictionary(node => node.Id, node => node.ParentId);
+            target = snapshot.Nodes.FirstOrDefault(node => node.Role == UiRole.GridCell && IsDescendant(node, [rowId], parents) && (node.Actions & UiAutomationActions.Click) != 0);
+        }
+
         if (target is not null)
         {
             RequireAction(run, target, UiAutomationActions.Click);
@@ -145,7 +152,7 @@ public sealed partial class UiLocator
         }
     }
 
-    private ValueTask<bool> RevealOptionAsync(UiAutomationRun run, string key) => run.WithInputAsync(async lease => await run.Host.RunOnUiThreadAsync(
+    private ValueTask<bool> RevealOptionAsync(UiAutomationRun run, string key, string? columnKey = null) => run.WithInputAsync(async lease => await run.Host.RunOnUiThreadAsync(
         surface =>
         {
             run.Check();
@@ -165,7 +172,7 @@ public sealed partial class UiLocator
                 destination = snapshot.Nodes.FirstOrDefault(node => node.Id == destination.ParentId);
             }
 
-            return destination is not null && run.Send(lease, surface, new UiBringItemInput(owner.Id, key, point));
+            return destination is not null && run.Send(lease, surface, new UiBringItemInput(owner.Id, key, point) { ColumnKey = columnKey });
         },
         run.Token));
 }

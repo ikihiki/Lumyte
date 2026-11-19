@@ -167,9 +167,39 @@ public sealed partial class UiSurface
                 _viewportContentPlans = proposals;
                 try
                 {
+                    var proposedOwners = new HashSet<UiElement>(ReferenceEqualityComparer.Instance);
                     foreach (UiElement element in nodes)
                     {
+                        bool superseded = false;
+                        for (UiElement? owner = element; owner is not null; owner = projection.Parent(owner))
+                        {
+                            if (proposedOwners.Contains(owner))
+                            {
+                                superseded = true;
+                                break;
+                            }
+                        }
+
+                        if (superseded)
+                        {
+                            // A parent's proposed content is not this pass's topology yet.
+                            // Its descendants must use the next projected declarations, never
+                            // prepare an old factory/model over that parent's newer proposal.
+                            continue;
+                        }
+
+                        int previous = proposals.Count;
                         element.PrepareViewportContent();
+                        for (int index = previous; index < proposals.Count; index++)
+                        {
+                            foreach (ElementUpdate update in proposals[index].Updates)
+                            {
+                                if (update.Content is not null)
+                                {
+                                    proposedOwners.Add(update.Element);
+                                }
+                            }
+                        }
                     }
                 }
                 finally

@@ -38,6 +38,20 @@ public sealed partial class UiLocator
         return new(Page, [.. _queries, new UiQuery(null, null, null, true, key)]);
     }
 
+    /// <summary>Finds a realized cell by ordinal column key under a row locator.</summary>
+    /// <param name="key">The bounded nonempty column identity.</param>
+    /// <returns>A lazy descendant locator; observation never realizes cells.</returns>
+    public UiLocator GetByColumnKey(string key)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(key);
+        if (key.Length > 256 || !_queries.Any(query => query.ItemKey is not null) || _queries.Any(query => query.ColumnKey is not null))
+        {
+            throw new ArgumentException("A column locator requires one bounded column key under a row key.", nameof(key));
+        }
+
+        return new(Page, [.. _queries, new UiQuery(null, null, null, true, ColumnKey: key)]);
+    }
+
     /// <summary>Adds a role/name query restricted to descendants of current matches.</summary>
     /// <param name="role">The non-None semantic role.</param>
     /// <param name="name">The optional exact name.</param>
@@ -71,7 +85,7 @@ public sealed partial class UiLocator
             cancellationToken);
     }
 
-    /// <summary>Acquires focus through ordinary Tab Down/Up, sharing one deadline and input lease.</summary>
+    /// <summary>Acquires focus through normal Tab input, or pointer Down/Cancel for a grid cell without selecting it.</summary>
     /// <param name="options">Optional deadline.</param>
     /// <param name="cancellationToken">Cancels waiting.</param>
     /// <returns>Completion when the latest target has focus.</returns>

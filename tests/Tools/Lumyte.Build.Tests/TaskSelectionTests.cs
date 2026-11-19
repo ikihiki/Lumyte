@@ -102,6 +102,7 @@ public sealed class TaskSelectionTests
     [InlineData("tabs", "UI.Controls,UI.TextEditing", "Tabs")]
     [InlineData("collections", "UI.Collections", "Collections")]
     [InlineData("virtualization", "UI.Collections,UI.Automation,UI.Windowing,UI.TextEditing,Diagnostics.UI.Automation", "Virtualization")]
+    [InlineData("datagrid", "UI.Collections,UI.Automation,UI.Windowing,UI.TextEditing,Diagnostics.UI.Automation", "DataGrid")]
     [InlineData("treeview", "UI.Collections,UI.Automation,UI.Windowing,UI.TextEditing,Diagnostics.UI.Automation", "TreeView")]
     [InlineData("numeric", "UI.Controls,UI.TextEditing,UI.Automation", "Numeric")]
     [InlineData("application", "UI.Application", "Application.Headless")]
@@ -123,7 +124,7 @@ public sealed class TaskSelectionTests
             Assert.All(calls.Where(call => call[0] == "run"), call => Assert.Contains("--selfcheck", call));
         }
 
-        if (feature is "controls" or "media" or "scroll" or "menus" or "tabs" or "collections" or "virtualization" or "treeview" or "numeric")
+        if (feature is "controls" or "media" or "scroll" or "menus" or "tabs" or "collections" or "virtualization" or "treeview" or "datagrid" or "numeric")
         {
             Assert.All(calls.Where(call => call[0] == "run"), call => Assert.Contains("tests/Graphics/Lumyte.Graphics.Text.Parley.Tests/Fonts/DejaVuSans.ttf", call));
         }
@@ -141,6 +142,7 @@ public sealed class TaskSelectionTests
     [InlineData("collections")]
     [InlineData("virtualization")]
     [InlineData("treeview")]
+    [InlineData("datagrid")]
     [InlineData("numeric")]
     [Trait("Execution", "Integration")]
     public async Task AotFeatureRetainsStrictPublicationAsync(string feature)

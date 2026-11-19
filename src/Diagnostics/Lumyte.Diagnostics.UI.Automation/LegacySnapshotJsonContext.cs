@@ -7,6 +7,7 @@ namespace Lumyte.Diagnostics.UI.Automation;
 [JsonSerializable(typeof(SelectionRemoteSnapshot))]
 [JsonSerializable(typeof(NumericRemoteSnapshot))]
 [JsonSerializable(typeof(ExpandedRemoteSnapshot))]
+[JsonSerializable(typeof(TreeRemoteSnapshot))]
 internal partial class LegacySnapshotJsonContext : JsonSerializerContext
 {
 }

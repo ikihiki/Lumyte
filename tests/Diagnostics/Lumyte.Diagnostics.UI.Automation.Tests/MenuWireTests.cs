@@ -32,7 +32,7 @@ public sealed class MenuWireTests
         string tail = ",\"kind\":\"count\",\"locator\":[{\"kind\":\"role\",\"role\":\"" + role + "\"}]}";
         Assert.Throws<JsonException>(() => UiRemoteSchema.ParsePlan("{\"schemaVersion\":8" + tail));
         Assert.Equal(9, UiRemoteSchema.ParsePlan("{\"schemaVersion\":9" + tail).SchemaVersion);
-        Assert.Throws<JsonException>(() => UiRemoteSchema.ParsePlan("{\"schemaVersion\":12" + tail));
+        Assert.Throws<JsonException>(() => UiRemoteSchema.ParsePlan("{\"schemaVersion\":13" + tail));
     }
 
     /// <summary>Real menu Check uses exclusive ordinary input, not semantic-role inference.</summary>

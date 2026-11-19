@@ -54,6 +54,14 @@ public static partial class Compose
 
             internal long RevealPositionVersion { get; set; }
 
+            internal Func<UiElement?, long, Action<bool>?>? PrepareOwnedFocusRestore { get; set; }
+
+            internal Action? ItemsRealized { get; set; }
+
+            internal bool HideSelectionSemantics { get; set; }
+
+            internal Func<bool>? ViewportAvailable { get; set; }
+
             internal Action<T, CollectionItem>? ConfigureItem { get; set; }
 
             internal Action<string>? ItemInvoked { get; set; }

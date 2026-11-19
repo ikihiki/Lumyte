@@ -111,3 +111,13 @@ OpenAL Soft は検証用ディレクトリに配置し、そのプロセスの P
 ## ダイアログと通知
 
 `ui-dialogs` の `headless` backend は [宣言的 Dialog・通知 FIFO・recipes](Lumyte.UI.Dialogs.Sample/README.md)の公開例です。通常の Application と Diagnostics、明示 font、実際の編集接続、同じ input lease を使います。Native OS modal の activation は保証範囲に含みません。
+
+## 読み取り専用の表
+
+`ui-datagrid` は明示 font を借用する Headless／Parley の表です。現在の型付き Header／Cell Slot、1000行の固定長仮想化、ヘッダー通常入力の sort と resize、行と列のキー指定による reveal、選択、Signal 内容更新を確認します。通常の Surface 記録で、明示 font の文字アウトラインとセル背景の fill コマンドも検査します。
+
+```sh
+dotnet run --project samples/Lumyte.Samples -c Release -- --sample ui-datagrid --configuration Release -- tests/Graphics/Lumyte.Graphics.Text.Parley.Tests/Fonts/DejaVuSans.ttf
+dotnet run --project build -c Release -- --target Test --suite ui --feature datagrid
+dotnet run --project build -c Release -- --target Test --suite ui --feature datagrid --aot
+```

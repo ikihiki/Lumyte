@@ -22,13 +22,13 @@ internal sealed class CollectionItemElement(CollectionItem widget) : UiElement<C
         }
     }
 
-    protected override bool? AutomationSelected => Widget.Selected();
+    protected override bool? AutomationSelected => Widget.PassiveRow ? null : Widget.Selected();
 
-    protected override UiAutomationId? AutomationSelectionGroup => Widget.SelectionOwner();
+    protected override UiAutomationId? AutomationSelectionGroup => Widget.PassiveRow ? null : Widget.SelectionOwner();
 
-    protected override string? AutomationOptionKey => Widget.Key;
+    protected override string? AutomationOptionKey => Widget.PassiveRow ? null : Widget.Key;
 
-    protected override UiAutomationActions AutomationActions => UiAutomationActions.Focus
+    protected override UiAutomationActions AutomationActions => Widget.PassiveRow ? UiAutomationActions.None : UiAutomationActions.Focus
         | (Widget.TreeItem is null || (AutomationActionRegion.Width > 0 && AutomationActionRegion.Height > 0) ? UiAutomationActions.Click : UiAutomationActions.None)
         | (Widget.Expand is null ? UiAutomationActions.None : UiAutomationActions.ExpandCollapse);
 
@@ -40,6 +40,11 @@ internal sealed class CollectionItemElement(CollectionItem widget) : UiElement<C
 
     protected override UiInputResult OnInput(in UiInputContext context)
     {
+        if (Widget.PassiveRow)
+        {
+            return UiInputResult.StopPropagation;
+        }
+
         if (context.Input is UiExpandInput expansion && Widget.Expand is { } expand)
         {
             expand(expansion.IsExpanded);

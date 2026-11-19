@@ -1,5 +1,6 @@
 using Lumyte.Input.Abstractions;
 using Lumyte.Signals;
+using Lumyte.UI.Collections;
 using Lumyte.UI.Controls;
 using Xunit;
 using static Lumyte.UI.Compose;
@@ -404,6 +405,53 @@ public sealed class DialogTests
             Assert.True(tree.SetExpanded("root", false));
             fixture.Pump();
             Assert.Single(tree.VisibleKeys);
+            open.Value = false;
+            fixture.Pump();
+            Assert.Empty(fixture.Dialogs.CaptureDialogs());
+            if (cycle == 0)
+            {
+                open.Value = true;
+            }
+        }
+    }
+
+    /// <summary>A virtual grid keeps truthful cell parents and child-button ownership inside a Hosted dialog.</summary>
+    [Fact]
+    public void VirtualGridAndLabelRecipeSurviveHostedDialogLifecycle()
+    {
+        using var fixture = new DialogFixture();
+        var open = Signal.Create(true);
+        int childClicks = 0;
+        Widget Header(DataGridColumn<int> column, Collections.Compose.Definitions.DataGrid<int> owner) => SizedBox();
+        Widget Cell(DataGridCellContext<int> cell, Collections.Compose.Definitions.DataGrid<int> owner) => UiRecipes.FormRow(SizedBox(width: 10, height: 20), Button(automationName: "child-" + cell.RowKey, width: 30, height: 20, onClick: () => childClicks++), "Label " + cell.RowKey);
+        Widget CreateContent() => Collections.Compose.DataGrid<int>(items: Enumerable.Range(0, 1000).ToArray(), keySelector: value => value.ToString(System.Globalization.CultureInfo.InvariantCulture), columns: new[] { new DataGridColumn<int>("value", "Value", 100) }, height: 80, virtualization: new UiItemVirtualization(20, 0))[
+            Collections.Compose.DataGridFactory<int>().Header()[Header], Collections.Compose.DataGridFactory<int>().Cell()[Cell]];
+        fixture.Set(Panel()[Dialog("grid", "Grid", isOpen: open, initialClientSize: new(120, 100))[CreateContent()]]);
+        for (int cycle = 0; cycle < 2; cycle++)
+        {
+            fixture.Pump();
+            UiDialogOpened dialog = Assert.Single(fixture.Dialogs.CaptureDialogs());
+            Assert.True(fixture.Dialogs.TryGetSurface(dialog.DialogId, out UiSurface? content));
+            UiAutomationSnapshot snapshot = content!.CaptureAutomationSnapshot();
+            UiAutomationNode gridNode = Assert.Single(snapshot.Nodes, node => node.Role == UiRole.DataGrid);
+            DataGridElement<int> grid = Assert.IsType<DataGridElement<int>>(content.FindElement(gridNode.Id));
+            UiAutomationNode child = snapshot.Nodes.First(node => node.Name == "child-0");
+            UiElement recipe = content.FindElement(child.Id)!.Parent!;
+            Assert.Equal(new UiLabelAssociation(0, 1, "Label 0"), recipe.Widget.LabelAssociation);
+            fixture.Base.Popups.Dispatch(content, new UiPointerInput(400 + cycle, UiPointerPhase.Down, new(child.ActionableBounds.X + 2, child.ActionableBounds.Y + 2)));
+            fixture.Base.Popups.Dispatch(content, new UiPointerInput(400 + cycle, UiPointerPhase.Up, new(child.ActionableBounds.X + 2, child.ActionableBounds.Y + 2)));
+            Assert.Equal(cycle + 1, childClicks);
+            Assert.Null(grid.SelectedKey);
+            Assert.True(grid.BringCellIntoView("999", "value"));
+            fixture.Pump();
+            UiAutomationSnapshot revealed = content.CaptureAutomationSnapshot();
+            UiAutomationNode cell = Assert.Single(revealed.Nodes, node => node.GridCell is { RowKey: "999", ColumnKey: "value" });
+            UiAutomationNode pinned = Assert.Single(revealed.Nodes, node => node.Id == child.Id);
+            Assert.True(pinned.IsFocused);
+            Assert.Equal(0, pinned.ClippedBounds.Height);
+            Assert.InRange(revealed.Nodes.Count(node => node.Role == UiRole.GridRow), 1, 4);
+            Assert.True(cell.ClippedBounds.Height > 0);
+            Assert.Equal(UiRole.GridRow, content.CaptureAutomationSnapshot().Nodes.Single(node => node.Id == cell.ParentId).Role);
             open.Value = false;
             fixture.Pump();
             Assert.Empty(fixture.Dialogs.CaptureDialogs());

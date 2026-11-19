@@ -46,3 +46,33 @@ ListBoxFactory<Person>().Item()[
 ```
 
 owner は現在の宣言であり、選択やスクロールの実体ではありません。生成は通常表示・仮想化・復元・ポップアップの既存の準備境界で行います。項目の根は従来どおり新鮮で交わらない必要があり、同じ固定 Widget を複数項目で使っても複製されません。Slot 設定は宣言の再構築にも引き継がれます。
+
+## 読み取り専用 DataGrid
+
+DataGrid は不変の `DataGridColumn<T>` と既存の型付き Header／Cell Slot を使います。列名は明示的なアクセシビリティ名で、表示文字から推定しません。文字組みサービスと font は呼び出し側が用意します。次の provider、people、Person 型の準備は省略しています。
+
+```csharp
+using Lumyte.UI.Collections;
+using Collections = Lumyte.UI.Collections.Compose;
+using Media = Lumyte.UI.Media.Compose;
+
+var grid = Collections.DataGrid<Person>(
+    items: people, keySelector: person => person.Id,
+    columns: new[] { new DataGridColumn<Person>("name", "名前", 180) })[
+    Collections.DataGridFactory<Person>().Header()[
+        (column, owner) => Media.Text(value: column.Name, layoutProvider: provider)],
+    Collections.DataGridFactory<Person>().Cell()[
+        (cell, owner) => Media.Text(value: cell.Row.Name, layoutProvider: provider)]];
+```
+
+owner は評価先の具体的な DataGrid 宣言です。RegisterTemplateSlot によって引数シグナルでの再構築先へ再適用し、実体の選択・幅・並べ替えを宣言へ書き戻しません。行・列設定が同じまま表示テンプレートが変わった場合も受理状態を維持します。
+
+Header の右端8論理単位は捕捉付き幅変更、本文クリックと Enter／Space は明示 `IComparer<T>` を持つ列だけの昇順／降順／元の順序です。ヘッダーの左右キーは8単位の幅変更です。セルの上下左右、Home／End、PageUp／PageDown はフォーカスだけを移動し、クリックと Enter／Space が単一行を選択します。セル編集・書戻しエンジンは持ちません。カスタムの Button／TextBox は子優先の通常入力先となり、二重選択しません。
+
+固定の Widget を渡す Header()[widget]／Cell()[widget] も生成されますが、自動複製しません。一箇所だけの固定構成に使い、複数列・複数行・複数 Surface ではラムダから新しい未接続の Widget を返してください。ヘッダー内容は装飾、セル内容は通常の子入力という区別があります。
+
+最大100万行と1024列、非空の ordinal キーと明示名は256文字までです。行と列は関数を呼ぶ前にコピーし、比較の同値行は元の行順を維持します。Column.Width は宣言値で、受理幅は DataGridElement.ColumnWidths の読み取り専用スナップショットです。不可視の列は構築せず、その列のソートは静かに解除します。
+
+固定長の垂直仮想化は既存 ListBox の可視範囲＋overscanと最大一行の入力保持を使います。各可視行では全可視列を実体化し、列方向の仮想化はしません。ヘッダーを垂直 viewport 外へ置き、ヘッダーと行は同じ水平 ScrollView を共有します。行・セル reveal は表示範囲を準備してから位置を同時採用し、factory 例外では古い表示と位置を保ちます。
+
+GetByRole(UiRole.DataGrid).GetByItemKey(rowKey).GetByColumnKey(columnKey) は実在セルを解決します。Observe は実体化・比較・スクロールをせず、入力 reveal は通常の排他的 lease と実際の window／modal／menu 範囲を使います。GridCell は読み取り専用で Fill を拒否し、明示した子 TextBox の入力能力とは分けます。診断 schema 12 がセル座標を公開し、schema 1〜11 の形状は保持します。

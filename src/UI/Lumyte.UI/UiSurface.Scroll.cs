@@ -86,6 +86,27 @@ public sealed partial class UiSurface
         return changed;
     }
 
+    internal void SupersedePendingItemReveal(UiElement owner)
+    {
+        for (UiElement? target = _revealFocus; target is not null; target = target.Parent)
+        {
+            if (ReferenceEquals(target, owner))
+            {
+                _revealFocus = null;
+                break;
+            }
+        }
+
+        for (UiElement? target = _restoreItemFocus; target is not null; target = target.Parent)
+        {
+            if (ReferenceEquals(target, owner))
+            {
+                _restoreItemFocusReveal = false;
+                break;
+            }
+        }
+    }
+
     internal long ReserveItemFocusRequest() => ++_focusRequest;
 
     internal void QueueItemFocus(UiElement target, long request, bool reveal = true)

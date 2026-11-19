@@ -21,7 +21,7 @@ public sealed class UiRemoteLocator
 
     internal UiRemotePage Page { get; }
 
-    private int QueryVersion => _steps.Any(step => step.Role is "tree" or "treeitem") ? 11 : _steps.Any(step => step.Kind == "item-key") ? 10 : _steps.Any(step => step.Role is "menu" or "menuitem" or "tooltip") ? 9 : _steps.Any(step => step.Role is "tabview" or "tabitem" or "expander") ? 8 : _steps.Any(step => step.Role is "listbox" or "listitem" or "combobox") ? 7 : _steps.Any(step => step.Role is "slider" or "rangeslider") ? 6 : _steps.Any(step => step.Role is "togglebutton" or "checkbox" or "switch" or "radiogroup" or "radiobutton") ? 4 : 1;
+    private int QueryVersion => _steps.Any(step => step.Role is "datagrid" or "gridrow" or "gridcell" || step.Kind == "column-key") ? 12 : _steps.Any(step => step.Role is "tree" or "treeitem") ? 11 : _steps.Any(step => step.Kind == "item-key") ? 10 : _steps.Any(step => step.Role is "menu" or "menuitem" or "tooltip") ? 9 : _steps.Any(step => step.Role is "tabview" or "tabitem" or "expander") ? 8 : _steps.Any(step => step.Role is "listbox" or "listitem" or "combobox") ? 7 : _steps.Any(step => step.Role is "slider" or "rangeslider") ? 6 : _steps.Any(step => step.Role is "togglebutton" or "checkbox" or "switch" or "radiogroup" or "radiobutton") ? 4 : 1;
 
     /// <summary>Sets a finite scalar through the server's normal numeric input lease.</summary>
     /// <param name="value">The desired finite value.</param>
@@ -53,6 +53,20 @@ public sealed class UiRemoteLocator
         }
 
         return new(Page, [.. _steps, new("item-key", Value: key)]);
+    }
+
+    /// <summary>Finds a realized read-only cell under an item-key row.</summary>
+    /// <param name="key">The bounded nonempty column identity.</param>
+    /// <returns>A schema-twelve lazy cell locator.</returns>
+    public UiRemoteLocator GetByColumnKey(string key)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(key);
+        if (key.Length > 256 || !_steps.Any(step => step.Kind == "item-key") || _steps.Any(step => step.Kind == "column-key"))
+        {
+            throw new ArgumentException("A column locator requires one bounded column key under a row key.", nameof(key));
+        }
+
+        return new(Page, [.. _steps, new("column-key", Value: key)]);
     }
 
     /// <summary>Reveals the owner-scoped item using the normal exclusive input lease.</summary>

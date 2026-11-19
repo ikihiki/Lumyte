@@ -30,6 +30,8 @@ public partial class UiElement
 
     internal UiTreeItemState? SemanticTreeItem => AutomationTreeItem;
 
+    internal UiGridCellState? SemanticGridCell => AutomationGridCell;
+
     internal bool? SemanticAutomationChecked => AutomationChecked;
 
     internal bool? SemanticAutomationSelected => AutomationSelected;
@@ -39,6 +41,9 @@ public partial class UiElement
     internal string? SemanticAutomationOptionKey => AutomationOptionKey;
 
     internal string? SemanticAutomationSelectedKey => AutomationSelectedKey;
+
+    /// <summary>Gets immutable read-only cell coordinates.</summary>
+    protected virtual UiGridCellState? AutomationGridCell => null;
 
     /// <summary>Gets logical tree parent keys and depth without requiring ancestor realizations.</summary>
     protected virtual UiTreeItemState? AutomationTreeItem => null;

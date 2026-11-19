@@ -50,10 +50,10 @@ public class ListBoxElement<T> : ItemsRepeaterElement<T>, IUiItemViewport
     protected override bool UseAdoptedItems => _preparingRange;
 
     /// <inheritdoc/>
-    protected override string? AutomationSelectedKey => SelectedKey;
+    protected override string? AutomationSelectedKey => ((Compose.Definitions.ListBox<T>)Widget).HideSelectionSemantics ? null : SelectedKey;
 
     /// <inheritdoc/>
-    protected override UiAutomationActions AutomationActions => UiAutomationActions.SelectOption;
+    protected override UiAutomationActions AutomationActions => ((Compose.Definitions.ListBox<T>)Widget).HideSelectionSemantics ? UiAutomationActions.None : UiAutomationActions.SelectOption;
 
     /// <summary>Reveals an adopted ordinal key without constructing preceding items.</summary>
     /// <param name="key">The nonempty model key.</param>
@@ -245,7 +245,7 @@ public class ListBoxElement<T> : ItemsRepeaterElement<T>, IUiItemViewport
             }
         }
 
-        if (!moved && !needsFocusPin && (options.Range(_rangePreparation?.Items.Length ?? Items.Count, scroll.Controller.ProposedOffset, (list.Orientation == UiOrientation.Vertical ? scroll.PreparedSize.X : scroll.PreparedSize.Y) > 0 ? scroll.Controller.ProposedViewport : 0) == (_rangePreparation?.Range ?? _realizedRange)
+        if (!moved && !needsFocusPin && (options.Range(_rangePreparation?.Items.Length ?? Items.Count, scroll.Controller.ProposedOffset, (list.Orientation == UiOrientation.Vertical ? scroll.PreparedSize.X : scroll.PreparedSize.Y) > 0 && list.ViewportAvailable?.Invoke() != false ? scroll.Controller.ProposedViewport : 0) == (_rangePreparation?.Range ?? _realizedRange)
                 && (expectedPin is null || ReferenceEquals(expectedPin, Surface?.FocusedElement) || expectedPin.HasPendingInputLifetime)))
         {
             _rangePreparation = null;
@@ -348,6 +348,7 @@ public class ListBoxElement<T> : ItemsRepeaterElement<T>, IUiItemViewport
 
         long focusRequest = Surface?.FocusRequest ?? 0;
         UiElement? focusedElement = Surface?.FocusedElement ?? Surface?.DeferredViewportFocus;
+        Action<bool>? ownedFocusRestore = ((Compose.Definitions.ListBox<T>)declaration).PrepareOwnedFocusRestore?.Invoke(focusedElement, focusRequest);
         if (((Compose.Definitions.ListBox<T>)declaration).Virtualization is not null)
         {
             while (focusedElement is not null && focusedElement is not CollectionItemElement)
@@ -372,7 +373,14 @@ public class ListBoxElement<T> : ItemsRepeaterElement<T>, IUiItemViewport
                     var prepared = Surface?.PreparedViewportContent(this)?.PreparationState as RangePreparation;
                     int index = Array.IndexOf(keys, focusedKey);
                     bool reveal = prepared is null || (index >= prepared.Range.Start && index < prepared.Range.End);
-                    Surface!.QueueItemFocus(restore, focusRequest, reveal);
+                    if (ownedFocusRestore is not null)
+                    {
+                        ownedFocusRestore(reveal);
+                    }
+                    else
+                    {
+                        Surface!.QueueItemFocus(restore, focusRequest, reveal);
+                    }
                 }
             }
 
@@ -407,7 +415,7 @@ public class ListBoxElement<T> : ItemsRepeaterElement<T>, IUiItemViewport
 
         // A new model must not instantiate rows for the previous viewport on a simultaneous resize.
         float viewport = _preparingRange ? scroll?.Controller.ProposedViewport ?? 0 : 0;
-        if (scroll is not null && (declaration.Orientation == UiOrientation.Vertical ? scroll.PreparedSize.X : scroll.PreparedSize.Y) <= 0)
+        if (list.ViewportAvailable?.Invoke() == false || (scroll is not null && (declaration.Orientation == UiOrientation.Vertical ? scroll.PreparedSize.X : scroll.PreparedSize.Y) <= 0))
         {
             viewport = 0;
         }
@@ -475,7 +483,7 @@ public class ListBoxElement<T> : ItemsRepeaterElement<T>, IUiItemViewport
                 owner = owner.Parent;
             }
 
-            if (owner is CollectionItemElement pinned && previous.TryGetValue(pinned.Widget.Key!, out Widget? pinnedRoot) && !roots.Contains(pinnedRoot))
+            if (owner is CollectionItemElement pinned && previous.TryGetValue(pinned.Widget.Key!, out Widget? pinnedRoot) && ReferenceEquals(pinned.Widget, pinnedRoot) && !roots.Contains(pinnedRoot))
             {
                 if (_keyIndices.TryGetValue(pinned.Widget.Key!, out int pinnedIndex))
                 {
@@ -533,6 +541,8 @@ public class ListBoxElement<T> : ItemsRepeaterElement<T>, IUiItemViewport
                         Surface!.QueueItemFocus(target, navigation.Request);
                     }
                 }
+
+                list.ItemsRealized?.Invoke();
             });
             result.FreshRealizations = true;
             result.PrepareLayout = prepareGeometry;
@@ -553,6 +563,7 @@ public class ListBoxElement<T> : ItemsRepeaterElement<T>, IUiItemViewport
             _bringKey = null;
             _keyIndices = keyIndices;
             _ownerThread = Environment.CurrentManagedThreadId;
+            list.ItemsRealized?.Invoke();
         };
         return new UiElementContent(contentRoot, acceptModel) { FreshRealizations = true, PrepareLayout = prepareGeometry, PreparationState = new RangePreparation(items, keys, range, acceptModel, prepareGeometry, null, restoreFocusKey, null) }.WithItemOwnership(roots.ToArray());
     }

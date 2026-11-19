@@ -126,7 +126,7 @@ public sealed partial class UiSurface
 
         if (input is UiBringItemInput bring)
         {
-            if (string.IsNullOrEmpty(bring.Key) || bring.Key.Length > 1024 || !float.IsFinite(bring.Position.X) || !float.IsFinite(bring.Position.Y))
+            if (string.IsNullOrEmpty(bring.Key) || bring.Key.Length > 1024 || (bring.ColumnKey is { } columnKey && (columnKey.Length == 0 || columnKey.Length > 256)) || !float.IsFinite(bring.Position.X) || !float.IsFinite(bring.Position.Y))
             {
                 throw new ArgumentOutOfRangeException(nameof(input));
             }
@@ -158,7 +158,7 @@ public sealed partial class UiSurface
                 contained |= ReferenceEquals(itemHit, target);
             }
 
-            return contained && items.BringIntoView(bring.Key);
+            return contained && (bring.ColumnKey is { } column ? target is IUiGridViewport grid && grid.BringCellIntoView(bring.Key, column) : items.BringIntoView(bring.Key));
         }
 
         if (input is UiSetNumericInput numeric)
