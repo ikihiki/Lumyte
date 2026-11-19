@@ -161,11 +161,26 @@ type RendererRef = Rc<RefCell<RendererState>>;
 pub fn renderer() -> RenderProcessHandler {
     Renderer::new(Rc::new(RefCell::new(RendererState::default())))
 }
+const POST_ERROR: &str = "Message denied, unserializable, too large or JSON depth exceeds 64";
+
+fn post_payload_allowed(url: &str, json: &str) -> bool {
+    json.len() + url.len() + 12 <= 4096 && json_depth_allowed(json)
+}
+
+fn reject_post(exception: Option<&mut CefString>) -> i32 {
+    if let Some(exception) = exception {
+        // cef-rs passes a BorrowedMut wrapper and does not copy a replacement
+        // wrapper back. Mutate CEF-owned storage through its safe public setter.
+        exception.try_set(POST_ERROR);
+    }
+    1
+}
+
 wrap_v8_handler! {
  struct Post {origins:Vec<String>,epoch:String,serialize:V8Value}
  impl V8Handler {
  fn execute(&self,_name:Option<&CefString>,_object:Option<&mut V8Value>,arguments:Option<&[Option<V8Value>]>,_retval:Option<&mut Option<V8Value>>,exception:Option<&mut CefString>)->i32 {
-  let result=(||->Option<()>{let c=v8_context_get_current_context()?;let f=c.frame()?;if f.is_main()==0{return None;}let url=CefString::from(&f.url()).to_string();if !self.origins.contains(&origin(&url)?){return None;}let args=arguments?;if args.len()!=1{return None;}let v=self.serialize.execute_function(None,Some(args))?;if v.is_string()==0{return None;}let json=CefString::from(&v.string_value()).to_string();if json.len()+url.len()+12>4096 || !json_depth_allowed(&json){return None;}send(&f,ProcessId::BROWSER,"lumyte.post",&[self.epoch.to_string(),json]);Some(())})();if result.is_none()&& let Some(e)=exception{*e=CefString::from("Message denied, unserializable, too large or JSON depth exceeds 64");}1
+  let result=(||->Option<()>{let c=v8_context_get_current_context()?;let f=c.frame()?;if f.is_main()==0{return None;}let url=CefString::from(&f.url()).to_string();if !self.origins.contains(&origin(&url)?){return None;}let args=arguments?;if args.len()!=1{return None;}let v=self.serialize.execute_function(None,Some(args))?;if v.is_string()==0{return None;}let json=CefString::from(&v.string_value()).to_string();if !post_payload_allowed(&url,&json){return None;}send(&f,ProcessId::BROWSER,"lumyte.post",&[self.epoch.to_string(),json]);Some(())})();if result.is_none(){return reject_post(exception);}1
  }
  }
 }
@@ -437,6 +452,61 @@ pub fn tick(state: &StateRef) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    wrap_v8_handler! {
+        struct RejectionProbe;
+        impl V8Handler {
+            fn execute(&self, _name: Option<&CefString>, _object: Option<&mut V8Value>, _arguments: Option<&[Option<V8Value>]>, _retval: Option<&mut Option<V8Value>>, exception: Option<&mut CefString>) -> i32 {
+                reject_post(exception)
+            }
+        }
+    }
+
+    #[test]
+    fn rejection_updates_cef_owned_exception_through_pinned_callback_trampoline() {
+        let handler = RejectionProbe::new();
+        let raw = handler.get_raw();
+        let mut exception = sys::cef_string_t {
+            str_: std::ptr::null_mut(),
+            length: 0,
+            dtor: None,
+        };
+        // Invoke the generated C callback exactly as CEF does. No browser/V8 instance
+        // or global state is needed: the probe only writes the caller-owned string.
+        let handled = unsafe {
+            ((*raw).execute.unwrap())(
+                raw,
+                std::ptr::null(),
+                std::ptr::null_mut(),
+                0,
+                std::ptr::null(),
+                std::ptr::null_mut(),
+                &mut exception,
+            )
+        };
+        let actual = CefString::from(std::ptr::from_ref(&exception)).to_string();
+        unsafe {
+            sys::cef_string_utf16_clear(&mut exception);
+        }
+        assert_eq!(handled, 1);
+        assert_eq!(actual, POST_ERROR);
+    }
+
+    #[test]
+    fn post_admission_rejects_small_deep_data_and_full_body_overflow() {
+        let url = "https://example.test/";
+        assert!(post_payload_allowed(url, "null"));
+        assert!(post_payload_allowed(
+            url,
+            &format!("{}0{}", "[".repeat(64), "]".repeat(64))
+        ));
+        assert!(!post_payload_allowed(
+            url,
+            &format!("{}0{}", "[".repeat(65), "]".repeat(65))
+        ));
+        assert!(!post_payload_allowed(url, &"x".repeat(4096)));
+    }
+
     #[test]
     fn json_depth_limit_ignores_escaped_string_brackets() {
         assert!(json_depth_allowed(&format!(
