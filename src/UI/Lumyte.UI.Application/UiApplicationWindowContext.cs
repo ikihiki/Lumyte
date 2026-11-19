@@ -61,9 +61,32 @@ public sealed class UiApplicationWindowContext
     /// <returns>The borrowed popup host.</returns>
     public IUiAutomationHost GetPopupAutomation(Guid popupId) => _application.PopupAutomation(popupId);
 
+    /// <summary>Captures current dialog identities on the owner thread.</summary>
+    /// <returns>The application's open dialog snapshot.</returns>
+    public IReadOnlyList<UiDialogOpened> CaptureDialogs()
+    {
+        CheckOwner();
+        return _application.CaptureDialogs();
+    }
+
+    /// <summary>Borrows the routed automation host sharing the application's exclusive input domain.</summary>
+    /// <param name="dialogId">An open dialog identity.</param>
+    /// <returns>The current dialog host.</returns>
+    public IUiAutomationHost GetDialogAutomation(Guid dialogId)
+    {
+        CheckOwner();
+        return _application.DialogAutomation(dialogId);
+    }
+
     internal IUiAutomationHost GetPopupAutomationForDiagnostics(Guid popup, bool allowInspection) => _application.PopupAutomation(popup, allowInspection);
 
     internal void WakeOwner() => _application.WakeOwner();
+
+    internal IUiAutomationHost GetDialogAutomationForDiagnostics(Guid id, bool inspection) => _application.DialogAutomation(id, inspection);
+
+    internal bool TryGetDialogSurface(Guid id, out UiSurface? surface) => _application.TryGetDialogSurface(id, out surface);
+
+    internal void BindDialogLifetime(Guid id, IAsyncDisposable participant) => _application.BindDialogLifetime(id, participant);
 
     internal void Close() => _closed = true;
 

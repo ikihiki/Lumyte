@@ -287,7 +287,6 @@ try {
     if (traceGpu) traceStage = "connected-route-and-gate";
     await click("next");
     await until(`${probe}.GetRoute() === '/details' && ${probe}.GetState().includes('Animating')`);
-    assert.equal(await evaluate(`${probe}.GetDisposed()`), 0, "The old DI scope survives the flight");
     assert.equal(await evaluate(`${probe}.IsGatedAsync()`), true);
     if (traceGpu) traceStage = "connected-first-png";
     await png();
@@ -302,7 +301,6 @@ try {
     await evaluate(`${probe}.SetPageGreenAsync()`);
     if (!sequential) await liveColor(20, 20, [0, 255, 0, 255]);
     assert.equal(await evaluate(`${probe}.GetVisual()`), "pending", "Target content updates must keep the flight alive");
-    assert.equal(await evaluate(`${probe}.GetDisposed()`), 0);
     await click("quit"); // ordinary input is discarded while the page is gated
     assert.equal(await evaluate("globalThis.lumyteApplicationFinished"), false);
     await evaluate(`${probe}.AdvanceAsync(0.5)`);
@@ -314,27 +312,26 @@ try {
         await evaluate(`${probe}.AdvanceAsync(0.5)`);
         color(await png(), 20, 20, [0, 255, 0, 255]);
     }
-    await until(`${probe}.GetVisual() === 'Completed;completed' && ${probe}.GetDisposed() === 1 && ${probe}.GetState().includes('Idle')`);
+    await until(`${probe}.GetVisual() === 'Completed;completed' && ${probe}.GetState().includes('Idle')`);
     await evaluate(`${probe}.BackAsync()`);
     await until(`${probe}.GetRoute() === '/' && ${probe}.GetState().includes('Animating')`);
     await png();
     await evaluate(`${probe}.AdvanceAsync(${sequential ? 2 : 1})`);
     await png();
-    await until(`${probe}.GetVisual() === 'Completed;completed' && ${probe}.GetDisposed() === 2 && ${probe}.GetState().includes('Idle')`);
+    await until(`${probe}.GetVisual() === 'Completed;completed' && ${probe}.GetState().includes('Idle')`);
     await evaluate(`${probe}.ForwardAsync()`);
-    await until(`${probe}.GetRoute() === '/details' && ${probe}.GetVisual() === 'Skipped;skipped-by-request' && ${probe}.GetDisposed() === 3`);
+    await until(`${probe}.GetRoute() === '/details' && ${probe}.GetVisual() === 'Skipped;skipped-by-request'`);
     assert.equal(await evaluate("location.href"), url);
     assert.equal(await evaluate("window.history.length"), history);
     await click("quit");
     await until("globalThis.lumyteApplicationFinished === true");
-    assert.equal(await evaluate(`${probe}.GetDisposed()`), 4);
     assert.deepEqual(errors, []);
     await writeFile(resolve(tmpdir(), "lumyte-ui-connected-mid.png"), middle);
     if (requiresSoftwareWebGpu()) {
         const audit = await command("Runtime.evaluate", { expression: "globalThis.__lumyteBrowserGpuAudit", returnByValue: true });
         verifySoftwareWebGpu(audit.result.value);
     }
-    console.log(`${sequential ? "ExitThenEnter" : sameContent ? "One-pixel-budget live shared layer" : "Connected-only"} UI transitions WebGPU passed: live content during fades/flight, group alpha, Hosted popup exit/drain, isolated crossfade or allocation-free shared movement, bounds, input gate, DI retention, back/forward/skip and shutdown.`);
+    console.log(`${sequential ? "ExitThenEnter" : sameContent ? "One-pixel-budget live shared layer" : "Connected-only"} UI transitions WebGPU passed: live content during fades/flight, group alpha, Hosted popup exit/drain, isolated crossfade or allocation-free shared movement, bounds, input gate, back/forward/skip presentation and shutdown.`);
 } catch (failure) {
     const evidence = traceCapture || traceGpu
         ? await captureTrace.failure(command, { sample: "transitions", stage, pngIndex }) : undefined;

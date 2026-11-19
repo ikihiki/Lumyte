@@ -137,6 +137,7 @@ public sealed partial class UiApplicationViewSlot
                 view.Surface.SetSignalUpdatesEnabled(true);
                 view.Surface.SetAnimationUpdatesEnabled(visible);
                 view.Portals?.SetUpdatesEnabled(true);
+                view.Dialogs?.SetUpdatesEnabled(true);
                 view.Gated = false;
                 view.Host.Resume();
                 _application.Popups.GateOwner(view.Owner!, false);
@@ -222,17 +223,23 @@ public sealed partial class UiApplicationViewSlot
 
         internal UiPopupPortalCoordinator? Portals { get; private set; }
 
+        internal UiDialogPortalCoordinator? Dialogs { get; private set; }
+
         internal IDisposable? MenuGuard { get; set; }
 
         internal bool Gated { get; set; }
 
         internal IUiAutomationHost Automation => Text?.Automation ?? Host;
 
-        internal bool IsStopped => (_closingVisuals?.IsCompleted ?? true) && (Text?.IsStopped ?? true) && (Owner?.IsReleased ?? true) && Host.IsStopped;
+        internal bool IsStopped => (_closingVisuals?.IsCompleted ?? true) && (Text?.IsStopped ?? true) && (Owner?.IsReleased ?? true) && (Dialogs?.IsStopped ?? true) && Host.IsStopped;
 
         internal IUiAutomationHost GetAutomation(bool inspection) => Text?.CreateAutomation(inspection) ?? Host;
 
-        internal void AttachPortals() => Portals = new(_application.Popups, Owner!, Surface);
+        internal void AttachPortals()
+        {
+            Portals = new(_application.Popups, Owner!, Surface);
+            Dialogs = _application.AttachDialogs(_window, Owner!, Surface, Suspended);
+        }
 
         internal void AttachText(bool staged) => Text = _application.AttachText(Surface, _window, Host, staged);
 
@@ -246,6 +253,7 @@ public sealed partial class UiApplicationViewSlot
             Surface.SetSignalUpdatesEnabled(false);
             Surface.FreezeValueAnimations();
             Portals?.Dispose();
+            Dialogs?.Dispose();
             Host.BeginStop();
             Text?.BeginStop();
             Owner?.Dispose();

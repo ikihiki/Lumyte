@@ -92,13 +92,61 @@ internal sealed partial class Build
         }
     }
 
+    private void ValidateBuildLane()
+    {
+        if (BuildLane is not null && BuildLane is not ("cpu" or "gpu" or "integration"))
+        {
+            throw new ArgumentException("Invalid --build-lane. Expected cpu, gpu, or integration.");
+        }
+    }
+
+    private string CreateLaneBuildSolution(string lane)
+    {
+        (string solution, TestLaneSelection[] projects) = SelectTestLane(lane switch { "cpu" => "Cpu", "integration" => "Integration", "gpu" => "Gpu", _ => throw new ArgumentException("Invalid build lane.") });
+        string[] roots = projects.Select(project => project.Path).ToArray();
+        if (lane == "gpu")
+        {
+            string driver = Path.GetFullPath(PipelineValidationProject, RepositoryDirectory);
+            bool canonical = XDocument.Load(solution).Descendants("Project").Any(project =>
+                Path.GetFullPath(project.Attribute("Path")!.Value, Path.GetDirectoryName(solution)!) == driver);
+            if (!canonical || !File.Exists(driver))
+            {
+                throw new InvalidDataException("The pipeline validation executable must exist in the canonical solution: " + driver);
+            }
+
+            roots = [.. roots, driver];
+        }
+
+        string directory = Path.Combine(ArtifactRoot, "ci");
+        Directory.CreateDirectory(directory);
+        string destination = Path.Combine(directory, lane + ".slnf");
+        // The SDK follows ProjectReference transitively, including helpers outside
+        // the solution. Classified roots come from the authoritative catalog and
+        // auxiliary executable roots from their owning validation tasks;
+        // no second dependency inventory or source-text reference evaluator is used.
+        string content = System.Text.Json.JsonSerializer.Serialize(new
+        {
+            solution = new
+            {
+                path = Path.GetRelativePath(directory, solution),
+                projects = roots.Select(path => Path.GetRelativePath(Path.GetDirectoryName(solution)!, path)).Distinct(StringComparer.Ordinal).ToArray(),
+            },
+        });
+        if (!File.Exists(destination) || File.ReadAllText(destination) != content)
+        {
+            File.WriteAllText(destination, content);
+        }
+
+        return destination;
+    }
+
     private static bool IsHostProject(string path)
     {
         string name = Path.GetFileNameWithoutExtension(path);
         return name switch
         {
             "Lumyte.Platform.Linux" => OperatingSystem.IsLinux(),
-            "Lumyte.Platform.Windows" or "Lumyte.Platform.Windows.Sample"
+            "Lumyte.Platform.Windows" or "Lumyte.Platform.Windows.Sample" or "Lumyte.Platform.Windows.TextInput"
                 or "Lumyte.Graphics.Direct3D12" or "Lumyte.Graphics.Direct3D12.Sample"
                 or "Lumyte.Graphics.Direct3D12.Tests" or "Lumyte.Platform.Windows.TextInput.Tests" => OperatingSystem.IsWindows(),
             _ => true,

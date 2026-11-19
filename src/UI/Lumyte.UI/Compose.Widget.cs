@@ -28,6 +28,8 @@ public static partial class Compose
 
             internal IReadOnlyList<WidgetChildren> ChildCollections => _childCollections is { } children ? children : Array.Empty<WidgetChildren>();
 
+            internal virtual bool RequiresViewportPreparation => false;
+
             internal UiElement CreateInstance()
             {
                 UiElement element = CreateElement();
@@ -41,6 +43,15 @@ public static partial class Compose
 
             internal void Validate(UiWidgetValidationContext context)
             {
+                if (LabelAssociation is { } label)
+                {
+                    int count = ChildCollections.Where(slot => !slot.IsPortal).Sum(slot => context.GetSlotChildren(slot).Count);
+                    if (label.LabelChildIndex < 0 || label.EditorChildIndex < 0 || label.LabelChildIndex == label.EditorChildIndex || label.LabelChildIndex >= count || label.EditorChildIndex >= count)
+                    {
+                        throw new ArgumentException("Label metadata must identify distinct ordinary direct children.");
+                    }
+                }
+
                 Transitions?.Validate();
                 C4Layout.ValidateParentData(this, context);
                 ValidateDeclaration(context);

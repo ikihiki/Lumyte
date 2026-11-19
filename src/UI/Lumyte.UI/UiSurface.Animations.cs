@@ -40,6 +40,8 @@ public sealed partial class UiSurface
     /// <summary>Gets a value indicating whether visible animations have a one-shot target or control update.</summary>
     public bool HasPendingAnimationUpdates => !_isDisposed && _animationUpdatesEnabled && _animationFailure is null && (HasVisibleAnimation(false) || HasPresenceAnimation(false));
 
+    internal bool AreFrameUpdatesEnabled => _animationUpdatesEnabled;
+
     /// <summary>Freezes or resumes animation time without stopping independent model values.</summary>
     /// <param name="enabled">Whether the owning host can update and present this surface.</param>
     public void SetAnimationUpdatesEnabled(bool enabled)

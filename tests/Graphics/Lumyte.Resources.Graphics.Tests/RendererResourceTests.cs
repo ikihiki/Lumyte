@@ -19,6 +19,7 @@ public sealed class RendererResourceTests
 {
     /// <summary>Checks defaults do not read application sources and each renderer independently retains the shared program.</summary>
     /// <returns>The asynchronous check.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task DefaultFactoriesShareResourcesAndOwnTheirLifetimesAsync()
     {
@@ -47,6 +48,7 @@ public sealed class RendererResourceTests
 
     /// <summary>Checks custom inputs reload and old renderers stay pinned while newly created ones follow publication.</summary>
     /// <returns>The asynchronous check.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task ReloadAndRecoveryReuseTheFactoryReferenceAsync()
     {
@@ -102,6 +104,7 @@ public sealed class RendererResourceTests
     /// <summary>Checks explicit pipeline definitions override library defaults in either registration order.</summary>
     /// <param name="afterDefaults">Whether the application registers after library defaults.</param>
     /// <returns>The asynchronous check.</returns>
+    [Trait("Execution", "Integration")]
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
@@ -137,6 +140,7 @@ public sealed class RendererResourceTests
 
     /// <summary>Checks graph rendering uses the same resource factory and failed construction does not retain a lease.</summary>
     /// <returns>The asynchronous check.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task LayeredFactoryUsesTheSameResourceAndReleasesConstructionFailuresAsync()
     {
@@ -168,6 +172,7 @@ public sealed class RendererResourceTests
 
     /// <summary>Checks UI graph frames pin publication through cancelled waits and reuse CPU declarations after recovery.</summary>
     /// <returns>The asynchronous check.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task UiFramesRetainGenerationsAcrossReloadWaitCancellationAndRecoveryAsync()
     {

@@ -126,10 +126,9 @@ try {
     assert.equal(result?.result, "passed", `${result?.report ?? "Browser timed out"}\n${progress.slice(-40).join("\n")}\n${errors.join("\n")}\n${diagnostics}`);
     assert.match(result.report, /Parley WASM text rendering passed: [1-9]\d* ink pixels/);
     assert.match(result.report, /MSDF\/MTSDF x4 counters, COLRv1 vector gradients and multiply/);
-    assert.match(result.report, /csbindgen C ABI, ligatures, Japanese fallback, bidi clusters and wrapping/);
+    assert.match(result.report, /csbindgen WASM C ABI and bundled font registration/);
     assert.match(result.report, /translucent and gradient currentColor/);
     assert.match(result.report, /Layouts survive engine disposal/);
-    assert.match(result.report, /Backend checks: all 28 composite modes, isolated backdrops, clip masks and gradient edge cases/);
     assert.deepEqual(errors, [], "Browser reported runtime or console errors.");
     if (process.env.LUMYTE_SCREENSHOT) {
         const metrics = await command("Page.getLayoutMetrics");

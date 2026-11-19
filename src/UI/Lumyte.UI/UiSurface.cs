@@ -97,6 +97,7 @@ public sealed partial class UiSurface : IDisposable
         }
 
         _isDisposed = true;
+        CloseRequested = null;
         _panCandidates.Clear();
         _revealFocus = null;
         _restoreItemFocus = null;
@@ -111,6 +112,7 @@ public sealed partial class UiSurface : IDisposable
         _sharedElements.Clear();
         _signalDispatcher = null;
         _pendingRebuild = null;
+        ClearContentRefreshes();
         _treeValidators.Clear();
         try
         {

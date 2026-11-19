@@ -95,3 +95,40 @@ Passive popupの表示・終了はeditor focus、preedit、pointer、wheelを奪
 
 [公開Headlessサンプル](../../../samples/Lumyte.UI.Menus.Sample/README.md)は明示font、通常popup入力と実編集接続を使います。
 判断は[UI-0035](../../../docs/adr/ui/UI-0035-menu-and-passive-tooltip.md)を参照してください。
+
+## DialogContent・Toast・通知と組み合わせ
+
+DialogContent と Toast は Header / Content / Actions の各 0〜1 root を通常の合成で所有します。DialogContent.Close は接続先 Dialog への閉鎖要求、Toast.Dismiss は通常 Button の表示 slot です。Toast.OnDismissRequested は最新 callback を一回呼び、モデルや queue を暗黙に変更しません。
+
+ToastController は借用した IMonotonicClock と一つの ToastHost を使う有界 FIFO です。所有者 thread で生成し、標準 Application の既存 frame 更新で期限を進めます。任意 thread の命令には明示 IUiDispatcher を渡してください。表示前の待機中には内容 factory を呼びません。
+
+UiRecipes は IconButton / Card / FormRow / ValidationMessage / Toolbar / StatusBar / EmptyState / PropertyField の八種類です。FormRow の UiLabelAssociation は明示した直接子の読み取り用 metadata であり、共有 editor の AutomationName を書き換えません。OS bridge と wire snapshot への自動公開は含みません。
+
+[公開 Headless 例](../../../samples/Lumyte.UI.Dialogs.Sample/README.md)と[契約 UI-0036](../../../docs/adr/ui/UI-0036-dialog-toast-and-recipes.md)を参照してください。
+
+## Stateful visual slots
+
+`Slider()[Slider.Thumb()[thumb => Media.Text(value: thumb.Value.ToString(), layoutProvider: textProvider)]]`
+uses the accepted per-element value, not the declaration's initial value.
+Slider.Track() and Slider.Thumb() accept CompositionTemplate<SliderThumbContext, Widget>
+or a fixed Widget. RangeSlider.Track(), Thumb(), LowerThumb(), and UpperThumb()
+accept CompositionTemplate<RangeSliderThumbContext, Widget> or a fixed Widget;
+IsUpper identifies the thumb (Track receives the lower value and false).
+A specific LowerThumb/UpperThumb overrides the shared Thumb template for that part.
+
+Templates run at mount, configuration adoption, and queued idle updates after
+accepted state changes, not during drawing or input delivery. Multiple pending
+changes may coalesce. A template exception propagates; its previous visual tree
+stays published and the refresh remains retryable.
+
+The original track and fixed 10-unit thumb rectangles are retained. Missing parts
+use built-in drawing. Decoration descendants cannot receive input, focus, or
+automation exposure; the control remains the gesture/capture/automation owner.
+Templates must return parentless roots with disjoint descendants. A fixed Widget
+may remain on its original mounted part, but cannot be shared across parts,
+surfaces, or mounted lifetimes. Use factories for independently mounted controls.
+
+Switch/selection-indicator templates remain deferred: those controls must preserve
+their ordinary content and background slots, unlike the numeric controls' owned
+visual-only subtree. ScrollBar templates are deferred pending controller-driven
+refresh integration rather than polling or executing templates while drawing.

@@ -142,7 +142,7 @@ public static class UiRemoteSchema
         using var document = JsonDocument.Parse(json, new() { MaxDepth = 16 });
         RejectDuplicates(document.RootElement);
         UiRemotePlan plan = JsonSerializer.Deserialize(json, UiAutomationJsonContext.Default.UiRemotePlan) ?? throw new JsonException("Missing plan.");
-        Require(plan.SchemaVersion is >= 1 and <= 9 && plan.Locator is not null && plan.Kind is "click" or "focus" or "press" or "count" or "expect" or "snapshot" or "screenshot" or "fill" or "expect-value" or "ime-candidates" or "ime-select" or "ime-page" or "ime-finalize" or "ime-abort" or "check" or "uncheck" or "select-option" or "scroll" or "set-value" or "set-range" or "expand" or "collapse");
+        Require(plan.SchemaVersion is >= 1 and <= 11 && plan.Locator is not null && plan.Kind is "click" or "focus" or "press" or "count" or "expect" or "snapshot" or "screenshot" or "fill" or "expect-value" or "ime-candidates" or "ime-select" or "ime-page" or "ime-finalize" or "ime-abort" or "check" or "uncheck" or "select-option" or "scroll" or "set-value" or "set-range" or "expand" or "collapse" or "bring-item");
         Require(plan.SchemaVersion >= 2 || !document.RootElement.TryGetProperty("text", out _));
         Require(plan.SchemaVersion >= 3 || (!document.RootElement.TryGetProperty("candidate", out _) && !document.RootElement.TryGetProperty("candidateIndex", out _)));
         Require(plan.Kind is "snapshot" or "screenshot" or "ime-candidates" or "ime-select" or "ime-page" or "ime-finalize" or "ime-abort" ? plan.Locator.Length == 0 : plan.Locator.Length is >= 1 and <= 8);
@@ -153,21 +153,25 @@ public static class UiRemoteSchema
             && plan.Kind is not ("set-value" or "set-range") && !document.RootElement.TryGetProperty("numericValue", out _) && !document.RootElement.TryGetProperty("numericUpper", out _)));
         Require(plan.SchemaVersion >= 7 || plan.Locator.All(step => step?.Role is not ("listbox" or "listitem" or "combobox")));
         Require(plan.SchemaVersion >= 8 || plan.Locator.All(step => step?.Role is not ("tabview" or "tabitem" or "expander")));
+        Require(plan.SchemaVersion >= 11 || plan.Locator.All(step => step?.Role is not ("tree" or "treeitem")));
         Require(plan.SchemaVersion >= 9 || plan.Locator.All(step => step?.Role is not ("menu" or "menuitem" or "tooltip")));
         Require(plan.SchemaVersion >= 8 || plan.Kind is not ("expand" or "collapse"));
+        Require(plan.SchemaVersion >= 10 || (plan.Kind != "bring-item" && plan.Locator.All(step => step?.Kind != "item-key")));
+        Require(plan.Locator.Count(step => step?.Kind == "item-key") <= 1 && plan.Locator.FirstOrDefault()?.Kind != "item-key");
+        Require(plan.Kind != "bring-item" || plan.Locator.Any(step => step?.Kind == "item-key"));
         bool numericOperation = plan.Kind is "set-value" or "set-range";
         Require(numericOperation ? plan.NumericValue is { } number && double.IsFinite(number) : plan.NumericValue is null);
         Require(plan.Kind == "set-range" ? plan.NumericUpper is { } upper && double.IsFinite(upper) && plan.NumericValue <= upper : plan.NumericUpper is null);
         foreach (UiRemoteLocatorStep step in plan.Locator)
         {
             Require(step is not null);
-            if (step.Kind == "test-id")
+            if (step.Kind is "test-id" or "item-key")
             {
-                Require(!string.IsNullOrWhiteSpace(step.Value) && step.Value.Length <= 256 && step.Role is null && step.Name is null && !step.IncludeHidden);
+                Require((step.Kind == "item-key" ? !string.IsNullOrEmpty(step.Value) : !string.IsNullOrWhiteSpace(step.Value)) && step.Value.Length <= 256 && step.Role is null && step.Name is null && !step.IncludeHidden);
             }
             else
             {
-                Require(step.Kind == "role" && step.Role is "button" or "group" or "textbox" or "ime-candidates" or "text" or "image" or "icon" or "progressbar" or "busyindicator" or "togglebutton" or "checkbox" or "switch" or "radiogroup" or "radiobutton" or "slider" or "rangeslider" or "listbox" or "listitem" or "combobox" or "tabview" or "tabitem" or "expander" or "menu" or "menuitem" or "tooltip" && step.Value is null && (step.Name is null || step.Name.Length <= 256));
+                Require(step.Kind == "role" && step.Role is "button" or "group" or "textbox" or "ime-candidates" or "text" or "image" or "icon" or "progressbar" or "busyindicator" or "togglebutton" or "checkbox" or "switch" or "radiogroup" or "radiobutton" or "slider" or "rangeslider" or "listbox" or "listitem" or "combobox" or "tabview" or "tabitem" or "expander" or "menu" or "menuitem" or "tooltip" or "tree" or "treeitem" && step.Value is null && (step.Name is null || step.Name.Length <= 256));
             }
         }
 
@@ -238,7 +242,7 @@ public static class UiRemoteSchema
     /// <summary>Tests whether a plan can send input.</summary>
     /// <param name="plan">A validated plan.</param>
     /// <returns>Whether input authority is required.</returns>
-    public static bool IsAction(UiRemotePlan plan) => plan.Kind is "click" or "focus" or "press" or "fill" or "ime-select" or "ime-page" or "ime-finalize" or "ime-abort" or "check" or "uncheck" or "select-option" or "scroll" or "set-value" or "set-range" or "expand" or "collapse";
+    public static bool IsAction(UiRemotePlan plan) => plan.Kind is "click" or "focus" or "press" or "fill" or "ime-select" or "ime-page" or "ime-finalize" or "ime-abort" or "check" or "uncheck" or "select-option" or "scroll" or "set-value" or "set-range" or "expand" or "collapse" or "bring-item";
 
     private static bool Counter(string value) => value is not null && value.Length <= 20 && ulong.TryParse(value, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out ulong parsed) && parsed != 0 && parsed.ToString(System.Globalization.CultureInfo.InvariantCulture) == value;
 

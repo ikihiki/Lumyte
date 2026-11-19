@@ -12,6 +12,7 @@ public sealed class InlineTests
 {
     /// <summary>Checks zero to three services are resolved in the same scope and handlers run once on the owner.</summary>
     /// <returns>The verification.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task InlineAritiesUseIndependentScopesAndRunOnceOnTheOwnerAsync()
     {
@@ -68,6 +69,7 @@ public sealed class InlineTests
 
     /// <summary>Checks root and unbound independent scopes cannot construct registered pages.</summary>
     /// <returns>The verification.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task ContextIsBoundBeforeConstructorAndUnavailableFromUnboundScopesAsync()
     {

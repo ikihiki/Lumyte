@@ -326,6 +326,7 @@ public sealed class CssColorsTests
     }
 
     /// <summary>Concurrent reads never observe incomplete catalog publication or mutated entries.</summary>
+    [Trait("Execution", "Integration")]
     [Fact]
     public void ConcurrentLookupMatchesIndependentFixture()
     {

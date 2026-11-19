@@ -28,6 +28,7 @@ public sealed class TaskSelectionTests
         Assert.DoesNotContain("ValidateTest", names);
         Assert.Contains("--lane", result.Output, StringComparison.Ordinal);
         Assert.Contains("--suite", result.Output, StringComparison.Ordinal);
+        Assert.Contains("--platform", result.Output, StringComparison.Ordinal);
         Assert.Contains("--test-concurrency", result.Output, StringComparison.Ordinal);
         Assert.Contains("--target", result.Output, StringComparison.Ordinal);
         Assert.Contains("--help", result.Output, StringComparison.Ordinal);
@@ -62,6 +63,10 @@ public sealed class TaskSelectionTests
     [InlineData("Verify", "--verify-scope", "typo")]
     [InlineData("Test", "--pipeline-validation")]
     [InlineData("Test", "--lane", "cp")]
+    [InlineData("Test", "--platform", "browser")]
+    [InlineData("Test", "--lane", "cpu", "--platform", "browser")]
+    [InlineData("Test", "--lane", "integration", "--platform", "typo")]
+    [InlineData("Test", "--lane", "integration", "--platform", "browser", "--browser-case", "contracts")]
     [InlineData("Test", "--suite", "browser-typo")]
     [InlineData("Test", "--suite", "ui")]
     [InlineData("Test", "--suite", "ui", "--feature", "tab")]
@@ -96,6 +101,8 @@ public sealed class TaskSelectionTests
     [InlineData("menus", "UI.Controls,UI.Windowing", "Menus")]
     [InlineData("tabs", "UI.Controls,UI.TextEditing", "Tabs")]
     [InlineData("collections", "UI.Collections", "Collections")]
+    [InlineData("virtualization", "UI.Collections,UI.Automation,UI.Windowing,UI.TextEditing,Diagnostics.UI.Automation", "Virtualization")]
+    [InlineData("treeview", "UI.Collections,UI.Automation,UI.Windowing,UI.TextEditing,Diagnostics.UI.Automation", "TreeView")]
     [InlineData("numeric", "UI.Controls,UI.TextEditing,UI.Automation", "Numeric")]
     [InlineData("application", "UI.Application", "Application.Headless")]
     [InlineData("navigation", "UI.Navigation", "Navigation")]
@@ -108,7 +115,7 @@ public sealed class TaskSelectionTests
         Assert.True(result.ExitCode == 0, result.Output + result.Error);
         JsonElement[] records = fixture.Records("dotnet");
         string[][] calls = records.Select(record => record.GetProperty("arguments").EnumerateArray().Select(value => value.GetString()!).ToArray()).ToArray();
-        Assert.Equal(projects.Split(',').Select(name => "tests/UI/Lumyte." + name + ".Tests"), calls.Where(call => call[0] == "test").Select(call => call[1]));
+        Assert.Equal(projects.Split(',').Select(name => (name.StartsWith("Diagnostics.", StringComparison.Ordinal) ? "tests/Diagnostics/Lumyte." : "tests/UI/Lumyte.") + name + ".Tests"), calls.Where(call => call[0] == "test").Select(call => call[1]));
         Assert.Equal(samples.Split(',').Select(name => "samples/Lumyte.UI." + name + ".Sample"), calls.Where(call => call[0] == "run").Select(call => call[Array.IndexOf(call, "--project") + 1]));
         Assert.Equal(projects.Split(',').Length + samples.Split(',').Length, calls.Length);
         if (feature == "webview")
@@ -116,13 +123,13 @@ public sealed class TaskSelectionTests
             Assert.All(calls.Where(call => call[0] == "run"), call => Assert.Contains("--selfcheck", call));
         }
 
-        if (feature is "controls" or "media" or "scroll" or "menus" or "tabs" or "collections" or "numeric")
+        if (feature is "controls" or "media" or "scroll" or "menus" or "tabs" or "collections" or "virtualization" or "treeview" or "numeric")
         {
             Assert.All(calls.Where(call => call[0] == "run"), call => Assert.Contains("tests/Graphics/Lumyte.Graphics.Text.Parley.Tests/Fonts/DejaVuSans.ttf", call));
         }
     }
 
-    /// <summary>All seven AOT feature scenarios retain strict publication and fail on child errors.</summary>
+    /// <summary>All supported AOT feature scenarios retain strict publication and fail on child errors.</summary>
     /// <param name="feature">Feature selector.</param>
     /// <returns>The completed assertion.</returns>
     [Theory]
@@ -132,6 +139,8 @@ public sealed class TaskSelectionTests
     [InlineData("menus")]
     [InlineData("tabs")]
     [InlineData("collections")]
+    [InlineData("virtualization")]
+    [InlineData("treeview")]
     [InlineData("numeric")]
     [Trait("Execution", "Integration")]
     public async Task AotFeatureRetainsStrictPublicationAsync(string feature)

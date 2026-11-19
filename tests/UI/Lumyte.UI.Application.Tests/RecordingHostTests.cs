@@ -12,6 +12,7 @@ public sealed class RecordingHostTests
 {
     /// <summary>Checks reused fragments still traverse the real application driver submission boundary.</summary>
     /// <returns>The verification.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task StandardHostSubmitsEveryRetainedFrameAsync()
     {

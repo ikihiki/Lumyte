@@ -21,6 +21,30 @@ public sealed class LauncherTests
         Assert.Empty(fixture.Descendants("ProjectReference"));
     }
 
+    /// <summary>TreeView selects the public headless hierarchy consumer.</summary>
+    [Fact]
+    public void TreeViewSampleSelectsHeadlessConsumer()
+    {
+        using var console = new TestConsole();
+        (SampleDefinition sample, SampleBackend backend) = SampleSelector.Select(SampleCatalog.All, SampleOptions.Parse(["--sample", "ui-treeview"]), console);
+        Assert.Equal("ui-treeview", sample.Id);
+        Assert.Equal("headless", backend.Id);
+        Assert.Equal("samples/Lumyte.UI.TreeView.Sample", backend.Project);
+        Assert.Empty(console.Output);
+    }
+
+    /// <summary>Dialogs and notifications use the standard headless application consumer.</summary>
+    [Fact]
+    public void DialogsSampleSelectsHeadlessConsumer()
+    {
+        using var console = new TestConsole();
+        (SampleDefinition sample, SampleBackend backend) = SampleSelector.Select(SampleCatalog.All, SampleOptions.Parse(["--sample", "ui-dialogs"]), console);
+        Assert.Equal("ui-dialogs", sample.Id);
+        Assert.Equal("headless", backend.Id);
+        Assert.Equal("samples/Lumyte.UI.Dialogs.Sample", backend.Project);
+        Assert.Empty(console.Output);
+    }
+
     /// <summary>Menus and tooltips use the actual headless public consumer.</summary>
     [Fact]
     public void MenusSampleSelectsHeadlessConsumer()

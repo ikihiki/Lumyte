@@ -20,6 +20,7 @@ public sealed class CollectionWireTests
 
     /// <summary>The actual runtime uses the ordinary item hit probe and exclusive input lease.</summary>
     /// <returns>The asynchronous check.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task RemoteListSelectionUsesNormalInputAndLatestCallbackAsync()
     {
@@ -39,6 +40,7 @@ public sealed class CollectionWireTests
     /// <summary>Old exact fields stay frozen and numeric six remains available.</summary>
     /// <param name="version">The requested schema.</param>
     /// <returns>The asynchronous check.</returns>
+    [Trait("Execution", "Integration")]
     [Theory]
     [InlineData(1)]
     [InlineData(2)]

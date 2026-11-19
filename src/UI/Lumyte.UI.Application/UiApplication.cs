@@ -352,6 +352,7 @@ public sealed partial class UiApplication : IAsyncDisposable
 
                 _windows?.Advance();
                 _popups?.Advance();
+                AdvanceDialogs(false);
                 DiscoverPopupText();
                 Driver.DispatchPendingInput();
                 PumpExecution();
@@ -369,6 +370,7 @@ public sealed partial class UiApplication : IAsyncDisposable
                     entry.Slot?.Advance(animationFrame);
                 }
 
+                AdvanceDialogs(animationFrame);
                 AdvancePopupAnimations(animationFrame);
                 AdvanceText();
                 foreach (IUiApplicationParticipant participant in _participants)

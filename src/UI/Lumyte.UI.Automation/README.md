@@ -37,3 +37,7 @@ ScrollAsyncはlocatorの表示領域中央から通常UiWheelInputを送りま�
 ## 数値の閉じた操作
 
 SetValueAsync/SetRangeAsyncは実部品の専用capabilityを要求する。通常の入力lease取得後に現在の幾何とprobeを再確認し、UiSetNumericInputを一回配送する。Rangeは二値を同時に受理し、callback後の再送はしない。NumericBoxは既存Fillを使用する。snapshot.Numericは実際の数値と妥当性、従来のValueは引き続き0〜1の正規化値である。
+
+## キー付き仮想項目
+
+schema 10では所有者locatorのGetByItemKey(key)がモデルキーを選択所有者の接続IDで限定します。TestIdとは別で、キーは非空・最大256文字です。Countとassertionは実体化済みの項目だけを読み、画面外の内容を構築しません。BringIntoViewAsyncとClickは通常の排他的入力leaseと実際のwindow hitを通して表示範囲を準備します。Observeだけのpageでは実体化・scrollを変更できません。wireの新しい検索kindはitem-key、入力kindはbring-itemです。v1〜v9のsnapshotの厳密なfield集合、数値metadataと権限境界は維持します。

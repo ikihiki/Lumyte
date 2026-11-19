@@ -20,6 +20,12 @@ public sealed partial class UiSurface
     {
         var dirty = new HashSet<UiElement>(_signalElements, ReferenceEqualityComparer.Instance);
         _signalElements.Clear();
+        if (dirty.Any(element => element.Widget.RequiresViewportPreparation) || CollectElements(_rootElement).Any(element => element.Widget.RequiresViewportPreparation))
+        {
+            _pendingViewportElements.UnionWith(dirty);
+            return;
+        }
+
         var plans = new List<RebuildPlan>();
         var covered = new HashSet<UiElement>(ReferenceEqualityComparer.Instance);
         RebuildPlan? leaves = null;
@@ -95,6 +101,12 @@ public sealed partial class UiSurface
 
             using RebuildPlan? combined = plans.Count > 1 ? new(_rootElement, plans, _treeValidators, _sharedElements) : null;
             RebuildPlan plan = combined ?? plans[0];
+            if (plan.Updates.Any(update => update.Next.RequiresViewportPreparation))
+            {
+                _pendingViewportElements.UnionWith(dirty);
+                return;
+            }
+
             _applyingRebuild = true;
             try
             {

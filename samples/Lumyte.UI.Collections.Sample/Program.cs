@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Lumyte.Composition;
 using Lumyte.Diagnostics.UI.Automation.Contracts;
 using Lumyte.Graphics.Text.Parley;
 using Lumyte.Input.Abstractions;
@@ -43,10 +44,20 @@ builder.UseWindows(_ => [Window(
 {
     context = value;
     var popupHost = new CollectionPopupHost(value.Popups, () => value.PopupOwner);
-    return Stack()[
-        ItemsRepeater<string>(items: new[] { "header" }, keySelector: item => item, itemTemplate: item => Text(value: item, layoutProvider: provider, height: 24)),
-        ListBox<string>(items: items, keySelector: item => item, itemTemplate: item => Text(value: item, layoutProvider: provider, height: 24), selectedKey: "alpha", testId: "list", height: 96),
-        ComboBox<string>(items: items, keySelector: item => item, itemTemplate: item => Text(value: item, layoutProvider: provider, height: 24), selectedItemTemplate: item => Text(value: item, layoutProvider: provider, height: 24), emptyTemplate: () => Text(value: "Choose", layoutProvider: provider, height: 24), popupHost: popupHost, popupSize: new System.Numerics.Vector2(180, 120), selectedKey: "alpha", onSelectionChanged: _ => changes++, testId: "combo")];
+    Lumyte.UI.Collections.Compose.Definitions.ItemsRepeater<string> header = ItemsRepeater<string>(items: new[] { "header" }, keySelector: item => item)[
+        ItemsRepeaterFactory<string>().Item()[
+            (item, owner) => Text(value: item, layoutProvider: provider, height: 24)]];
+    Lumyte.UI.Collections.Compose.Definitions.ListBox<string> list = ListBox<string>(items: items, keySelector: item => item, selectedKey: "alpha", testId: "list", height: 96)[
+        ListBoxFactory<string>().Item()[
+            (item, owner) => Text(value: item, layoutProvider: provider, height: 24)]];
+    CompositionSlotAssignment<Lumyte.UI.Collections.Compose.Definitions.ComboBox<string>> selectedItem = ComboBoxFactory<string>().SelectedItem()[
+        (item, owner) => Text(value: item, layoutProvider: provider, height: 24)];
+    Lumyte.UI.Collections.Compose.Definitions.ComboBox<string> combo = ComboBox<string>(items: items, keySelector: item => item, popupHost: popupHost, popupSize: new System.Numerics.Vector2(180, 120), selectedKey: "alpha", onSelectionChanged: _ => changes++, testId: "combo")[
+        ComboBoxFactory<string>().Item()[
+            (item, owner) => Text(value: item, layoutProvider: provider, height: 24)],
+        selectedItem,
+        ComboBoxFactory<string>().Empty()[owner => Text(value: "Choose", layoutProvider: provider, height: 24)]];
+    return Stack()[header, list, combo];
 },
     initialClientSize: new(400, 400),
     onOpened: _ => opened.TrySetResult())]);

@@ -88,7 +88,7 @@ public sealed partial class UiApplication
                 {
                     _inactiveFocus.TryAdd(surface, surface.CaptureFocus());
                 }
-                else if (_inactiveFocus.Remove(surface, out UiFocusBookmark? bookmark) && surface.FocusedElement is null)
+                else if (Popups.CanReceiveKeys(surface) && _inactiveFocus.Remove(surface, out UiFocusBookmark? bookmark) && surface.FocusedElement is null)
                 {
                     surface.TryRestoreFocus(bookmark);
                 }

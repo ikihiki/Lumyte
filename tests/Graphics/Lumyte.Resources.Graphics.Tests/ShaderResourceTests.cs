@@ -32,6 +32,7 @@ public sealed class ShaderResourceTests
 
     /// <summary>Plans pin old shaders through recording and GPU completion; recovery reuses CPU artifacts.</summary>
     /// <returns>Completion of generation, retirement and ownership checks.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task GraphRetainsShaderUntilCompletionAndRecoveryReusesArtifactAsync()
     {
@@ -84,6 +85,7 @@ public sealed class ShaderResourceTests
 
     /// <summary>A lost device invalidates retained generations before graph recording.</summary>
     /// <returns>Completion of stale-input rejection and cleanup.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task InvalidatedGraphInputIsRejectedBeforeRecordingAsync()
     {
@@ -112,6 +114,7 @@ public sealed class ShaderResourceTests
 
     /// <summary>Texture imports keep the manager-owned allocation alive until the compiled plan is released.</summary>
     /// <returns>Completion of typed texture import and ownership checks.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task TextureImportTransfersItsLeaseToTheCompiledPlanAsync()
     {
@@ -141,6 +144,7 @@ public sealed class ShaderResourceTests
     /// <summary>A loaded shader commits its resident bytes and reports them when reclaimed.</summary>
     /// <param name="lengthKnown">Whether the source exposes its byte length before reading.</param>
     /// <returns>Completion of successful allocation and reclamation accounting.</returns>
+    [Trait("Execution", "Integration")]
     [Theory]
     [InlineData(true)]
     [InlineData(false)]
@@ -173,6 +177,7 @@ public sealed class ShaderResourceTests
     /// <summary>A malformed binary returns both build buffers and the reserved resident budget.</summary>
     /// <param name="lengthKnown">Whether the source exposes its byte length before reading.</param>
     /// <returns>Completion of failed shader creation cleanup.</returns>
+    [Trait("Execution", "Integration")]
     [Theory]
     [InlineData(true)]
     [InlineData(false)]

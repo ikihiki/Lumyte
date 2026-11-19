@@ -21,7 +21,7 @@ public sealed class UiRemoteLocator
 
     internal UiRemotePage Page { get; }
 
-    private int QueryVersion => _steps.Any(step => step.Role is "menu" or "menuitem" or "tooltip") ? 9 : _steps.Any(step => step.Role is "tabview" or "tabitem" or "expander") ? 8 : _steps.Any(step => step.Role is "listbox" or "listitem" or "combobox") ? 7 : _steps.Any(step => step.Role is "slider" or "rangeslider") ? 6 : _steps.Any(step => step.Role is "togglebutton" or "checkbox" or "switch" or "radiogroup" or "radiobutton") ? 4 : 1;
+    private int QueryVersion => _steps.Any(step => step.Role is "tree" or "treeitem") ? 11 : _steps.Any(step => step.Kind == "item-key") ? 10 : _steps.Any(step => step.Role is "menu" or "menuitem" or "tooltip") ? 9 : _steps.Any(step => step.Role is "tabview" or "tabitem" or "expander") ? 8 : _steps.Any(step => step.Role is "listbox" or "listitem" or "combobox") ? 7 : _steps.Any(step => step.Role is "slider" or "rangeslider") ? 6 : _steps.Any(step => step.Role is "togglebutton" or "checkbox" or "switch" or "radiogroup" or "radiobutton") ? 4 : 1;
 
     /// <summary>Sets a finite scalar through the server's normal numeric input lease.</summary>
     /// <param name="value">The desired finite value.</param>
@@ -40,6 +40,25 @@ public sealed class UiRemoteLocator
     /// <param name = "testId">The identity.</param>
     /// <returns>A new locator.</returns>
     public UiRemoteLocator GetByTestId(string testId) => new(Page, [.. _steps, UiRemotePage.Step(testId)]);
+
+    /// <summary>Locates a realized item by its ordinal model key under the actual owner.</summary>
+    /// <param name="key">The nonempty ordinal key, at most 256 characters.</param>
+    /// <returns>A schema-ten locator; observation does not realize or scroll.</returns>
+    public UiRemoteLocator GetByItemKey(string key)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(key);
+        if (key.Length > 256 || _steps.Any(step => step.Kind == "item-key"))
+        {
+            throw new ArgumentException("An item locator requires one bounded key.", nameof(key));
+        }
+
+        return new(Page, [.. _steps, new("item-key", Value: key)]);
+    }
+
+    /// <summary>Reveals the owner-scoped item using the normal exclusive input lease.</summary>
+    /// <param name="cancellationToken">Cancels before dispatch.</param>
+    /// <returns>The completed schema-ten operation.</returns>
+    public async Task BringIntoViewAsync(CancellationToken cancellationToken = default) => await Page.ExecuteAsync(new(Math.Max(10, QueryVersion), "bring-item", _steps), cancellationToken);
 
     /// <summary>Restricts a role/name query to descendants.</summary>
     /// <param name = "role">A closed wire role accepted by UiRemotePage.GetByRole.</param>

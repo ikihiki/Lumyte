@@ -7,6 +7,7 @@ public sealed class ShutdownTests
 {
     /// <summary>Gate notifications stay valid while owner threads are being released.</summary>
     /// <returns>The test completion.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task GateNotificationsCanRaceWithShutdownAsync()
     {

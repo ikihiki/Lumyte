@@ -12,7 +12,8 @@
     "Default": "Cpu",
     "IntegrationClasses": [],
     "Lanes": [
-      "Cpu"
+      "Cpu",
+      "Integration"
     ]
   },
   {
@@ -55,7 +56,8 @@
     "Default": "Cpu",
     "IntegrationClasses": [],
     "Lanes": [
-      "Cpu"
+      "Cpu",
+      "Integration"
     ]
   },
   {
@@ -63,7 +65,8 @@
     "Default": "Cpu",
     "IntegrationClasses": [],
     "Lanes": [
-      "Cpu"
+      "Cpu",
+      "Integration"
     ]
   },
   {
@@ -71,7 +74,8 @@
     "Default": "Cpu",
     "IntegrationClasses": [],
     "Lanes": [
-      "Cpu"
+      "Cpu",
+      "Integration"
     ]
   },
   {
@@ -79,7 +83,8 @@
     "Default": "Cpu",
     "IntegrationClasses": [],
     "Lanes": [
-      "Cpu"
+      "Cpu",
+      "Integration"
     ]
   },
   {
@@ -87,7 +92,8 @@
     "Default": "Cpu",
     "IntegrationClasses": [],
     "Lanes": [
-      "Cpu"
+      "Cpu",
+      "Integration"
     ]
   },
   {
@@ -111,7 +117,8 @@
     "Default": "Cpu",
     "IntegrationClasses": [],
     "Lanes": [
-      "Cpu"
+      "Cpu",
+      "Integration"
     ]
   },
   {
@@ -135,7 +142,8 @@
     "Default": "Cpu",
     "IntegrationClasses": [],
     "Lanes": [
-      "Cpu"
+      "Cpu",
+      "Integration"
     ]
   },
   {
@@ -143,7 +151,8 @@
     "Default": "Cpu",
     "IntegrationClasses": [],
     "Lanes": [
-      "Cpu"
+      "Cpu",
+      "Integration"
     ]
   },
   {
@@ -199,6 +208,7 @@
     "IntegrationClasses": [],
     "Lanes": [
       "Cpu",
+      "Integration",
       "Gpu"
     ]
   },
@@ -215,7 +225,8 @@
     "Default": "Cpu",
     "IntegrationClasses": [],
     "Lanes": [
-      "Cpu"
+      "Cpu",
+      "Integration"
     ]
   },
   {
@@ -283,7 +294,8 @@
     "Default": "Cpu",
     "IntegrationClasses": [],
     "Lanes": [
-      "Cpu"
+      "Cpu",
+      "Integration"
     ]
   },
   {
@@ -291,7 +303,8 @@
     "Default": "Cpu",
     "IntegrationClasses": [],
     "Lanes": [
-      "Cpu"
+      "Cpu",
+      "Integration"
     ]
   },
   {
@@ -332,7 +345,8 @@
     "Default": "Cpu",
     "IntegrationClasses": [],
     "Lanes": [
-      "Cpu"
+      "Cpu",
+      "Integration"
     ]
   },
   {
@@ -377,7 +391,8 @@
     "Default": "Cpu",
     "IntegrationClasses": [],
     "Lanes": [
-      "Cpu"
+      "Cpu",
+      "Integration"
     ]
   },
   {
@@ -386,6 +401,7 @@
     "IntegrationClasses": [],
     "Lanes": [
       "Cpu",
+      "Integration",
       "Gpu"
     ]
   },
@@ -454,7 +470,8 @@
     "Default": "Cpu",
     "IntegrationClasses": [],
     "Lanes": [
-      "Cpu"
+      "Cpu",
+      "Integration"
     ]
   },
   {
@@ -462,7 +479,8 @@
     "Default": "Cpu",
     "IntegrationClasses": [],
     "Lanes": [
-      "Cpu"
+      "Cpu",
+      "Integration"
     ]
   },
   {
@@ -504,7 +522,7 @@
     "Default": "Cpu",
     "IntegrationClasses": [],
     "Lanes": [
-      "Cpu"
+      "Integration"
     ]
   }
 ]

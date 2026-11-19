@@ -79,7 +79,7 @@ try {
     Invoke-LumyteCommand $miseBin @('trust', (Join-Path $LumyteRepoRoot 'mise.toml'))
     Invoke-LumyteCommand $miseBin @('install', '--locked')
     Invoke-LumyteCommand $miseBin @('reshim')
-    Invoke-LumyteCommand $miseBin @('run', 'setup-native')
+    if ($env:LUMYTE_SETUP_TOOLS_ONLY -ne '1') { Invoke-LumyteCommand $miseBin @('run', 'setup-native') }
     . "$PSScriptRoot/activate.ps1" -RequireCompiler
     $sdk = (Get-Content (Join-Path $LumyteRepoRoot 'global.json') -Raw | ConvertFrom-Json).sdk.version
     $requestedSdk = (Invoke-LumyteCommand mise @('current', 'http:dotnet') | Select-Object -Last 1).Trim()

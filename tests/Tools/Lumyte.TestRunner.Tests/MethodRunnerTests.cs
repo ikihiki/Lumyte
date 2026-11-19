@@ -7,10 +7,14 @@ using Xunit;
 using Xunit.Abstractions;
 using Xunit.Sdk;
 
+// Runner fixtures own their real concurrency inside Integration, never a CPU payload.
+[assembly: CollectionBehavior(DisableTestParallelization = true)]
+
 namespace Lumyte.TestRunner.Tests;
 
 /// <summary>Exercises the real xUnit method/case runners without spawning per-method processes.</summary>
 [Collection("Runner contracts")]
+[Trait("Execution", "Integration")]
 public sealed class MethodRunnerTests
 {
     /// <summary>Two methods in one class must meet a barrier, with shared and per-test async lifetimes intact.</summary>

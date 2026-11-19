@@ -16,8 +16,13 @@ public partial class UiElement
 
     internal bool BlocksAncestorPan => PreservePointerGesture;
 
+    internal bool HasPendingInputLifetime => PreserveRealization;
+
     /// <summary>Gets a value indicating whether ancestor touch panning must preserve this component gesture.</summary>
     protected virtual bool PreservePointerGesture => false;
+
+    /// <summary>Gets a value indicating whether an asynchronous input session still borrows this realization.</summary>
+    protected virtual bool PreserveRealization => false;
 
     internal UiInputResult InvokeInput(in UiInputContext context) => OnInput(in context);
 
@@ -63,7 +68,7 @@ public partial class UiElement
         for (int index = _inputChildren.Count - 1; index >= 0; index--)
         {
             UiElement? hit = _inputChildren[index].FindInputHit(position, version);
-            if (hit is not null)
+            if (hit is not null && AcceptsPointerTarget(hit))
             {
                 return hit;
             }
@@ -71,6 +76,11 @@ public partial class UiElement
 
         return InputBounds.Contains(position) && HitTestSelf(position - InputOrigin) ? this : null;
     }
+
+    /// <summary>Filters a descendant hit without changing borrowed declarations or their layout.</summary>
+    /// <param name="target">The proposed descendant hit.</param>
+    /// <returns>Whether this subtree may expose the target to ordinary pointer and wheel probing.</returns>
+    protected virtual bool AcceptsPointerTarget(UiElement target) => true;
 
     /// <summary>Tests whether this component itself occupies a body-local input point.</summary>
     /// <param name="localPosition">The body-local point inside prepared bounds.</param>

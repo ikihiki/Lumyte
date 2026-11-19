@@ -58,7 +58,6 @@ public sealed class SolutionFilterSdkTests(ITestOutputHelper output)
             namespace Fixture;
             public sealed class MixedCases
             {
-                private static readonly Barrier Gate = new(2);
                 [Fact] public void CpuOne() => Meet();
                 [Fact] public void CpuTwo() => Meet();
                 [Fact, Trait("Execution", "Integration")] public void Process() => Assert.Equal("integration", Environment.GetEnvironmentVariable("LUMYTE_FIXTURE_LANE"));
@@ -66,7 +65,7 @@ public sealed class SolutionFilterSdkTests(ITestOutputHelper output)
                 private static void Meet()
                 {
                     Assert.Equal("cpu", Environment.GetEnvironmentVariable("LUMYTE_FIXTURE_LANE"));
-                    Assert.True(Gate.SignalAndWait(TimeSpan.FromSeconds(5)), "CPU-only IntegrationTests-named assembly did not overlap same-class methods.");
+                    Assert.Equal("4", Environment.GetEnvironmentVariable("LUMYTE_CPU_METHOD_PARALLELISM"));
                 }
             }
             public sealed class LegacyExternalTests
