@@ -1,6 +1,7 @@
 using System.Numerics;
 using Lumyte.Graphics.Drawing2D;
 using Lumyte.Graphics.Text;
+using Lumyte.Graphics.Text.Parley;
 using Lumyte.Mathematics.Colors;
 using Lumyte.Platform.TextInput.Abstractions;
 using Lumyte.Signals;
@@ -8,6 +9,7 @@ using Lumyte.TextEditing;
 using Lumyte.UI.Application.Headless;
 using Lumyte.UI.Automation;
 using Lumyte.UI.TextEditing;
+using Lumyte.UI.TextEditing.Parley;
 using Lumyte.UI.Windowing;
 using Lumyte.UI.Windowing.TextInput;
 using Lumyte.Windowing.Abstractions;
@@ -172,7 +174,9 @@ public sealed class TextHostTests
     public async Task DialogEditorRetirementBlocksNestedAdmissionAsync(bool menu, bool candidates)
     {
         var backend = new Backend { CandidatesEnabled = candidates };
-        var provider = new LayoutProvider();
+        using var engine = new ParleyTextEngine2D();
+        using FileStream font = File.OpenRead(Path.Combine(RepositoryRoot(), "tests/Graphics/Lumyte.Graphics.Text.Parley.Tests/Fonts/DejaVuSans.ttf"));
+        var provider = new ParleyUiTextLayoutProvider(engine, new() { FontFamily = engine.AddFont(font) });
         var open = Signal.Create(false);
         int factories = 0;
         int opened = 0;
@@ -268,6 +272,19 @@ public sealed class TextHostTests
             await WaitAsync(app, () => main!.CaptureDialogs().Count == 1
                 && app.Windows.CaptureWindows().Count(window => window.Role == UiWindowRole.Normal) == 2);
             IUiAutomationHost outerHost = await app.Dispatcher.InvokeAsync(() => main!.GetDialogAutomation(Assert.Single(main.CaptureDialogs()).DialogId));
+            if (!menu)
+            {
+                await app.Dispatcher.InvokeAsync(() => Assert.Equal(Assert.Single(main!.CaptureDialogs()).Window, app.Windows.GetKeyboardTarget(main.Window)));
+                await using IUiAutomationInputLease keys = await outerHost.AcquireInputAsync();
+                await outerHost.RunOnUiThreadAsync(surface =>
+                {
+                    Assert.True(keys.Dispatch(surface, new UiKeyInput(Lumyte.Input.Abstractions.Key.Tab, true)));
+                    keys.Dispatch(surface, new UiKeyInput(Lumyte.Input.Abstractions.Key.Tab, false));
+                    Assert.Equal("activate", surface.FocusedElement!.Widget.TestId);
+                    return true;
+                });
+            }
+
             var page = new UiAutomationPage(outerHost);
             await page.GetByTestId("activate").ClickAsync();
             await page.GetByTestId("editor").FillAsync("resumed");
@@ -295,6 +312,130 @@ public sealed class TextHostTests
         }
 
         Assert.Equal(0, backend.Gates);
+    }
+
+    /// <summary>Modeless opening drains old text and candidate presentations, then permits owner editing before close.</summary>
+    /// <param name="candidates">Whether the real candidate binding has delayed retirement.</param>
+    /// <returns>The application-loop check.</returns>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ModelessOwnerEditingResumesBeforeDialogCloseAsync(bool candidates)
+    {
+        var backend = new Backend { CandidatesEnabled = candidates };
+        using var engine = new ParleyTextEngine2D();
+        using FileStream font = File.OpenRead(Path.Combine(RepositoryRoot(), "tests/Graphics/Lumyte.Graphics.Text.Parley.Tests/Fonts/DejaVuSans.ttf"));
+        var provider = new ParleyUiTextLayoutProvider(engine, new() { FontFamily = engine.AddFont(font) });
+        var open = Signal.Create(false);
+        var modal = Signal.Create(false);
+        int opened = 0;
+        UiApplicationWindowContext? main = null;
+        UiApplicationBuilder builder = UiApplication.CreateBuilder().Configure(new() { FrameInterval = TimeSpan.FromMilliseconds(1), ImeCandidates = new() { Policy = candidates ? ImeCandidateUiPolicy.PreferCustom : ImeCandidateUiPolicy.System } });
+        builder.UseDriver(() => new Driver(backend));
+        builder.UseTextInput(_ => provider);
+        builder.UseWindows(_ => [Window("main", "Main", root: context =>
+        {
+            main = context;
+            return Lumyte.UI.Compose.Stack()[
+                TextBox(key: "editor", testId: "editor", text: "owner", layoutProvider: provider, width: 120, height: 24),
+                Lumyte.UI.Compose.Button(testId: "activate", width: 40, height: 20),
+                Lumyte.UI.Compose.Compute(() => Lumyte.UI.Windowing.Compose.Dialog(key: "dialog", isOpen: open.Value, isModal: modal.Value, initialClientSize: new Vector2(80, 60), onOpened: _ => opened++)[Lumyte.UI.Compose.Button()])];
+        })]);
+        UiApplication app = builder.Build();
+        Task running = app.RunAsync();
+        Session? old = null;
+        try
+        {
+            await WaitAsync(app, () => main is not null);
+            await new UiAutomationPage(main!.Automation).GetByTestId("activate").ClickAsync();
+            await new UiAutomationPage(main.Automation).GetByTestId("editor").FillAsync("initial");
+            await WaitAsync(app, () => backend.Current is not null && (!candidates || app.Windows.CaptureWindows().Any(window => window.Role == UiWindowRole.ImeCandidates && window.IsVisible)));
+            await app.Dispatcher.InvokeAsync(() =>
+            {
+                old = backend.Current!;
+                old.DelayRelease = true;
+                using (TextDocumentTransaction edit = old.Document.BeginEdit(TextEditOrigin.Platform))
+                {
+                    edit.SetComposition(new(Guid.NewGuid(), new(0, 1), []));
+                    edit.Commit();
+                }
+
+                Assert.True(old.Status.IsComposing);
+                open.Value = true;
+            });
+            for (int index = 0; index < 8; index++)
+            {
+                await main.Automation.NextFrameAsync();
+            }
+
+            await app.Dispatcher.InvokeAsync(() =>
+            {
+                Assert.Equal(0, opened);
+                Assert.False(old!.IsReleased);
+                old.DelayRelease = false;
+            });
+            if (candidates)
+            {
+                await WaitAsync(app, () => backend.CandidateRetirementStarted);
+                await app.Dispatcher.InvokeAsync(() =>
+                {
+                    Assert.Equal(0, opened);
+                    backend.CandidateRetirement.TrySetResult();
+                });
+            }
+
+            await WaitAsync(app, () => opened == 1);
+            await new UiAutomationPage(main.Automation).GetByTestId("activate").ClickAsync();
+            await new UiAutomationPage(main.Automation).GetByTestId("editor").FillAsync("modeless editing");
+            await WaitAsync(app, () => backend.Current is { IsReleased: false } && !ReferenceEquals(old, backend.Current));
+            await app.Dispatcher.InvokeAsync(() =>
+            {
+                Assert.Single(main.CaptureDialogs());
+                Assert.Equal("modeless editing", backend.Current!.Document.CaptureSnapshot().CommittedText);
+                Assert.Equal(main.Window, app.Windows.GetKeyboardTarget(main.Window));
+                modal.Value = true;
+            });
+            await WaitAsync(app, () => opened == 2);
+            await app.Dispatcher.InvokeAsync(() =>
+            {
+                Assert.True(backend.Current!.IsReleased);
+                Assert.NotEqual(main.Window, app.Windows.GetKeyboardTarget(main.Window));
+                modal.Value = false;
+            });
+            await WaitAsync(app, () => opened == 3);
+            await new UiAutomationPage(main.Automation).GetByTestId("activate").ClickAsync();
+            await new UiAutomationPage(main.Automation).GetByTestId("editor").FillAsync("resumed again");
+            await WaitAsync(app, () => backend.Current is { IsReleased: false });
+            await app.Dispatcher.InvokeAsync(() => Assert.Equal("resumed again", backend.Current!.Document.CaptureSnapshot().CommittedText));
+        }
+        finally
+        {
+            await app.Dispatcher.InvokeAsync(() =>
+            {
+                if (old is not null)
+                {
+                    old.DelayRelease = false;
+                }
+
+                backend.CandidateRetirement.TrySetResult();
+            });
+            await app.StopAsync().WaitAsync(TimeSpan.FromSeconds(5));
+            await running;
+            await app.DisposeAsync();
+        }
+
+        Assert.Equal(0, backend.Gates);
+    }
+
+    private static string RepositoryRoot()
+    {
+        string root = AppContext.BaseDirectory;
+        while (!File.Exists(Path.Combine(root, "Lumyte.slnx")))
+        {
+            root = Path.GetDirectoryName(root.TrimEnd(Path.DirectorySeparatorChar)) ?? throw new DirectoryNotFoundException();
+        }
+
+        return root;
     }
 
     private static async Task WaitAsync(UiApplication app, Func<bool> condition)

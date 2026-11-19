@@ -24,6 +24,9 @@ internal static class CollectionTemplateOwnership
             Reads = content.Reads,
             CollectionItemRoots = Array.AsReadOnly((Widget[])roots.Clone()),
             RequiresFreshDescendants = true,
+            FreshRealizations = content.FreshRealizations,
+            PreparationState = content.PreparationState,
+            PrepareLayout = content.PrepareLayout,
         };
 
     internal static IEnumerable<Widget> GetDeclaredItemChildren(this Widget widget) => widget.ChildCollections.SelectMany(slot => slot);

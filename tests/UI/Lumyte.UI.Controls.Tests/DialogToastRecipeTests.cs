@@ -26,6 +26,23 @@ public sealed class DialogToastRecipeTests
         Assert.Null(surface.FocusedElement);
     }
 
+    /// <summary>Dialog sections preserve the incoming generator's component-owned typed visual slots.</summary>
+    [Fact]
+    public void DialogSectionsComposeCurrentTypedSliderSlots()
+    {
+        var values = new List<double>();
+        Lumyte.Composition.CompositionTemplate<SliderThumbContext, Widget> thumb = context =>
+        {
+            values.Add(context.Value);
+            return Rectangle(width: 10, height: 10);
+        };
+        using UiSurface surface = Surface(DialogContent()[DialogContent.Content()[Slider(value: 0.2)[Slider.Thumb()[thumb]]]]);
+        Assert.Equal(0.2, Assert.Single(values));
+        surface.Rebuild(DialogContent()[DialogContent.Content()[Slider(value: 0.8)[Slider.Thumb()[thumb]]]]);
+        surface.UpdateLayout();
+        Assert.Equal(0.8, values[^1]);
+    }
+
     /// <summary>Recipes use existing components and never rewrite borrowed editor names.</summary>
     [Fact]
     public void RecipesAreOrdinaryRootsAndPreserveCallerDeclarations()

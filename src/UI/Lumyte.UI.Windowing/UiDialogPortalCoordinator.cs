@@ -378,6 +378,14 @@ public sealed class UiDialogPortalCoordinator : IDisposable
     private bool OwnerAvailable() => _windows.TryGetSnapshot(_ownerWindow, out UiWindowSnapshot? owner)
         && owner is { IsVisible: true, State: UiWindowState.Open };
 
+    private long? KeyboardGeneration() => _windows switch
+    {
+        HostedUiWindowManager hosted => hosted.KeyboardTargetGeneration,
+        FallbackUiWindowManager fallback => fallback.KeyboardTargetGeneration,
+        UiWindowManagerCore core => core.KeyboardTargetGeneration,
+        _ => null,
+    };
+
     private void Open(Session session)
     {
         Dialog declaration = session.Declaration;
@@ -458,6 +466,7 @@ public sealed class UiDialogPortalCoordinator : IDisposable
         {
             session.Opened = true;
             _windows.SetKeyboardTarget(session.Window.Value);
+            session.KeyboardGeneration = KeyboardGeneration();
             UiElement[] candidates = UiSurface.CollectElements(session.Surface.RootElement).Where(element => element.Widget.Key == session.Declaration.InitialFocus).ToArray();
             if (session.Declaration.InitialFocus is not null && candidates.Length > 1)
             {
@@ -480,9 +489,22 @@ public sealed class UiDialogPortalCoordinator : IDisposable
 
         if (session.Opened)
         {
+            if (!session.Declaration.IsModal)
+            {
+                session.GuardRelease ??= session.Guards.Select(task => Release(task.GetAwaiter().GetResult())).ToArray();
+                foreach (Task release in session.GuardRelease.Where(task => task.IsCompleted))
+                {
+                    release.GetAwaiter().GetResult();
+                }
+            }
+
             session.Surface.UpdateLayout();
             session.Portals?.Advance();
             session.Dialogs?.Advance();
+            if (_windows.GetKeyboardTarget(session.Window!.Value) == session.Window)
+            {
+                session.KeyboardGeneration = KeyboardGeneration();
+            }
         }
     }
 
@@ -641,7 +663,8 @@ public sealed class UiDialogPortalCoordinator : IDisposable
         if (!_disposed && !_owner.IsReleaseRequested && session.PreviousSurface is { } previous && _popups.FindWindow(previous) == session.PreviousWindow
             && previous.FocusRequest == session.FocusRequest && session.Bookmark is { } bookmark
             && _windows.TryGetSnapshot(session.PreviousWindow, out UiWindowSnapshot? owner) && owner is { IsVisible: true, State: UiWindowState.Open }
-            && (_windows.GetKeyboardTarget(_ownerWindow) is not { } current || current == _ownerWindow || current == session.PreviousWindow))
+            && ((session.KeyboardGeneration is { } generation && KeyboardGeneration() == generation)
+                || (session.KeyboardGeneration is null && (_windows.GetKeyboardTarget(_ownerWindow) is not { } current || current == _ownerWindow || current == session.PreviousWindow))))
         {
             if (_popups.AllowsModal(session.PreviousWindow))
             {
@@ -703,6 +726,8 @@ public sealed class UiDialogPortalCoordinator : IDisposable
         internal UiSurface? PreviousSurface { get; set; }
 
         internal UiWindowId PreviousWindow { get; set; }
+
+        internal long? KeyboardGeneration { get; set; }
 
         internal long FocusRequest { get; set; }
 

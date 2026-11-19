@@ -143,7 +143,11 @@ public sealed partial class UiPopupManager
         return actual is not null && WithinLogical(actual.Window, ancestor.Window) ? actual.Token : root;
     }
 
-    private ModalScope? CurrentModal(Guid scope, UiWindowId window) => _modalScopes.LastOrDefault(modal => modal.Scope == scope && WithinLogical(window, modal.Owner));
+    private ModalScope? CurrentModal(Guid scope, UiWindowId window)
+    {
+        ModalScope? applicable = _modalScopes.LastOrDefault(modal => modal.Scope == scope && WithinLogical(window, modal.Owner));
+        return applicable is null ? null : _modalScopes.LastOrDefault(modal => modal.Scope == scope && WithinLogical(modal.Owner, applicable.Owner)) ?? applicable;
+    }
 
     private bool WithinLogical(UiWindowId window, UiWindowId owner)
     {
@@ -238,7 +242,7 @@ public sealed partial class UiPopupManager
 
         if (position is not null)
         {
-            if (hit is { } unrelated && !WithinLogical(unrelated.Window, modal.Owner))
+            if (hit is { } unrelated && CurrentModal(state!.KeyboardScopeId, unrelated.Window) is null)
             {
                 return false;
             }
@@ -254,7 +258,7 @@ public sealed partial class UiPopupManager
                 return true;
             }
         }
-        else if (_windows.GetKeyboardTarget(origin) is { } unrelatedTarget && !WithinLogical(unrelatedTarget, modal.Owner))
+        else if (_windows.GetKeyboardTarget(origin) is { } unrelatedTarget && CurrentModal(state!.KeyboardScopeId, unrelatedTarget) is null)
         {
             return false;
         }

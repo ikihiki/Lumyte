@@ -314,6 +314,61 @@ public sealed class DialogTests
         Assert.Equal("new", content!.RootElement.Children[0].Widget.Key);
     }
 
+    /// <summary>Closing a nested dialog restores its parent unless an explicit newer target superseded it.</summary>
+    /// <param name="newerTarget">Whether the physical root is explicitly selected during the close drain.</param>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void NestedCloseRestoresKeyboardWithoutStealingNewerTarget(bool newerTarget)
+    {
+        using var fixture = new DialogFixture();
+        var inner = Signal.Create(false);
+        fixture.Set(Panel()[Dialog("outer", "Outer", isOpen: true)[Stack()[Button(key: "first"), Button(key: "last"), Dialog("inner", "Inner", isOpen: inner)[Button()]]]]);
+        fixture.Pump();
+        UiDialogOpened outer = Assert.Single(fixture.Dialogs.CaptureDialogs());
+        Assert.True(fixture.Dialogs.TryGetSurface(outer.DialogId, out UiSurface? surface));
+        inner.Value = true;
+        fixture.Pump();
+        inner.Value = false;
+        if (newerTarget)
+        {
+            fixture.Base.Windows.SetKeyboardTarget(fixture.Base.Registration.Window);
+        }
+
+        fixture.Pump();
+        Assert.Equal(newerTarget ? fixture.Base.Registration.Window : outer.Window, fixture.Base.Windows.GetKeyboardTarget(outer.Window));
+        if (!newerTarget)
+        {
+            Assert.Equal("first", surface!.FocusedElement!.Widget.Key);
+            fixture.Base.Send(new UiKeyInput(Key.Tab, true));
+            fixture.Base.Send(new UiKeyInput(Key.Tab, false));
+            Assert.Equal("last", surface.FocusedElement!.Widget.Key);
+        }
+    }
+
+    /// <summary>A root backdrop press belongs only to the innermost blocking dialog's outside policy.</summary>
+    /// <param name="closeInner">Whether the inner dialog accepts an outside request.</param>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void NestedBackdropNeverDeliversAncestorClose(bool closeInner)
+    {
+        using var fixture = new DialogFixture();
+        var inner = Signal.Create(false);
+        int outerRequests = 0;
+        int innerRequests = 0;
+        fixture.Set(Panel()[Dialog("outer", "Outer", isOpen: true, closeOnOutsidePress: true, initialClientSize: new(120, 100), onCloseRequested: _ => outerRequests++)[
+            Panel()[Dialog("inner", "Inner", isOpen: inner, initialClientSize: new(40, 40), closeOnOutsidePress: closeInner, onCloseRequested: _ => innerRequests++)[Button()]]]]);
+        fixture.Pump();
+        inner.Value = true;
+        fixture.Pump();
+        fixture.Base.Send(new UiPointerInput(800, UiPointerPhase.Down, new(5)));
+        fixture.Base.Send(new UiPointerInput(800, UiPointerPhase.Up, new(5)));
+        Assert.Equal(0, outerRequests);
+        Assert.Equal(closeInner ? 1 : 0, innerRequests);
+        Assert.Equal(2, fixture.Dialogs.CaptureDialogs().Count);
+    }
+
     private sealed class DelayedLifetime(Task gate) : IAsyncDisposable
     {
         public ValueTask DisposeAsync() => new(gate);

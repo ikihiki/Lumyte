@@ -105,6 +105,7 @@ ToastController は借用した IMonotonicClock と一つの ToastHost を使う
 UiRecipes は IconButton / Card / FormRow / ValidationMessage / Toolbar / StatusBar / EmptyState / PropertyField の八種類です。FormRow の UiLabelAssociation は明示した直接子の読み取り用 metadata であり、共有 editor の AutomationName を書き換えません。OS bridge と wire snapshot への自動公開は含みません。
 
 [公開 Headless 例](../../../samples/Lumyte.UI.Dialogs.Sample/README.md)と[契約 UI-0036](../../../docs/adr/ui/UI-0036-dialog-toast-and-recipes.md)を参照してください。
+
 ## Stateful visual slots
 
 `Slider()[Slider.Thumb()[thumb => Media.Text(value: thumb.Value.ToString(), layoutProvider: textProvider)]]`

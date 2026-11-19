@@ -87,6 +87,8 @@ IsOpen の正本はモデルであり、Escape、外側 press、内容の閉じ�
 
 ここでいう backdrop は所有範囲の外側入力を消費する透明な障壁であり、暗黙の色・調光・装飾を追加しない。Modal 内の未処理 key と pointer・wheel も消費し、通常の Tab と Shift+Tab はその surface の候補を巡回する。背景の進行中入力は取消して終端まで消費し、owner の menu と candidate を終了・drain し、編集の suspension が完了してから新しい内容を公開する。Application は root だけでなく各 Dialog の実際の論理所有者へ、その編集接続の非同期 guard を一回登録する。入れ子 Dialog の内容生成・binding・Show・OnOpened と、その editor から開く Menu の提示は、preedit と candidate の退役を待つ。登録は Dialog の清掃寿命に属し、編集接続の破棄前に解除する。
 
+modeless も初回の編集・candidate 退役を待つが、提示後は所有者の編集 suspension を解放し、表示中も所有者の通常入力と IME 接続を再開できる。modal は清掃まで suspension を保持し、IsModal の変更では旧表示を退役して新しい方針で準備し直す。入れ子の外側 press は適用される論理所有関係の最内 modal だけへ要求し、その方針が拒否しても祖先へ閉鎖要求を送らない。
+
 focus の復帰先は開始前の接続 ID、実表示面、keyboard target、明示 focus 意図の世代で判断する。清掃中の新しい所有者選択や focus 要求を古い bookmark で上書きしない。入れ子は生存する許可範囲へ戻し、古い接続が失効した場合は新しい意図がないときだけ最初の候補を使う。
 
 ### 通知の有界待ち行列と時計
