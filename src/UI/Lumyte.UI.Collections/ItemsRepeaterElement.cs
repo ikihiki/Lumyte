@@ -38,7 +38,11 @@ public class ItemsRepeaterElement<T> : UiElement<Compose.Definitions.ItemsRepeat
 
         ArgumentNullException.ThrowIfNull(declaration.Items);
         ArgumentNullException.ThrowIfNull(declaration.KeySelector);
-        ArgumentNullException.ThrowIfNull(declaration.ItemTemplate);
+        if (!declaration.HasItemTemplate)
+        {
+            ArgumentNullException.ThrowIfNull(declaration.ItemTemplate);
+        }
+
         if (!Enum.IsDefined(declaration.Orientation))
         {
             throw new ArgumentOutOfRangeException(nameof(next));
@@ -73,7 +77,7 @@ public class ItemsRepeaterElement<T> : UiElement<Compose.Definitions.ItemsRepeat
         var seen = new HashSet<Widget>(ReferenceEqualityComparer.Instance);
         for (int index = 0; index < items.Length; index++)
         {
-            Widget root = declaration.ItemTemplate!(items[index]) ?? throw new InvalidOperationException("An item template returned null.");
+            Widget root = declaration.RealizeItem(items[index]);
             ValidateTemplate(root, seen);
             roots[index] = WrapItem(declaration, items[index], keys[index], root);
         }

@@ -42,7 +42,7 @@ public static partial class Compose
             [ComposeParameter]
             public Func<string, IReadOnlyList<string>>? KeyPathSelector { get; set; }
 
-            /// <summary>Gets or sets the fresh unmounted node content factory.</summary>
+            /// <summary>Gets or sets the legacy fresh unmounted node factory, used when no Item slot is supplied.</summary>
             [ComposeParameter]
             public Func<T, Widget>? ItemTemplate { get; set; }
 
@@ -78,10 +78,25 @@ public static partial class Compose
             [ComposeParameter]
             public UiItemVirtualization? Virtualization { get; set; }
 
+            internal Func<T, Widget>? ItemSlot { get; set; }
+
+            internal bool HasItemTemplate => ItemSlot is not null || ItemTemplate is not null;
+
             internal override bool RequiresViewportPreparation => true;
 
             /// <inheritdoc/>
+            protected override bool RebuildsChildren => true;
+
+            internal Widget RealizeItem(T value) =>
+                (ItemSlot ?? ItemTemplate)!(value) ?? throw new InvalidOperationException("A node template returned null.");
+
+            /// <inheritdoc/>
             protected override UiElement CreateElement() => new TreeViewElement<T>(this);
+
+            [ComposeSlot]
+            private static void Item(TreeView<T> target, CompositionTemplate<T, TreeView<T>, Widget> template) =>
+                target.RegisterTemplateSlot(template, static (TreeView<T> next, CompositionTemplate<T, TreeView<T>, Widget> value) =>
+                    next.ItemSlot = item => value(item, next));
         }
     }
 }

@@ -16,6 +16,7 @@ public sealed class LocatorVersionTests
     /// <param name="ancestorRole">The role in the locator chain.</param>
     /// <param name="operation">The operation minimum to combine with the role requirement.</param>
     /// <returns>The asynchronous check.</returns>
+    [Trait("Execution", "Integration")]
     [Theory]
     [InlineData("listbox", "scroll")]
     [InlineData("listbox", "check")]
@@ -101,6 +102,7 @@ public sealed class LocatorVersionTests
     /// <summary>Old supported catalogs admit only operation and role versions they advertise.</summary>
     /// <param name="version">The supported server catalog version.</param>
     /// <returns>The asynchronous check.</returns>
+    [Trait("Execution", "Integration")]
     [Theory]
     [InlineData(4)]
     [InlineData(5)]

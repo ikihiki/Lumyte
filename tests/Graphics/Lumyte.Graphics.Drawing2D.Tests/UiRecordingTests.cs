@@ -369,6 +369,7 @@ public sealed class UiRecordingTests
 
     /// <summary>Checks the same connected surface and canvas support sequential use from a worker thread.</summary>
     /// <returns>The asynchronous verification.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task RecordingHasNoCreatorThreadAffinityAsync()
     {

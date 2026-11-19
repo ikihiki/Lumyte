@@ -9,6 +9,7 @@ public sealed class FramePacingTests
 {
     /// <summary>Small scheduling delays do not accumulate into a lower frame rate.</summary>
     /// <returns>The asynchronous owner-loop checks.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task FrameDeadlinesKeepTheirOriginalPhaseAsync()
     {
@@ -55,6 +56,7 @@ public sealed class FramePacingTests
 
     /// <summary>A queued continuation wakes an owner waiting for its next deadline.</summary>
     /// <returns>The asynchronous wake verification.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task ContinuationsWakeTheOwnerAsync()
     {

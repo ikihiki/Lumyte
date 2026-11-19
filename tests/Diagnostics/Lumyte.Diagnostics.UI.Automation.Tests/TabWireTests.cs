@@ -23,6 +23,7 @@ public sealed class TabWireTests
 
     /// <summary>Actual runtime input is idempotent, leased and forbidden to observation pages.</summary>
     /// <returns>The asynchronous check.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task RemoteExpansionUsesOrdinaryInputAsync()
     {
@@ -42,6 +43,7 @@ public sealed class TabWireTests
     /// <summary>Every old strict reader retains its exact field set and numeric metadata.</summary>
     /// <param name="version">The requested wire version.</param>
     /// <returns>The asynchronous check.</returns>
+    [Trait("Execution", "Integration")]
     [Theory]
     [InlineData(1)]
     [InlineData(2)]

@@ -1,8 +1,8 @@
-# ADR-UI-0038: 遅延取得した階層をキーで展開する
+# ADR-UI-0039: 遅延取得した階層をキーで展開する
 
 - 状態: 採用
 - 日付: 2026-11-18
-- 基準コミット: `7bcf1bc256e226d04d7e2818893035be73ab9d2e`
+- 基準コミット: `02364150a04756d3c2035bbd0da95ba7a565c7ac`
 - 変更関係: 一部変更
 - 変更元: [UI-0013](UI-0013-component-catalog-and-delivery-plan.md#5-項目選択階層-8種類)
 - 変更対象: TreeView の型付き階層、遅延取得、入力と固定長仮想化
@@ -29,9 +29,11 @@ using static Lumyte.UI.Compose;
 var tree = TreeView<string>(roots: new[] { "root" }, keySelector: x => x,
     hasChildren: x => x == "root",
     childrenSelector: _ => new[] { "child" },
-    itemTemplate: _ => SizedBox(height: 24),
-    virtualization: new UiItemVirtualization(24));
+    virtualization: new UiItemVirtualization(24))[
+    TreeViewFactory<string>().Item()[(_, owner) => SizedBox(height: 24)]];
 ```
+
+Item Slot は値と受け取り側の TreeView 宣言を受け取る型付きテンプレートであり、指定した場合は旧 ItemTemplate より優先する。宣言の再構築では新しい受け取り側へ再設定し、実体の選択や展開を宣言へ書き戻さない。
 
 ### 階層の所有と検証
 
@@ -77,6 +79,7 @@ schema 1〜10 は従来の field 集合を保持し、新 role を none へ投�
 +                public Func<string, IReadOnlyList<string>>? KeyPathSelector { get; set; }
 +                // 子列を取得せず展開可能性を返す。必須。
 +                public Func<T, bool>? HasChildren { get; set; }
++                // Item Slot が未指定のときだけ使う旧形式。
 +                public Func<T, Lumyte.UI.Compose.Definitions.Widget>? ItemTemplate { get; set; }
 +                public IReadOnlyList<string> ExpandedKeys { get; set; }
 +                public string? SelectedKey { get; set; }

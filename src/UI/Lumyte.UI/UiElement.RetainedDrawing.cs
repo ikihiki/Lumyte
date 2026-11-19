@@ -9,10 +9,14 @@ public partial class UiElement
 {
     private static readonly ConcurrentDictionary<Type, RecordingMethods> _recordingMethods = new();
 
-    internal bool HasDefaultRecordingOrder => Methods.Record.DeclaringType == typeof(UiElement);
+    internal bool HasDefaultRecordingOrder => UsesDefaultRecordingOrder;
 
     internal bool CanCacheRetainedDrawing => CacheRetainedDrawing || Methods.Self.DeclaringType == typeof(UiElement)
         || (GetType() == typeof(RectangleElement) && Methods.Self.DeclaringType == typeof(RectangleElement));
+
+    /// <summary>Gets a value indicating whether recording currently follows self-then-children order.</summary>
+    /// <remarks>Override only when the current configuration exactly preserves the default order; custom orders must return false.</remarks>
+    protected virtual bool UsesDefaultRecordingOrder => Methods.Record.DeclaringType == typeof(UiElement);
 
     /// <summary>Gets a value indicating whether local drawing may be reused until visual invalidation or a size change.</summary>
     /// <remarks>

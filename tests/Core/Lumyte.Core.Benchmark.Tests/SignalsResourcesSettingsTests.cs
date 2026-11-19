@@ -10,6 +10,7 @@ namespace Lumyte.Core.Benchmark.Tests;
 public sealed class SignalsResourcesSettingsTests
 {
     /// <summary>Runs deterministic checks from all three target executables.</summary>
+    [Trait("Execution", "Integration")]
     [Fact]
     public void TargetOracles()
     {

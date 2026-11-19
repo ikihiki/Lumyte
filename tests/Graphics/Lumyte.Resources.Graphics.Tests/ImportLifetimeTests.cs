@@ -52,6 +52,7 @@ public sealed class ImportLifetimeTests
 
     /// <summary>Preloaded acquisitions use one selected publication and retain their leases independently of its snapshot.</summary>
     /// <returns>Completion of graph and manager ownership checks.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task FrameSnapshotIsSelectedBeforeAcquisitionAndLeasesOutliveItAsync()
     {
@@ -88,6 +89,7 @@ public sealed class ImportLifetimeTests
 
     /// <summary>A borrowed import context does not accept a reference from another manager.</summary>
     /// <returns>Completion of reference and manager cleanup.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task PreloadedReferencesMustBelongToTheBoundManagerAsync()
     {
@@ -103,6 +105,7 @@ public sealed class ImportLifetimeTests
 
     /// <summary>An acquisition finishing after graph abandonment returns its reference without leaking a lease.</summary>
     /// <returns>Completion of the pending load and resource reclamation.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task PendingAcquisitionReturnsOwnershipWhenGraphClosesAsync()
     {

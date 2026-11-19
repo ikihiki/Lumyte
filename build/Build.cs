@@ -51,16 +51,36 @@ internal sealed partial class Build : FalloutBuild
 
     private string NodeExecutable => Node ?? FindExecutable("node");
 
-    private Target Compile => definition => definition.Executes(CompileAsync);
+    [Parameter("Optional Compile scope: cpu, gpu, or integration; omit for the full solution.")]
+    public string? BuildLane { get; set; }
 
-    private async Task RestoreAsync()
+    [Parameter("Compile output kind: native, browser, or aot. Browser/AOT publish once without executing tests.")]
+    public string BuildKind { get; set; } = "native";
+
+    private Target Compile => definition => definition.Executes(async () =>
+    {
+        switch (BuildKind)
+        {
+            case "native": await CompileAsync(BuildLane).ConfigureAwait(false); break;
+            case "browser": await PublishBrowserAsync().ConfigureAwait(false); break;
+            case "aot": await PublishAotAsync().ConfigureAwait(false); break;
+            default: throw new ArgumentException("Invalid --build-kind. Expected native, browser, or aot.");
+        }
+    });
+
+    private async Task RestoreAsync(string? buildInput = null)
     {
         if (NoRestore)
         {
             return;
         }
 
-        var arguments = new List<string> { "restore", Project ?? BuildSolution };
+        var arguments = new List<string> { "restore", buildInput ?? Project ?? BuildSolution };
+        if (HostOnly)
+        {
+            arguments.Add("-p:ShouldUnsetParentConfigurationAndPlatform=false");
+        }
+
         if (Runtime is not null)
         {
             arguments.AddRange(["--runtime", Runtime]);
@@ -69,15 +89,28 @@ internal sealed partial class Build : FalloutBuild
         await DotNetAsync(arguments.ToArray()).ConfigureAwait(false);
     }
 
-    private async Task CompileAsync()
+    private Task CompileAsync() => CompileAsync(null);
+
+    private async Task CompileAsync(string? lane)
     {
+        ValidateBuildLane();
         if (NoBuild)
         {
             return;
         }
 
-        await RestoreAsync().ConfigureAwait(false);
-        var arguments = new List<string> { "build", Project ?? BuildSolution, "--configuration", Configuration, "--no-restore" };
+        string? scopedSolution = lane is null ? null : CreateLaneBuildSolution(lane);
+
+        await RestoreAsync(scopedSolution).ConfigureAwait(false);
+        var arguments = new List<string> { "build", scopedSolution ?? Project ?? BuildSolution, "--configuration", Configuration, "--no-restore" };
+        if (HostOnly)
+        {
+            // A host projection can omit platform-specific roots that shared
+            // projects still reference. Keep SDK-owned dependencies in the
+            // same configuration rather than silently falling back to Debug.
+            arguments.Add("-p:ShouldUnsetParentConfigurationAndPlatform=false");
+        }
+
         if (Runtime is not null)
         {
             arguments.AddRange(["--runtime", Runtime]);
@@ -141,6 +174,7 @@ internal sealed partial class Build : FalloutBuild
         {
             ["LUMYTE_BUILD_ASSEMBLY"] = Assembly.GetExecutingAssembly().Location,
             ["LumyteAgilityChannel"] = SelectedAgilityChannel,
+            ["LUMYTE_PREBUILT_ROOT"] = Environment.GetEnvironmentVariable("LUMYTE_PREBUILT_CONSUMER") == "1" ? RepositoryDirectory : null,
         };
         overrides.TryAdd("LUMYTE_LANE_CATALOG", null);
         overrides.TryAdd("LUMYTE_LANE_INVENTORY", null);
@@ -155,7 +189,7 @@ internal sealed partial class Build : FalloutBuild
             arguments = [.. arguments, "-m:1"];
         }
 
-        return ProcessRunner.RunAsync(DotNetExecutable, arguments, RootDirectory, overrides);
+        return ProcessRunner.RunAsync(DotNetExecutable, arguments, RootDirectory, overrides, includeStandardError: arguments.FirstOrDefault() == "format");
     }
 
     private Task<string> NodeAsync(params string[] arguments) => ToolAsync(NodeExecutable, arguments);

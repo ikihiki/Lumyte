@@ -10,6 +10,7 @@ public sealed class InputSeriesTests
 {
     /// <summary>Checks a held pointer is canceled on the old page and its Up is consumed after publication.</summary>
     /// <returns>The verification.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task PointerReleaseNeverClicksTheReplacementPageAsync()
     {
@@ -44,6 +45,7 @@ public sealed class InputSeriesTests
 
     /// <summary>Checks a candidate lacking editing capabilities fails before publication and is cleaned normally.</summary>
     /// <returns>The verification.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task InvalidEditorDoesNotReplaceTheCurrentPageAsync()
     {

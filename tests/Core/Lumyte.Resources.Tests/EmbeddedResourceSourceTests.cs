@@ -135,6 +135,7 @@ public sealed class EmbeddedResourceSourceTests
 
     /// <summary>The shared manager reads the embedded source using the ordinary resource build context.</summary>
     /// <returns>Completion of DI acquisition, reference resolution and unchanged reload.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task PipelineUsesEmbeddedSourceThroughDependencyInjectionAsync()
     {

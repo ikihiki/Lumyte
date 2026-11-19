@@ -50,6 +50,7 @@ public sealed class MapWorkloadTests
 
     /// <summary>Checks genuine M4 spatial arrivals, publication, held retirement and actual manager trim.</summary>
     /// <returns>Completion of the deterministic A-B-A ownership assertions.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task ControlledStreamingUsesActualDemandRetirementAndManagerTrimAsync()
     {

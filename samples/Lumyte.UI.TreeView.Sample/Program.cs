@@ -45,20 +45,22 @@ builder.UseWindows(_ => [Window(
     root: value =>
     {
         context = value;
+        Lumyte.UI.Compose.Definitions.Widget Render(string key, Lumyte.UI.Collections.Compose.Definitions.TreeView<string> owner)
+        {
+            templates++;
+            return Text(value: key, layoutProvider: provider, height: 24);
+        }
+
         return TreeView<string>(
             roots: new[] { "root" },
             keySelector: key => key,
             hasChildren: key => key == "root",
             childrenSelector: _ => Enumerable.Range(0, 1000).Select(index => "child" + index).ToArray(),
             keyPathSelector: key => key == "root" ? new[] { "root" } : new[] { "root", key },
-            itemTemplate: key =>
-            {
-                templates++;
-                return Text(value: key, layoutProvider: provider, height: 24);
-            },
             virtualization: new UiItemVirtualization(24, 2),
             testId: "tree",
-            height: 240);
+            height: 240)[
+            TreeViewFactory<string>().Item()[Render]];
     },
     initialClientSize: new(400, 240),
     onOpened: _ => opened.TrySetResult())]);

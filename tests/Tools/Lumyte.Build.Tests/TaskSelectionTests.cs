@@ -28,6 +28,7 @@ public sealed class TaskSelectionTests
         Assert.DoesNotContain("ValidateTest", names);
         Assert.Contains("--lane", result.Output, StringComparison.Ordinal);
         Assert.Contains("--suite", result.Output, StringComparison.Ordinal);
+        Assert.Contains("--platform", result.Output, StringComparison.Ordinal);
         Assert.Contains("--test-concurrency", result.Output, StringComparison.Ordinal);
         Assert.Contains("--target", result.Output, StringComparison.Ordinal);
         Assert.Contains("--help", result.Output, StringComparison.Ordinal);
@@ -62,6 +63,10 @@ public sealed class TaskSelectionTests
     [InlineData("Verify", "--verify-scope", "typo")]
     [InlineData("Test", "--pipeline-validation")]
     [InlineData("Test", "--lane", "cp")]
+    [InlineData("Test", "--platform", "browser")]
+    [InlineData("Test", "--lane", "cpu", "--platform", "browser")]
+    [InlineData("Test", "--lane", "integration", "--platform", "typo")]
+    [InlineData("Test", "--lane", "integration", "--platform", "browser", "--browser-case", "contracts")]
     [InlineData("Test", "--suite", "browser-typo")]
     [InlineData("Test", "--suite", "ui")]
     [InlineData("Test", "--suite", "ui", "--feature", "tab")]

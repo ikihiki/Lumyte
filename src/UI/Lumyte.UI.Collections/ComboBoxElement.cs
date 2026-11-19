@@ -57,8 +57,16 @@ public class ComboBoxElement<T> : ItemsRepeaterElement<T>
     {
         var combo = (Compose.Definitions.ComboBox<T>)declaration;
         ArgumentNullException.ThrowIfNull(combo.PopupHost);
-        ArgumentNullException.ThrowIfNull(combo.SelectedItemTemplate);
-        ArgumentNullException.ThrowIfNull(combo.EmptyTemplate);
+        if (!combo.HasSelectedItemTemplate)
+        {
+            ArgumentNullException.ThrowIfNull(combo.SelectedItemTemplate);
+        }
+
+        if (!combo.HasEmptyTemplate)
+        {
+            ArgumentNullException.ThrowIfNull(combo.EmptyTemplate);
+        }
+
         if (!float.IsFinite(combo.PopupSize.X) || !float.IsFinite(combo.PopupSize.Y) || combo.PopupSize.X <= 0 || combo.PopupSize.Y <= 0)
         {
             throw new ArgumentOutOfRangeException(nameof(declaration));
@@ -72,7 +80,7 @@ public class ComboBoxElement<T> : ItemsRepeaterElement<T>
             long revision = _displayRevision.Value;
             string? selection = revision == preparedRevision ? initial : SelectedKey;
             int selected = Array.IndexOf(keys, selection);
-            Widget result = selected >= 0 ? combo.SelectedItemTemplate(items[selected]) : combo.EmptyTemplate();
+            Widget result = selected >= 0 ? combo.RealizeSelectedItem(items[selected]) : combo.RealizeEmpty();
             result.ValidateFreshItemRoot();
             return result;
         });
@@ -123,7 +131,9 @@ public class ComboBoxElement<T> : ItemsRepeaterElement<T>
             {
                 Items = Items,
                 KeySelector = declaration.KeySelector,
-                ItemTemplate = declaration.ItemTemplate,
+
+                // The popup list is an implementation detail, not the slot owner.
+                ItemTemplate = declaration.ItemSlot ?? declaration.ItemTemplate,
                 Virtualization = declaration.Virtualization,
                 ItemEnabled = declaration.ItemEnabled,
                 ItemVisible = declaration.ItemVisible,

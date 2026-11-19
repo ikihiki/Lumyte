@@ -135,6 +135,7 @@ public partial class UiElement
         Surface!.RemoveFrameAnimation(this);
         Animations?.Dispose();
         Animations = null;
+        Surface?.ForgetContentRefresh(this);
         Surface?.ForgetSignalElement(this);
         Signals?.Dispose();
         Signals = null;

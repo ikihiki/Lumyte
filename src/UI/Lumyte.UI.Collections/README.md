@@ -1,6 +1,6 @@
 # Lumyte.UI.Collections
 
-型付きItemsRepeater、単一選択ListBox、非編集ComboBox、遅延階層TreeView。UIとControlsを参照し、一覧は指定しない限り全項目を実体化する。Itemsは採用時にコピーし、KeySelectorとItemTemplateは必須。各templateは新しい未接続rootを返す。構築関数や独自のBuildContentが生成する子孫も公開前に検査し、別項目との共有や別実体への接続を拒否する。Signalによる部分更新でも検査を続け、同じ実体が保持する子孫は再利用できる。
+型付きItemsRepeater、単一選択ListBox、非編集ComboBox、遅延階層TreeView。UIとControlsを参照し、一覧は指定しない限り全項目を実体化する。Itemsは採用時にコピーし、KeySelectorと表示用のItem SlotまたはItemTemplateは必須。各templateは新しい未接続rootを返す。構築関数や独自のBuildContentが生成する子孫も公開前に検査し、別項目との共有や別実体への接続を拒否する。Signalによる部分更新でも検査を続け、同じ実体が保持する子孫は再利用できる。
 
 Itemsの変更を採用するには新しい宣言を構築する。同じ宣言のsetterや元listの変更は自動監視しない。新しい宣言の採用では選択指定を静かに反映し、残るキーのscroll anchorと項目focusを復帰する。表示IDは新しくなる。
 
@@ -34,3 +34,15 @@ ExpandedKeys と SelectedKey の受理値は TreeViewElement ごとに独立し�
 BringPathIntoView は根から対象まで最大257キーの明示経路を受け取り、子取得、展開と表示範囲の factory を一つの準備境界で検証します。GetByItemKey の入力による表示では既知の親索引、または任意の KeyPathSelector を使います。Observe の件数や assertion は children、path resolver と template を実行しません。接続 ID は再実体化ごとに新しくなります。
 
 TreeView の左右キーは階層移動、上下と Home／End／Page は表示順の focus 移動です。本文クリックと Enter／Space は選択、展開記号は展開だけを行います。固定長 virtualization を明示すると ListBox と同じ bounded viewport と最大一件の入力保持枠を使います。
+
+## 型付き Item Slot
+
+ItemsRepeater、ListBox、ComboBox、TreeView の各具体的ファクトリは、値と受け取り側の宣言を渡す Item Slot を公開します。ComboBox は SelectedItem と Empty も提供します。Slot は同じ役割の旧 Func 引数より優先し、未指定なら旧引数を使います。
+
+```csharp
+ListBoxFactory<Person>().Item()[
+    (person, owner) => Text(value: person.Name, layoutProvider: provider)
+]
+```
+
+owner は現在の宣言であり、選択やスクロールの実体ではありません。生成は通常表示・仮想化・復元・ポップアップの既存の準備境界で行います。項目の根は従来どおり新鮮で交わらない必要があり、同じ固定 Widget を複数項目で使っても複製されません。Slot 設定は宣言の再構築にも引き継がれます。

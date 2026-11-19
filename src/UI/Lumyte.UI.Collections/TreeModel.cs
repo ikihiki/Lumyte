@@ -25,7 +25,11 @@ internal sealed class TreeModel<T>
         ArgumentNullException.ThrowIfNull(declaration.KeySelector);
         ArgumentNullException.ThrowIfNull(declaration.ChildrenSelector);
         ArgumentNullException.ThrowIfNull(declaration.HasChildren);
-        ArgumentNullException.ThrowIfNull(declaration.ItemTemplate);
+        if (!declaration.HasItemTemplate)
+        {
+            ArgumentNullException.ThrowIfNull(declaration.ItemTemplate);
+        }
+
         if (!float.IsFinite(declaration.Indentation) || declaration.Indentation < 0 || ((double)declaration.Indentation * MaximumDepth) + 16 > float.MaxValue)
         {
             throw new ArgumentOutOfRangeException(nameof(declaration));

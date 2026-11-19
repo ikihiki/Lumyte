@@ -61,6 +61,7 @@ public sealed class VisualResourceTests
 
     /// <summary>Checks an in-flight composite cannot acknowledge a later final ordinary frame.</summary>
     /// <returns>The asynchronous verification.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task CompletingAnOlderCompositeDoesNotOpenThePageGateAsync()
     {
@@ -136,6 +137,7 @@ public sealed class VisualResourceTests
 
     /// <summary>Checks reversing a retained movement layer prepares opacity storage without dropping its content.</summary>
     /// <returns>The asynchronous verification.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task SlideToFadeReversalUpgradesTheRetainedLayerAsync()
     {
@@ -201,6 +203,7 @@ public sealed class VisualResourceTests
 
     /// <summary>Checks C1 content reaches the real presence, page and shared capture path.</summary>
     /// <returns>The asynchronous verification.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task C1SubtreesSupportPresencePageAndSharedCaptureAsync()
     {

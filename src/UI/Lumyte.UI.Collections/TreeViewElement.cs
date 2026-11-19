@@ -431,7 +431,7 @@ public class TreeViewElement<T> : UiElement<Compose.Definitions.TreeView<T>>, IU
 
     private Widget CreateRow(Compose.Definitions.TreeView<T> declaration, TreeModel<T>.Node node)
     {
-        Widget content = declaration.ItemTemplate!(node.Item) ?? throw new InvalidOperationException("A node template returned null.");
+        Widget content = declaration.RealizeItem(node.Item);
         content.ValidateFreshItemRoot();
         content.AddModifier(new(UiBoxModifierKind.Padding, (node.Depth * declaration.Indentation) + 16));
         return content;

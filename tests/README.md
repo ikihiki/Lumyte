@@ -8,10 +8,10 @@
 
 | 入口 | 契約 | CI |
 | --- | --- | --- |
-| Test --lane cpu / Test --lane cpu | managedな値・所有権・記録。外部tool、子process、native library、GPUを呼ばない | Linux x64のみ |
-| Test --lane integration / Test --lane integration | FakeToolを起動するbuild検証、Slang、Parley、usvg、native Audio、native window、通信 | Linux / Windowsのx64 / arm64 |
+| Test --lane cpu / Test --lane cpu | 単一スレッドのmanagedな値・所有権・記録。テスト対象のworker・競合・同期、外部tool、子process、native library、GPUを呼ばない | Linux x64のみ |
+| Test --lane integration / Test --lane integration | 実thread・worker・scheduler・同期競合、FakeToolを起動するbuild検証、Slang、Parley、usvg、native Audio、native window、通信 | Linux / Windowsのx64 / arm64 |
 | Test --lane gpu / Test --lane gpu | 実backendのshader実行・readback・pixel・native device契約 | Linux x64のsoftware Vulkan、Windowsの既存opt-in条件 |
-| Test --suite browser | Node契約、Browser process、WebGPU、Audio | 独立Linux x64 job |
+| Test --lane integration --platform browser | Browser API境界のみ（WebGPU / WebAudio / DOM / input / history / WASM interop） | Browser platformの統合job |
 
 build/TestLanes.jsonがsolution内のxUnit projectの正本です。新projectは分類しないと失敗します。
 混在projectのIntegrationClasses、個別のExecution=Integration trait、
@@ -30,11 +30,14 @@ CPUレーンは継承したLUMYTE_*TEST* / LUMYTE_*BENCHMARK* opt-inを子test p
 各レーンは通常のFallout入口で呼びます（例: dotnet run --project build -c Release -- --target Test --lane cpu --host-only）。
 --projectで混在projectを指定しても同じfilterを適用します。
 各レーンは必要なbuildを先に行い、TRXをartifacts/test-results/{cpu,integration,gpu}/へ保存します。
-「CPU」はテスト本体の条件です。混在projectのコンパイル・埋め込みshader生成にはSDK/native build toolが必要な場合があります。
+「CPU」はテスト本体・呼び出すfixtureの条件です。`await`だけではマルチスレッドとは判断しません。実workerを使うscheduler、thread affinity、並列競合の検証はintegrationです。CPUの**テストメソッド同士**の並列実行と、**テスト対象自体**のマルチスレッド動作は別です。後者はCPUレーンに含めません。
+
+混在projectのコンパイル・埋め込みshader生成にはSDK/native build toolが必要な場合があります。
 従来のTestは全体／projectをfilterせずに実行する互換入口です。Test --lane integrationはTest --lane integrationの互換名です。
 Browser・AOT・sample・Rust等のprocess検証は下記の専用入口も維持します。
 GPUを使わずに確認できるrectangle poolの所有権・8→10 allocation契約は既存CpuGraphicsDeviceへ移しました。
 backend固有のvalidation、native retirement、pixel/readbackの試験はfakeへ置き換えていません。
+反復pixel試験のserialなresource再利用・独立所有権境界と測定条件は[GPU resource reuse](../docs/gpu-test-resource-reuse.md)を参照してください。
 
 ## 単体テスト
 
@@ -88,6 +91,8 @@ dotnet run --project build -c Release -- --target Test --suite signals
 | Native window | `Platform/Lumyte.Platform.Tests`、Linux X11は`Test --suite windowing` |
 | Browser | `Test --suite browser-contracts`、`Test --suite wasm`、`Test --suite browser-audio` |
 | NativeAOT | `*.AotSmoke`などを`Test --suite aot`でpublish・実行 |
+
+Node.jsのmock Browser契約は実Browserを起動せず、host側の`Test --suite browser-contracts`で一度実行します。Browser matrixには含めません。
 
 Node.jsのBrowser契約テストは対象機能の`tests/`内に、診断galleryツールのNode.js／Pythonテストは対象スクリプトと同じ`tools/diagnostics/`にあります。実行条件と各targetの詳細は[共通ビルド手順](../build/README.md)を参照してください。
 

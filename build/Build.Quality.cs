@@ -20,9 +20,18 @@ internal sealed partial class Build
 
         if (QualityScope is "all" or "managed")
         {
-            string[] arguments = ["format", Project ?? BuildSolution, "--no-restore"];
-            await DotNetWithEnvironmentAsync(new Dictionary<string, string?> { ["Configuration"] = Configuration },
+            string[] arguments = ["format", Project ?? BuildSolution, "--no-restore", "--verbosity", "diagnostic"];
+            string output = await DotNetWithEnvironmentAsync(new Dictionary<string, string?>
+            {
+                ["Configuration"] = Configuration,
+                ["ShouldUnsetParentConfigurationAndPlatform"] = HostOnly ? "false" : null,
+            },
                 fix ? arguments : [.. arguments, "--verify-no-changes"]).ConfigureAwait(false);
+            if (output.Contains("Msbuild failed when processing the file", StringComparison.OrdinalIgnoreCase)
+                || output.Contains("error while loading project", StringComparison.OrdinalIgnoreCase))
+            {
+                throw new InvalidOperationException("Quality refused an incomplete MSBuild workspace; no product compilation or restore fallback is permitted.");
+            }
         }
 
         if (QualityScope is "all" or "native")
