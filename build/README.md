@@ -304,3 +304,5 @@ Cargo compilation directories only. Every native build/verification/licensing
 gate still runs; managed outputs are not shared across jobs. See
 [CI runtime budget](../docs/ci-runtime-budget.md) for input identities,
 trust/checkpoint boundaries, observed timings and remaining hosted validation.
+
+ダイアログ・通知・recipes の検証には Test --suite ui --feature dialogs（Controls / Windowing / Application と公開 Headless 画面）、Test --suite ui --feature dialogs --aot（strict NativeAOT の publish と実行）を使います。明示 font と借用した実編集 backend を使い、Native OS modal の受け入れとは区別します。

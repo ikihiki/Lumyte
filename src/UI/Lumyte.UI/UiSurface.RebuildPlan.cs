@@ -56,7 +56,7 @@ public sealed partial class UiSurface
                     {
                         prepareArguments?.Invoke(update);
                         update.Contexts = environment;
-                        update.Content = element.PrepareContent(update.Next, new(item.Parent, environment));
+                        update.Content = element.PrepareContent(update.Next, new(item.Parent, environment, update.PreparationCleanup));
                     }
 
                     widget = update.Next;
@@ -282,6 +282,12 @@ public sealed partial class UiSurface
             _scrollReservations.Clear();
             foreach (ElementUpdate update in Updates)
             {
+                foreach (Action cleanup in update.PreparationCleanup)
+                {
+                    cleanup();
+                }
+
+                update.PreparationCleanup.Clear();
                 update.Signals?.Dispose();
                 update.Animations?.Dispose();
             }
@@ -299,11 +305,17 @@ public sealed partial class UiSurface
             {
                 prepareArguments(update);
                 update.Contexts = UiUseEnvironment.Overlay(element.Parent?.Contexts, next.ProvidedContexts);
-                update.Content = element.PrepareContent(update.Next, new(element.Parent, update.Contexts));
+                update.Content = element.PrepareContent(update.Next, new(element.Parent, update.Contexts, update.PreparationCleanup));
                 return update;
             }
             catch
             {
+                foreach (Action cleanup in update.PreparationCleanup)
+                {
+                    cleanup();
+                }
+
+                update.PreparationCleanup.Clear();
                 update.Signals?.Dispose();
                 update.Animations?.Dispose();
                 throw;
@@ -439,7 +451,7 @@ public sealed partial class UiSurface
             foreach (UiElement element in nodes)
             {
                 IReadOnlyList<UiElement> roots = element.CollectionItemRoots;
-                bool fresh = element.FreshItemRealizations;
+                bool fresh = element.RequiresFreshContentDescendants || element.FreshItemRealizations;
                 if (changed.TryGetValue(element, out ElementUpdate? update) && update.Content is { } content)
                 {
                     // Resolve immutable declaration boundaries to this proposal's actual identities.
@@ -447,7 +459,7 @@ public sealed partial class UiSurface
                         ? Array.AsReadOnly(declarations.Select(root => elements[root]).ToArray())
                         : Array.Empty<UiElement>();
                     CollectionItemRootUpdates[element] = roots;
-                    fresh = content.FreshRealizations;
+                    fresh = content.RequiresFreshDescendants || content.FreshRealizations;
                 }
                 else if (roots.Any(_replacements.ContainsKey))
                 {
@@ -515,6 +527,8 @@ public sealed partial class UiSurface
         internal bool ChildrenChanged { get; set; } = childrenChanged;
 
         internal UiElementContent? Content { get; set; }
+
+        internal List<Action> PreparationCleanup { get; } = [];
 
         internal UiUseEnvironment? Contexts { get; set; } = element.Contexts;
 

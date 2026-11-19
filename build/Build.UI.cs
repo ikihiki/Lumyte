@@ -10,6 +10,7 @@ internal sealed partial class Build
         ["layout"] = new(["tests/UI/Lumyte.UI.Tests"], ["samples/Lumyte.UI.Layout.Sample"], false, true),
         ["scroll"] = new(["tests/UI/Lumyte.UI.Tests", "tests/UI/Lumyte.UI.Controls.Tests"], ["samples/Lumyte.UI.Scroll.Sample"], true, true),
         ["menus"] = new(["tests/UI/Lumyte.UI.Controls.Tests", "tests/UI/Lumyte.UI.Windowing.Tests"], ["samples/Lumyte.UI.Menus.Sample"], true, true),
+        ["dialogs"] = new(["tests/UI/Lumyte.UI.Controls.Tests", "tests/UI/Lumyte.UI.Windowing.Tests", "tests/UI/Lumyte.UI.Application.Tests"], ["samples/Lumyte.UI.Dialogs.Sample"], true, true),
         ["tabs"] = new(["tests/UI/Lumyte.UI.Controls.Tests", "tests/UI/Lumyte.UI.TextEditing.Tests"], ["samples/Lumyte.UI.Tabs.Sample"], true, true),
         ["collections"] = new(["tests/UI/Lumyte.UI.Collections.Tests"], ["samples/Lumyte.UI.Collections.Sample"], true, true),
         ["virtualization"] = new(["tests/UI/Lumyte.UI.Collections.Tests", "tests/UI/Lumyte.UI.Automation.Tests", "tests/UI/Lumyte.UI.Windowing.Tests", "tests/UI/Lumyte.UI.TextEditing.Tests", "tests/Diagnostics/Lumyte.Diagnostics.UI.Automation.Tests"], ["samples/Lumyte.UI.Virtualization.Sample"], true, true),

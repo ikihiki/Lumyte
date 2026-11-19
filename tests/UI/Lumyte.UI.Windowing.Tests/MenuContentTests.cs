@@ -20,7 +20,7 @@ public sealed class MenuContentTests
         int factories = 0;
         int calls = 0;
         UiPopupHandle root = fixture.Popups.RequestOpen(fixture.Owner, new(fixture.Anchor, new(100, 100), () =>
-            Menu(popupHost: host)[MenuItem(key: "sub", createSubmenu: () =>
+            Menu(popupHost: host)[MenuCompose.Submenu(key: "sub", createContent: () =>
             {
                 factories++;
                 return Menu(popupHost: host)[MenuItem(key: "run", onInvoke: () =>

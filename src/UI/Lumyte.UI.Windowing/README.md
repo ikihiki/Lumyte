@@ -61,3 +61,11 @@ Panel()[
 ```
 
 標準Applicationはownerごとにportalを管理します。独自hostでは`UiPopupPortalCoordinator`をowner layoutの後でAdvanceし、owner解放前にDisposeします。内容は生成factoryで構築し、ownerへ二重接続しません。同keyの内容は既存sessionへ再構築し、提示方式変更は旧sessionをdrainしてから再開します。希望寸法はopen時に計測し、同sessionの内容はそのclient寸法へlayoutします。任意の手書きWidget/factoryやsubmenuは既存のUiPopupManagerを利用できます。
+
+## 宣言的な Hosted Dialog
+
+Windowing.Compose.Dialog は通常の owner tree に内容を接続しない portal です。Controls.Windowing.DialogCompose は同じ宣言を返す短い入口です。表示内容と modal の開始は別に扱い、Menu mode を modal として流用しません。標準 Application は入れ子の Dialog / Popup、実編集接続、Automation target と after-drain 通知まで管理します。
+
+低水準 host は binding 済みの owner に UiDialogPortalCoordinator を作り、既存 manager と popup router を進めながら Advance します。Dispose は終了要求なので、owner binding を返す前に IsStopped まで更新を続けてください。現在の表示は Hosted、Automatic の fallback 理由と NativeRequired の事前失敗は native-unavailable です。
+
+入力 backdrop は透明な遮蔽で、暗黙の調光色やテーマは生成しません。論理 owner の背後と既存 capture を止め、別の Hosted Window は独立した入力範囲として扱います。[UI-0036](../../../docs/adr/ui/UI-0036-dialog-toast-and-recipes.md)に正本の契約を示します。

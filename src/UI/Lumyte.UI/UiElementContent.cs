@@ -38,6 +38,8 @@ public sealed class UiElementContent
 
     internal IReadOnlyList<Widget>? CollectionItemRoots { get; init; }
 
+    internal bool RequiresFreshDescendants { get; init; }
+
     internal bool FreshRealizations { get; set; }
 
     internal Action? PrepareLayout { get; set; }

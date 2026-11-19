@@ -274,6 +274,105 @@ public sealed class AutomationTests
         f.Pump();
     }
 
+    /// <summary>Remote actions share the actual modal policy and exclusive group lease, including background rejection.</summary>
+    /// <returns>The asynchronous cleanup completion.</returns>
+    [Fact]
+    public async Task RemoteDialogActionsRejectUnderlyingLocatorAndAllowCurrentDialogAsync()
+    {
+        using var fixture = new Fixture();
+        int dialogClicks = 0;
+        Lumyte.UI.Windowing.Compose.Definitions.Dialog portal = Lumyte.UI.Windowing.Compose.Dialog(key: "modal", isOpen: true, initialClientSize: new System.Numerics.Vector2(80, 60))[Lumyte.UI.Compose.Button(testId: "dialog-action", width: 40, height: 20, onClick: () => dialogClicks++)];
+        fixture.Surface.Rebuild(Lumyte.UI.Compose.Panel()[Lumyte.UI.Compose.Button(testId: "behind", width: 20, height: 20), portal]);
+        fixture.Surface.UpdateLayout();
+        using var dialogs = new UiDialogPortalCoordinator(fixture.Windows, fixture.Popups, fixture.Owner, fixture.Registration.Window, fixture.Surface);
+        void Pump()
+        {
+            fixture.Pump(1);
+            dialogs.Advance();
+        }
+
+        for (int index = 0; index < 24; index++)
+        {
+            Pump();
+        }
+
+        UiDialogOpened opened = Assert.Single(dialogs.CaptureDialogs());
+        Assert.True(dialogs.TryGetSurface(opened.DialogId, out UiSurface? content));
+        using var input = new SemaphoreSlim(1, 1);
+        IUiAutomationHost Factory(UiSurface surface) => new Host(surface, () => fixture.Pump(1), input);
+        var routing = new UiPopupAutomationSession(fixture.Popups, Factory(fixture.Surface), Factory);
+        using var runtime = new UiAutomationDiagnosticsRuntime(TimeProvider.System, new());
+        using UiAutomationDiagnosticRegistration parent = runtime.Register("dialog-owner", fixture.Surface, routing.CreateOwnerHost(fixture.Surface), new() { AllowInput = true });
+        using UiAutomationDiagnosticRegistration child = runtime.RegisterPopup(parent, opened.DialogId, "dialog-content", content!, routing.CreateOwnerHost(content!), new() { AllowInput = true });
+        var operations = new DiagnosticOperationSet(new UiAutomationDiagnostics(runtime));
+        var remoteSession = Guid.NewGuid();
+        long frame = 0;
+        try
+        {
+            var control = Guid.Parse(Call("control-acquire", new() { ["target-id"] = DiagnosticValue.From(parent.TargetId.ToString("D")), ["duration-ms"] = DiagnosticValue.From(5000L) })["control-id"].String!);
+            Assert.Null(fixture.Popups.ProbePointer(fixture.Surface, new(5)).ActivationTarget);
+            Assert.False(fixture.Popups.CanReceiveKeys(fixture.Surface));
+            Assert.Equal("TimedOut", Complete(parent.TargetId, "behind", control, 1)["state"].String);
+            Assert.Equal(0, dialogClicks);
+            Assert.Equal("Succeeded", Complete(child.TargetId, "dialog-action", control, 2)["state"].String);
+            Assert.Equal(1, dialogClicks);
+        }
+        finally
+        {
+            runtime.BeginStop();
+            for (int index = 0; index < 1000 && !runtime.IsStopped; index++)
+            {
+                runtime.Advance(new(frame++, System.Diagnostics.Stopwatch.GetTimestamp()));
+                fixture.Pump(1);
+                Thread.Yield();
+            }
+
+            Assert.True(runtime.IsStopped);
+            await routing.DisposeAsync();
+            dialogs.Dispose();
+            for (int index = 0; index < 30; index++)
+            {
+                Pump();
+            }
+
+            Assert.True(dialogs.IsStopped);
+        }
+
+        IReadOnlyDictionary<string, DiagnosticValue> Call(string operation, Dictionary<string, DiagnosticValue> arguments)
+        {
+            var context = new DiagnosticOperationContext(Guid.NewGuid(), remoteSession, new(frame, 0), "modal-test", null, CancellationToken.None);
+            DiagnosticOperationResult result = operations.Invoke(operation, arguments, context, new HashSet<DiagnosticPermission> { DiagnosticPermission.Observe, DiagnosticPermission.OverrideInput });
+            Assert.Equal("success", result.Status);
+            return result.Values!;
+        }
+
+        IReadOnlyDictionary<string, DiagnosticValue> Complete(Guid target, string testId, Guid control, long sequence)
+        {
+            IReadOnlyDictionary<string, DiagnosticValue> accepted = Call("action-start", new()
+            {
+                ["target-id"] = DiagnosticValue.From(target.ToString("D")),
+                ["control-id"] = DiagnosticValue.From(control.ToString("D")),
+                ["sequence"] = DiagnosticValue.From(sequence),
+                ["plan-json"] = DiagnosticValue.From(UiRemoteSchema.SerializePlan(new UiRemotePlan(9, "click", [new("test-id", Value: testId)]))),
+                ["job-timeout-ms"] = DiagnosticValue.From(1000L),
+            });
+            for (int index = 0; index < 2000; index++)
+            {
+                runtime.Advance(new(frame++, System.Diagnostics.Stopwatch.GetTimestamp()));
+                fixture.Pump(1);
+                IReadOnlyDictionary<string, DiagnosticValue> state = Call("action-get", new() { ["job-id"] = accepted["job-id"] });
+                if (state["state"].String is "Succeeded" or "Failed" or "Canceled" or "TimedOut")
+                {
+                    return state;
+                }
+
+                Thread.Yield();
+            }
+
+            throw new InvalidOperationException("The bounded remote modal test did not finish.");
+        }
+    }
+
     /// <summary>Offscreen key realization never scrolls a covered owner or a different normal window.</summary>
     /// <param name="covered">Whether another real hosted window covers the group point.</param>
     /// <returns>The asynchronous check.</returns>

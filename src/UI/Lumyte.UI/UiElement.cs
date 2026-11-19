@@ -45,6 +45,8 @@ public partial class UiElement
 
     internal bool HasIndependentContentOwnership { get; set; }
 
+    internal bool RequiresFreshContentDescendants { get; set; }
+
     internal IReadOnlyList<UiElement> CollectionItemRoots { get; set; } = Array.Empty<UiElement>();
 
     internal bool UsesTreeValidation { get; set; }
