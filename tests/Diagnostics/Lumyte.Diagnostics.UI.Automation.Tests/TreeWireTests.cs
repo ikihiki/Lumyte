@@ -57,6 +57,29 @@ public sealed class TreeWireTests
         await job.ReleaseAsync();
     }
 
+    /// <summary>Remote SelectOption uses the selectable body, not the depth-three glyph.</summary>
+    /// <returns>The asynchronous assertion.</returns>
+    [Fact]
+    public async Task DeepSelectionUsesTreeGroupAndBodyAsync()
+    {
+        using var handler = new LoopbackHandler(configureSurface: surface => surface.Rebuild(TreeView<int>(roots: new[] { 0 }, keySelector: x => x.ToString(System.Globalization.CultureInfo.InvariantCulture), childrenSelector: x => new[] { x + 1 }, hasChildren: x => x < 4, expandedKeys: new[] { "0", "1", "2" }, itemTemplate: _ => SizedBox(height: 20), testId: "tree", width: 100, height: 100))) { SchemaVersion = 11 };
+        using var http = new HttpClient(handler) { BaseAddress = new("http://diagnostics/") };
+        await using var client = new UiAutomationDiagnosticsClient(http, await handler.Ready);
+        UiRemoteTarget target = Assert.Single(await client.ListTargetsAsync());
+        await using UiRemoteControl control = await client.AcquireControlAsync(target.Id);
+        await control.Page.GetByRole("tree").SelectOptionAsync("3");
+        UiRemoteJob job = await control.Page.StartObservationAsync(new(11, "snapshot", []));
+        UiRemoteJobStatus status = await job.WaitAsync();
+        byte[] bytes = await job.DownloadArtifactAsync(status.ResultArtifactId!.Value);
+        UiRemoteSnapshot snapshot = JsonSerializer.Deserialize(bytes, UiAutomationJsonContext.Default.UiRemoteSnapshot)!;
+        UiRemoteNode row = Assert.Single(snapshot.Nodes, node => node.OptionKey == "3");
+        Assert.True(row.IsSelected);
+        Assert.False(row.IsExpanded);
+        Assert.Equal(3, row.Depth);
+        Assert.Equal("2", row.ParentKey);
+        await job.ReleaseAsync();
+    }
+
     /// <summary>Tree hierarchy fields never alter frozen schema one through ten node shapes.</summary>
     /// <param name="version">The frozen schema version.</param>
     /// <returns>The asynchronous check.</returns>
