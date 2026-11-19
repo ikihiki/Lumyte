@@ -139,28 +139,67 @@ class TransportTests(unittest.TestCase):
                     self.verify(wrong, extract=True)
         self.assertFalse((self.root / 'src/P').exists())
 
-    def test_generated_schema_line_endings_match_but_edits_and_binary_changes_do_not(self):
-        self.put('.fallout/build.schema.json', '{\n  "schema": 1\n}\n')
+    def test_generated_schema_changes_allow_fresh_extraction(self):
+        schema = self.put('.fallout/build.schema.json', '{\n  "schema": 1\n}\n')
         self.git('add', '.fallout/build.schema.json')
         self.git('commit', '-qm', 'schema fixture')
-        original = self.identity()
-        schema = self.root / '.fallout/build.schema.json'
-        schema.write_bytes(schema.read_bytes().replace(b'\n', b'\r\n'))
-        self.assertEqual(original, self.identity())
-        self.expected = original
+        self.expected = self.identity()
         self.create()
-        schema.write_bytes(schema.read_bytes().replace(b'\r\n', b'\n'))
+        # Reuse one producer archive in fresh consumers at the same actual HEAD.
+        for content in (b'{\r\n  "schema": 1\r\n}\r\n',
+                        b'{"schema": 2, "description": "regenerated"}\n', None):
+            with self.subTest(content=content):
+                for directory in (self.root / 'src/P', self.root / 'artifacts', self.nuget):
+                    if directory.exists():
+                        shutil.rmtree(directory)
+                if content is None:
+                    schema.unlink()
+                else:
+                    schema.write_bytes(content)
+                consumer = self.identity()
+                self.assertEqual(self.expected, consumer)
+                self.verify(consumer, extract=True)
+                self.assertEqual((self.root / 'src/P/bin/Release/app').read_text(), 'binary')
+                self.assertEqual((self.nuget / 'example/1.0/build/Example.targets').read_text(), 'import')
+                # Extraction neither transports nor restores the tracked schema.
+                self.assertEqual(schema.read_bytes() if schema.exists() else None, content)
+
+    def test_only_exact_generated_schema_path_is_excluded_before_writes(self):
+        files = {
+            'src/project.cs': b'source',
+            'build/Build.Parameters.cs': b'public string Parameter = "old";\n',
+            'global.json': b'{"sdk":{"version":"10.0.403"}}',
+            '.fallout/settings.json': b'{"setting": 1}\r\n',
+            '.fallout/nested/build.schema.json': b'{"schema": 1}\n',
+            '.fallout/build.schema.json.extra': b'{"schema": 1}\n',
+            'src/binary.dat': b'\0binary\r\n',
+        }
+        for name, data in files.items():
+            self.put(name, '').write_bytes(data)
+        self.git('add', *files)
+        self.git('commit', '-qm', 'strict source fixtures')
+        self.expected = self.identity()
+        self.create()
         self.fresh()
-        self.verify(self.identity(), extract=True)
-        schema.write_bytes(schema.read_bytes().replace(b'1', b'2'))
-        self.assertNotEqual(original['source_sha256'], self.identity()['source_sha256'])
-        binary = self.root / 'src/binary.dat'
-        binary.write_bytes(b'\0binary\r\n')
-        self.git('add', 'src/binary.dat')
-        self.git('commit', '-qm', 'binary fixture')
-        before = self.identity()
-        binary.write_bytes(b'\0binary\n')
-        self.assertNotEqual(before['source_sha256'], self.identity()['source_sha256'])
+        for name, original in files.items():
+            with self.subTest(path=name):
+                path = self.root / name
+                # Newline-only changes outside the exact exception stay byte-bound.
+                path.write_bytes(original.replace(b'\r\n', b'\n') if b'\r\n' in original
+                                 else original + b'changed')
+                with self.assertRaisesRegex(p.Invalid, 'identity mismatch.*source_sha256'):
+                    self.verify(self.identity(), extract=True)
+                self.assertFalse((self.root / 'src/P').exists())
+                self.assertFalse((self.root / 'artifacts').exists())
+                self.assertFalse(self.nuget.exists())
+                path.write_bytes(original)
+        path = self.root / 'build/Build.Parameters.cs'
+        path.chmod(0o755)
+        with self.assertRaisesRegex(p.Invalid, 'identity mismatch.*source_sha256'):
+            self.verify(self.identity(), extract=True)
+        self.assertFalse((self.root / 'src/P').exists())
+        self.assertFalse((self.root / 'artifacts').exists())
+        self.assertFalse(self.nuget.exists())
 
     def test_dirty_source_and_actual_head(self):
         before = self.identity()
