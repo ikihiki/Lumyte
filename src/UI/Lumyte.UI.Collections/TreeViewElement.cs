@@ -206,7 +206,7 @@ public class TreeViewElement<T> : UiElement<Compose.Definitions.TreeView<T>>, IU
         {
             PreparationSurface!.RefreshElementContent(this);
         }
-        catch
+        catch (ArgumentException)
         {
             _requestedPath = null;
             _requestedExpansion = null;
@@ -257,7 +257,7 @@ public class TreeViewElement<T> : UiElement<Compose.Definitions.TreeView<T>>, IU
                 focused = focused.Parent;
             }
 
-            string? restoreKey = focused is CollectionItemElement focusedRow && _model?.Known.ContainsKey(focusedRow.Widget.Key!) == true ? focusedRow.Widget.Key : null;
+            string? restoreKey = focused is CollectionItemElement focusedRow && Children.FirstOrDefault() is ListBoxElement<TreeModel<T>.Node> ownerList && ownerList.Options.Contains(focusedRow) && _model?.Known.ContainsKey(focusedRow.Widget.Key!) == true ? focusedRow.Widget.Key : null;
             while (restoreKey is not null && !rows.Any(node => node.Key == restoreKey && node.Enabled))
             {
                 restoreKey = _model!.Known[restoreKey].Parent;
@@ -277,7 +277,8 @@ public class TreeViewElement<T> : UiElement<Compose.Definitions.TreeView<T>>, IU
                 Height = declaration.Height,
                 Role = UiRole.Group,
                 DeferredHierarchy = true,
-                RestoreHierarchyFocusKey = restoreKey,
+                RestoreHierarchyFocusKey = _navigationFocus?.Key ?? restoreKey,
+                HierarchyNavigationRequest = _navigationFocus?.Request,
                 RequestedRevealKey = path?[^1],
                 RevealPositionVersion = _pathPositionVersion,
             };
@@ -478,7 +479,7 @@ public class TreeViewElement<T> : UiElement<Compose.Definitions.TreeView<T>>, IU
                 FocusKey(_rows.FirstOrDefault(candidate => candidate.Parent == key && candidate.Enabled)?.Key);
             }
         }
-        else if (_expanded.Contains(key))
+        else if (node.CanExpand && _expanded.Contains(key))
         {
             SetExpanded(key, false);
         }

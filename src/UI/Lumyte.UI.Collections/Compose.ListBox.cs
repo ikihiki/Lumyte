@@ -48,6 +48,8 @@ public static partial class Compose
 
             internal bool DeferredHierarchy { get; set; }
 
+            internal long? HierarchyNavigationRequest { get; set; }
+
             internal string? RequestedRevealKey { get; set; }
 
             internal long RevealPositionVersion { get; set; }

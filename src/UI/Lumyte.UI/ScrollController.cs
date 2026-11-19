@@ -154,6 +154,12 @@ public sealed class ScrollController : IDisposable
     {
         if (_proposedGeometry is { } geometry)
         {
+            // Explicit staged positioning wins over a retained content anchor during convergence.
+            if (_requestedOffset is not null)
+            {
+                return;
+            }
+
             _proposedGeometry = (geometry.Extent, geometry.Viewport, Math.Clamp(offset, 0, Math.Max(0, geometry.Extent - geometry.Viewport)));
             return;
         }

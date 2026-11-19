@@ -201,7 +201,7 @@
         },
         "Feature": {
           "type": "string",
-          "description": "UI feature: layout, controls, media, scroll, menus, tabs, collections, virtualization, numeric, application, navigation, or pages"
+          "description": "UI feature: layout, controls, media, scroll, menus, tabs, collections, virtualization, treeview, numeric, application, navigation, or pages"
         },
         "GalleryRepository": {
           "type": "string",

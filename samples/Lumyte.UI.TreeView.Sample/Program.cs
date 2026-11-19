@@ -69,7 +69,7 @@ Task running = app.RunAsync();
 await opened.Task.WaitAsync(TimeSpan.FromSeconds(15));
 var page = new UiAutomationPage(context!.Automation);
 await page.GetByTestId("tree").GetByItemKey("child999").BringIntoViewAsync();
-await page.GetByTestId("tree").GetByItemKey("child999").ClickAsync();
+await page.GetByTestId("tree").SelectOptionAsync("child999");
 await context.Automation.RunOnUiThreadAsync(surface =>
 {
     var tree = (TreeViewElement<string>)surface.RootElement;

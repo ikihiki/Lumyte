@@ -44,7 +44,7 @@ public sealed class TreeWireTests
         await using UiRemoteControl control = await client.AcquireControlAsync(target.Id);
         UiRemoteLocator item = control.Page.GetByRole("tree").GetByItemKey("child999");
         await item.BringIntoViewAsync();
-        await item.ClickAsync();
+        await control.Page.GetByRole("tree").SelectOptionAsync("child999");
         Assert.Equal(1, Volatile.Read(ref reads));
         UiRemoteJob job = await control.Page.StartObservationAsync(new(11, "snapshot", []));
         UiRemoteJobStatus status = await job.WaitAsync();

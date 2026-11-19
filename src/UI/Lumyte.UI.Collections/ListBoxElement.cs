@@ -21,6 +21,8 @@ public class ListBoxElement<T> : ItemsRepeaterElement<T>, IUiItemViewport
     private long _bringRequest;
     private long _preparedBringRequest;
     private ScrollController? _positionController;
+    private bool _preparingNonvirtualReveal;
+    private Action? _nonvirtualRevealGeometry;
 
     private string? _activeKey;
     private string? _selectedKey;
@@ -173,7 +175,27 @@ public class ListBoxElement<T> : ItemsRepeaterElement<T>, IUiItemViewport
                 float viewport = hierarchyScroll.Controller.ProposedViewport;
                 float desired = start < offset ? start : start + target.PreparedSize.Y > offset + viewport ? start + target.PreparedSize.Y - viewport : offset;
                 hierarchyScroll.Controller.ClearStagedItemAnchor();
-                hierarchyScroll.Controller.StagePositionRequest(desired);
+                if (hierarchyScroll.Controller.StagePositionRequest(desired))
+                {
+                    // Reuse the prepared factories, but require another projected layout before publication.
+                    _nonvirtualRevealGeometry = () =>
+                    {
+                        hierarchyScroll.Controller.ClearStagedItemAnchor();
+                        hierarchyScroll.Controller.StagePositionRequest(desired);
+                    };
+                    _preparingNonvirtualReveal = true;
+                    try
+                    {
+                        PreparationSurface!.RefreshElementContent(this);
+                    }
+                    finally
+                    {
+                        _preparingNonvirtualReveal = false;
+                        _nonvirtualRevealGeometry = null;
+                    }
+
+                    return true;
+                }
             }
         }
 
@@ -256,8 +278,22 @@ public class ListBoxElement<T> : ItemsRepeaterElement<T>, IUiItemViewport
     }
 
     /// <inheritdoc/>
-    protected override UiElementContent? BuildContent(Widget next, UiElementBuildContext context) => _preparingRange && _rangePreparation is { } prepared
-        ? PrepareRealization((Compose.Definitions.ItemsRepeater<T>)next, prepared.Items, prepared.Keys) : base.BuildContent(next, context);
+    protected override UiElementContent? BuildContent(Widget next, UiElementBuildContext context)
+    {
+        if (_preparingNonvirtualReveal && PreparationSurface?.PreparedViewportContent(this) is { } content)
+        {
+            return new UiElementContent(content.Content, content.Commit)
+            {
+                PrepareLayout = _nonvirtualRevealGeometry,
+                CollectionItemRoots = content.CollectionItemRoots,
+                FreshRealizations = content.FreshRealizations,
+                Reads = content.Reads,
+            };
+        }
+
+        return _preparingRange && _rangePreparation is { } prepared
+            ? PrepareRealization((Compose.Definitions.ItemsRepeater<T>)next, prepared.Items, prepared.Keys) : base.BuildContent(next, context);
+    }
 
     /// <inheritdoc/>
     protected override Widget WrapContent(Compose.Definitions.ItemsRepeater<T> declaration, Widget content)
@@ -326,7 +362,8 @@ public class ListBoxElement<T> : ItemsRepeaterElement<T>, IUiItemViewport
         {
             SelectedKey = selection;
             _activeKey = active;
-            if (focusedKey is not null)
+            // The tree already queued its explicit target for this generation; automatic restoration must not replace it.
+            if (focusedKey is not null && ((Compose.Definitions.ListBox<T>)declaration).HierarchyNavigationRequest != focusRequest)
             {
                 CollectionItemElement? restore = Options.FirstOrDefault(option => option.Widget.Key == focusedKey && option.Widget.IsEnabled && option.Widget.IsVisible && option.Widget.HitTestVisible);
                 if (restore is not null)

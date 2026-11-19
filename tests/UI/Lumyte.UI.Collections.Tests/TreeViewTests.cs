@@ -273,8 +273,11 @@ public sealed class TreeViewTests
     }
 
     /// <summary>Failed target templates cannot publish expansion, scroll geometry or callbacks.</summary>
-    [Fact]
-    public void FailedPathFactoryPreservesAcceptedHierarchyAndPosition()
+    /// <param name="virtualized">Uses fixed-extent realization.</param>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void FailedPathFactoryPreservesAcceptedHierarchyAndPosition(bool virtualized)
     {
         bool fail = false;
         int changes = 0;
@@ -285,7 +288,7 @@ public sealed class TreeViewTests
             hasChildren: key => key == "root",
             itemTemplate: key => fail && key == "child99" ? throw new InvalidOperationException("factory") : SizedBox(height: 20),
             onExpandedChanged: _ => changes++,
-            virtualization: new UiItemVirtualization(20, 0),
+            virtualization: virtualized ? new UiItemVirtualization(20, 0) : null,
             height: 60));
         surface.SetViewport(new(100, 60));
         surface.UpdateLayout();

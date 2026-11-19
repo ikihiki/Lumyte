@@ -13,13 +13,24 @@ internal sealed class CollectionItemElement(CollectionItem widget) : UiElement<C
 
     protected override bool IsTabStop => Widget.TabStop(this);
 
+    protected override Lumyte.Graphics.Drawing2D.Rect2D AutomationActionRegion
+    {
+        get
+        {
+            float start = Widget.Expand is null ? 0 : Math.Clamp(Widget.GlyphStart + 16, 0, ContentSize.X);
+            return new(start, 0, ContentSize.X - start, ContentSize.Y);
+        }
+    }
+
     protected override bool? AutomationSelected => Widget.Selected();
 
     protected override UiAutomationId? AutomationSelectionGroup => Widget.SelectionOwner();
 
     protected override string? AutomationOptionKey => Widget.Key;
 
-    protected override UiAutomationActions AutomationActions => UiAutomationActions.Click | UiAutomationActions.Focus | (Widget.Expand is null ? UiAutomationActions.None : UiAutomationActions.ExpandCollapse);
+    protected override UiAutomationActions AutomationActions => UiAutomationActions.Focus
+        | (Widget.TreeItem is null || (AutomationActionRegion.Width > 0 && AutomationActionRegion.Height > 0) ? UiAutomationActions.Click : UiAutomationActions.None)
+        | (Widget.Expand is null ? UiAutomationActions.None : UiAutomationActions.ExpandCollapse);
 
     protected override bool IsAutomationPressed => _activation.IsPressed;
 
