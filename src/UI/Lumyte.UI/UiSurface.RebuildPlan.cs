@@ -12,7 +12,7 @@ public sealed partial class UiSurface
         private readonly UiElement[] _validators;
         private readonly IReadOnlyDictionary<UiSharedElementKey, UiElement>? _shared;
 
-        internal RebuildPlan(UiElement? previous, Widget next, bool retainUninitialized = false, UiElement? surfaceRoot = null, IEnumerable<UiElement>? validators = null, IReadOnlyDictionary<UiSharedElementKey, UiElement>? shared = null, Action<ElementUpdate>? prepareArguments = null, ElementUpdate? preparedRoot = null, bool refreshContent = false, UiProposedTree? baseline = null)
+        internal RebuildPlan(UiElement? previous, Widget next, bool retainUninitialized = false, UiElement? surfaceRoot = null, IEnumerable<UiElement>? validators = null, IReadOnlyDictionary<UiSharedElementKey, UiElement>? shared = null, Action<ElementUpdate>? prepareArguments = null, ElementUpdate? preparedRoot = null, UiUseEnvironment? rootEnvironment = null, bool refreshContent = false, UiProposedTree? baseline = null)
         {
             var retained = new HashSet<UiElement>(ReferenceEqualityComparer.Instance);
             var unchanged = new HashSet<UiElement>(ReferenceEqualityComparer.Instance);
@@ -27,8 +27,10 @@ public sealed partial class UiSurface
             _validators = validators?.ToArray() ?? [];
             _shared = shared;
             var pending = new System.Collections.Generic.Stack<(UiElement Element, Widget Next, UiElement? Parent, UiUseEnvironment? Context)>();
+            rootEnvironment ??= (previous?.PreparationSurface ?? surfaceRoot?.PreparationSurface)?._rootEnvironment;
             UiElement? proposedParent = previous is null ? null : baseline?.Parent(previous) ?? previous.Parent;
-            UiUseEnvironment? inherited = proposedParent is null ? null : baseline is null ? proposedParent.Contexts : baseline.Environment(proposedParent);
+            UiUseEnvironment? inherited = proposedParent is null ? rootEnvironment
+                : baseline is null ? proposedParent.Contexts ?? rootEnvironment : UiUseEnvironment.Overlay(rootEnvironment, baseline.Environment(proposedParent));
             pending.Push((Root, next, proposedParent, inherited));
             try
             {
@@ -37,7 +39,7 @@ public sealed partial class UiSurface
                     UiElement element = item.Element;
                     Widget widget = item.Next;
                     var environment = UiUseEnvironment.Overlay(item.Context, widget.ProvidedContexts);
-                    if (!(refreshContent && ReferenceEquals(element, changedRoot)) && (element.IsMounted || baseline?.Contains(element) == true) && ReferenceEquals(baseline?.Configuration(element) ?? element.Widget, widget) && UiUseEnvironment.Equivalent(baseline?.Contains(element) == true ? baseline.Environment(element) : element.Contexts, environment))
+                    if (!(refreshContent && ReferenceEquals(element, changedRoot)) && (element.IsMounted || baseline?.Contains(element) == true) && ReferenceEquals(baseline?.Configuration(element) ?? element.Widget, widget) && UiUseEnvironment.Equivalent(baseline?.Contains(element) == true ? UiUseEnvironment.Overlay(rootEnvironment, baseline.Environment(element)) : element.Contexts, environment))
                     {
                         unchanged.Add(element);
                         continue;
@@ -298,13 +300,13 @@ public sealed partial class UiSurface
             && !ReferenceEquals(element.Widget, next)
             && element.Widget.GetType() == next.GetType() && element.Widget.Key == next.Key;
 
-        internal static ElementUpdate PrepareLeaf(UiElement element, Widget next, Action<ElementUpdate> prepareArguments)
+        internal static ElementUpdate PrepareLeaf(UiElement element, Widget next, Action<ElementUpdate> prepareArguments, UiUseEnvironment? rootEnvironment = null)
         {
             var update = new ElementUpdate(element, element.Widget, next, [], false);
             try
             {
                 prepareArguments(update);
-                update.Contexts = UiUseEnvironment.Overlay(element.Parent?.Contexts, next.ProvidedContexts);
+                update.Contexts = UiUseEnvironment.Overlay(element.Parent?.Contexts ?? rootEnvironment, next.ProvidedContexts);
                 update.Content = element.PrepareContent(update.Next, new(element.Parent, update.Contexts, update.PreparationCleanup));
                 return update;
             }
@@ -337,7 +339,9 @@ public sealed partial class UiSurface
             }
         }
 
-        internal void Prepare()
+        internal void Prepare() => Prepare(Root.PreparationSurface ?? throw new InvalidOperationException("Viewport preparation requires its owning surface."));
+
+        internal void Prepare(UiSurface surface)
         {
             // Reserve before validation and preparation callbacks can reenter.
             foreach (ElementUpdate update in Updates)
@@ -399,7 +403,7 @@ public sealed partial class UiSurface
             foreach (ElementUpdate update in Updates)
             {
                 update.Invalidation = update.Element.ConfigurationChanges(update.Next) | (update.ChildrenChanged ? UiInvalidation.Layout : UiInvalidation.None);
-                var context = new UiElementUpdateContext(update.Next, update.Slots);
+                var context = new UiElementUpdateContext(surface, update.Next, update.Slots);
                 update.ContentCommit = update.Content?.Commit;
                 update.Commit = update.Element.Prepare(update.Next, context);
                 update.CancelInput = context.InputCancellationRequested;

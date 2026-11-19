@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "abiVersion": 1,
+  "stage": "selection-probe-not-product-adapter",
+  "cefCrate": "156.6.0+156.0.30",
+  "cefCrateSha256": "ccf965a472527fea5b7fc508ae3dca5115a1d8f8534558fe3aa8d8712fceeec9",
+  "upstreamCommit": "b84b7caa4756220bd873e641e26becc0a2d8052d",
+  "upstreamTag": "cef-v156.6.0+156.0.30",
+  "cefBinary": "156.0.30+g6028375+chromium-156.0.8078.96",
+  "linuxX64ArchiveSha1": "0b4c2189e3b93033bbef13add1a86f66849c1e62",
+  "sandbox": true,
+  "acceleratedOsr": false,
+  "productMigrationAccepted": false,
+  "linuxX64ArchiveSha256": "356db99d653698aa9ba78b22965032b4fa5b23ba079ffdbaa5d28a8530f04011"
+}

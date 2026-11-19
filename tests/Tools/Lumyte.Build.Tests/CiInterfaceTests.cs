@@ -18,7 +18,7 @@ public sealed class CiInterfaceTests
         foreach (string contract in new[]
         {
             "--lane cpu", "--lane integration", "--lane gpu", "--pipeline-validation", "--platform browser", "--suite browser-contracts", "--suite aot",
-            "--suite windowing", "--suite diagnostics-processes", "--suite diagnostics-ui",
+            "--suite native", "--suite windowing", "--suite diagnostics-processes", "--suite diagnostics-ui",
             "--distribution-output diagnostic-gallery", "'--distribution-output', 'window-sample'", "'--distribution-output', 'packages'",
             "'--quality-scope', 'managed'", "--target Quality --configuration", "--restore-metadata",
             "VulkanProgramCapacitiesAsync", "MESA_SHADER_CACHE_DIR", "windows-11-arm", "ubuntu-24.04-arm",
@@ -60,6 +60,7 @@ public sealed class CiInterfaceTests
         foreach ((string file, string backend) in new[]
         {
             ("ParleyNative.targets", "parley"), ("ParleyBrowser.targets", "parley-wasm"),
+            ("CefSupervisor.targets", "cef-supervisor"),
             ("WgpuNative.targets", "wgpu"), ("UsvgNative.targets", "usvg"), ("Direct3D12Native.targets", "direct3d12"),
         })
         {

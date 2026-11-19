@@ -36,6 +36,11 @@ jobs:
       run: |
         source tools/setup/activate.sh
         dotnet run --project build -c Release --no-build --no-restore -- --target Compile --configuration Release --host-only
+    - name: Browser cleanup supervisor contracts (CEF-free)
+      shell: bash
+      run: |
+        source tools/setup/activate.sh
+        dotnet run --project build -c Release --no-build --no-restore -- --target Test --suite native --no-build --no-restore
     - name: Checkpoint verified native Cargo compilation
       uses: ./.github/actions/cache-native
       with:
@@ -376,6 +381,11 @@ jobs:
       run: |
         source tools/setup/activate.sh
         dotnet run --project build -c Release --no-build --no-restore -- --target Compile --configuration Release --host-only
+    - name: Browser cleanup supervisor contracts (CEF-free)
+      shell: bash
+      run: |
+        source tools/setup/activate.sh
+        dotnet run --project build -c Release --no-build --no-restore -- --target Test --suite native --no-build --no-restore
     - name: Checkpoint verified native Cargo compilation
       uses: ./.github/actions/cache-native
       with:

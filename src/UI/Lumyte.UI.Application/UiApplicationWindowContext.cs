@@ -51,6 +51,8 @@ public sealed class UiApplicationWindowContext
     /// <summary>Gets the optional hosted title bar and resize grip.</summary>
     public UiApplicationWindowChrome? Chrome { get; internal set; }
 
+    internal UiApplication Application => _application;
+
     /// <summary>Requests orderly application shutdown from a callback.</summary>
     public void RequestStop() => _application.RequestStop();
 
@@ -77,6 +79,8 @@ public sealed class UiApplicationWindowContext
     }
 
     internal IUiAutomationHost GetPopupAutomationForDiagnostics(Guid popup, bool allowInspection) => _application.PopupAutomation(popup, allowInspection);
+
+    internal void WakeOwner() => _application.WakeOwner();
 
     internal IUiAutomationHost GetDialogAutomationForDiagnostics(Guid id, bool inspection) => _application.DialogAutomation(id, inspection);
 

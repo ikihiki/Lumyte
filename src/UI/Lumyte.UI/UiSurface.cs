@@ -7,18 +7,30 @@ namespace Lumyte.UI;
 public sealed partial class UiSurface : IDisposable
 {
     private readonly HashSet<UiElement> _treeValidators = new(ReferenceEqualityComparer.Instance);
+    private readonly UiUseEnvironment? _rootEnvironment;
     private UiElement _rootElement;
     private bool _isDisposed;
 
     /// <summary>Initializes a new instance of the <see cref="UiSurface"/> class.</summary>
     /// <param name="root">The passive root declaration.</param>
     public UiSurface(Widget root)
-        : this(root, independentContent: false)
+        : this(root, independentContent: false, environment: null)
     {
     }
 
     internal UiSurface(Widget root, bool independentContent)
+        : this(root, independentContent, environment: null)
     {
+    }
+
+    private UiSurface(Widget root, UiUseEnvironment? environment)
+        : this(root, independentContent: false, environment: environment)
+    {
+    }
+
+    private UiSurface(Widget root, bool independentContent, UiUseEnvironment? environment)
+    {
+        _rootEnvironment = environment;
         ValidateRoot(root);
         if (independentContent)
         {
@@ -29,7 +41,7 @@ public sealed partial class UiSurface : IDisposable
             }
         }
 
-        using var plan = new RebuildPlan(null, root, prepareArguments: PrepareAnimationUpdate);
+        using var plan = new RebuildPlan(null, root, prepareArguments: PrepareAnimationUpdate, rootEnvironment: _rootEnvironment);
         _rootElement = plan.Root;
         if (independentContent)
         {
@@ -40,7 +52,7 @@ public sealed partial class UiSurface : IDisposable
         try
         {
             PrepareAnimationUpdates(plan);
-            plan.Prepare();
+            plan.Prepare(this);
             PrepareSignalUpdates(plan);
             if (!_isDisposed)
             {

@@ -36,6 +36,8 @@ internal static class SampleCatalog
         new("ui-media", "UI: 借用mediaと進捗 (font file が必要)", Native("headless", "UI.Media")),
         new("ui-controls", "UI: 選択と切替の設定画面 (font file が必要)", Native("headless", "UI.Controls")),
         new("ui-layout", "UI: 一回計測のFlex・Wrap・Grid", Native("headless", "UI.Layout")),
+        new("ui-webview", "UI: engine-free selfcheck; experimental CEF requires explicit opt-in", Native("managed", "UI.WebView", "--selfcheck"), Native("cef-experimental", "UI.WebView.Cef", "--enable-experimental-cef")),
+        new("ui-webview-helper", "UI: engine-free helper IPC fixture (test-only)", Native("managed", "UI.WebView.Helper", "--selfcheck")),
         new("ui-scroll", "UI: 入れ子のwheel・touch・表示位置 (font file が必要)", Native("headless", "UI.Scroll")),
         new("ui-menus", "UI: メニュー・チェック・submenu・受動tooltip (font file が必要)", Native("headless", "UI.Menus")),
         new("ui-dialogs", "UI: 宣言的Dialog・通知FIFO・recipes (font file が必要)", Native("headless", "UI.Dialogs")),

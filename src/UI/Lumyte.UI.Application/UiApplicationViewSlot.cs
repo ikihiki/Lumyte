@@ -7,6 +7,9 @@ namespace Lumyte.UI.Application;
 /// <summary>Owns the current surface, binding, input and automation for one window.</summary>
 public sealed partial class UiApplicationViewSlot
 {
+    [ThreadStatic]
+    private static UiApplicationWindowContext? _constructingWindow;
+
     private readonly UiApplication _application;
     private readonly UiWindowId _window;
     private View? _current;
@@ -31,6 +34,8 @@ public sealed partial class UiApplicationViewSlot
             return _current?.Surface;
         }
     }
+
+    internal static UiApplicationWindowContext? ConstructingWindow => _constructingWindow;
 
     internal UiApplicationWindowContext Context { get; set; } = null!;
 
@@ -57,7 +62,7 @@ public sealed partial class UiApplicationViewSlot
 
         _application.ValidateEditors(root);
         _assigned = true;
-        _current = new(_application, _window, root);
+        _current = new(_application, _window, root, Context);
         _current.Binding = await _application.Windows.BindPresentationAsync(_window, _current.Surface, cancellationToken);
         cancellationToken.ThrowIfCancellationRequested();
         ObjectDisposedException.ThrowIf(_stopping, this);
@@ -171,11 +176,21 @@ public sealed partial class UiApplicationViewSlot
         private Task? _release;
         private ReleaseStage _releaseStage;
 
-        internal View(UiApplication application, UiWindowId window, Widget root)
+        internal View(UiApplication application, UiWindowId window, Widget root, UiApplicationWindowContext context)
         {
             _application = application;
             _window = window;
-            Surface = new(root, application.Dispatcher, application.AnimationClock);
+            UiApplicationWindowContext? previous = _constructingWindow;
+            _constructingWindow = context;
+            try
+            {
+                Surface = new(root, application.Dispatcher, application.AnimationClock, application.CreateRootEnvironment(context));
+            }
+            finally
+            {
+                _constructingWindow = previous;
+            }
+
             Visuals = application.AttachVisuals(Surface, () => _window);
             Visuals.Publish();
             Host = UiApplicationAutomationHost.Create(application, () => Surface);

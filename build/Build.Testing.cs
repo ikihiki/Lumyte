@@ -10,7 +10,7 @@ internal sealed partial class Build
     [Parameter("Test lane: all, cpu, integration, or gpu (managed only; classified lanes use one SDK test invocation over a generated .slnf).")]
     public string Lane { get; set; } = "all";
 
-    [Parameter("Test suite: managed, ui, aot, browser, wasm, browser-contracts, browser-audio, diagnostics-processes, diagnostics-ui, signals, text, windowing, rust.")]
+    [Parameter("Test suite: managed, ui, aot, browser, wasm, browser-contracts, browser-audio, diagnostics-processes, diagnostics-ui, signals, text, windowing, rust, native.")]
     public string Suite { get; set; } = "managed";
 
     [Parameter("Integration platform: host or browser. Browser executes only real browser API checks.")]
@@ -21,7 +21,7 @@ internal sealed partial class Build
     [Parameter("Independent browser API case: graphics, text, ui-application, ui-navigation, ui-pages, ui-transitions, or audio. Omit for the complete suite.")]
     public string? BrowserCase { get; set; }
 
-    [Parameter("UI feature: layout, controls, media, scroll, menus, dialogs, tabs, collections, virtualization, treeview, numeric, application, navigation, or pages.")]
+    [Parameter("UI feature: layout, controls, media, scroll, menus, dialogs, tabs, collections, virtualization, treeview, numeric, application, navigation, pages, or webview.")]
     public string? Feature { get; set; }
 
     [Parameter("Publish and execute the selected UI feature using strict NativeAOT.")]
@@ -78,7 +78,7 @@ internal sealed partial class Build
             throw new ArgumentException("Invalid --lane. Expected all, cpu, integration, or gpu.");
         }
 
-        if (Suite is not ("managed" or "ui" or "aot" or "browser" or "wasm" or "browser-contracts" or "browser-audio" or "diagnostics-processes" or "diagnostics-ui" or "signals" or "text" or "windowing" or "rust"))
+        if (Suite is not ("managed" or "ui" or "aot" or "browser" or "wasm" or "browser-contracts" or "browser-audio" or "diagnostics-processes" or "diagnostics-ui" or "signals" or "text" or "windowing" or "rust" or "native"))
         {
             throw new ArgumentException("Invalid --suite. See --help for supported suites.");
         }
@@ -113,7 +113,7 @@ internal sealed partial class Build
         }
     }
 
-    private bool TestNeedsCompilation => Platform != "browser" && Suite is not ("aot" or "browser" or "wasm" or "browser-contracts" or "browser-audio" or "rust") && !Aot;
+    private bool TestNeedsCompilation => Platform != "browser" && Suite is not ("aot" or "browser" or "wasm" or "browser-contracts" or "browser-audio" or "rust" or "native") && !Aot;
 
     private async Task RunSelectedTestsAsync()
     {
@@ -173,6 +173,7 @@ internal sealed partial class Build
             case "signals": await TestSignalsAsync().ConfigureAwait(false); break;
             case "text": await TestTextAsync().ConfigureAwait(false); break;
             case "windowing": await TestWindowingAsync().ConfigureAwait(false); break;
+            case "native": await TestCefSupervisorAsync().ConfigureAwait(false); break;
             case "rust": await TestRustAsync().ConfigureAwait(false); break;
         }
     }

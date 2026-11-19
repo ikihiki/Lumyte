@@ -498,6 +498,18 @@
     ]
   },
   {
+    "Project": "tests/UI/Lumyte.UI.WebView.Tests/Lumyte.UI.WebView.Tests.csproj",
+    "Default": "Cpu",
+    "IntegrationClasses": [
+      "HelperIsolationTests",
+      "CefStopRecoveryTests"
+    ],
+    "Lanes": [
+      "Cpu",
+      "Integration"
+    ]
+  },
+  {
     "Project": "tests/UI/Lumyte.UI.Windowing.Tests/Lumyte.UI.Windowing.Tests.csproj",
     "Default": "Cpu",
     "IntegrationClasses": [],

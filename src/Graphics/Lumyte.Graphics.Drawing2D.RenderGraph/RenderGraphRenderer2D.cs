@@ -65,6 +65,7 @@ public sealed class RenderGraphRenderer2D(DrawingCommandRenderers2D renderers, R
         ObjectDisposedException.ThrowIf(_disposed, this);
         ArgumentNullException.ThrowIfNull(graph);
         DrawList2D list = _list;
+        using IDisposable preparationImages = ImageResourceRegistry2D.Retain([list]);
         RenderTargetBinding2D target = _target;
         DrawingGraphBindings2D bindings = _bindings;
         if (graph.Device is null)
@@ -114,6 +115,7 @@ public sealed class RenderGraphRenderer2D(DrawingCommandRenderers2D renderers, R
         var owner = new PreparedDrawingPasses2D();
         try
         {
+            owner.Own(ImageResourceRegistry2D.Retain([list]));
             graph.AddPass("drawing2d.begin", _ => owner.BeginRecord()).KeepAlive();
             AppendClear(graph, target);
             await AppendCommandsAsync(graph, list, 0, list.Commands.Count, target with { LoadOp = AttachmentLoadOp.Load }, snapshot, owner, argumentPlan, cancellationToken).ConfigureAwait(false);

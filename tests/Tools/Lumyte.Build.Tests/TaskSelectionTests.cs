@@ -93,6 +93,7 @@ public sealed class TaskSelectionTests
     /// <param name="samples">Expected public samples.</param>
     /// <returns>The completed assertion.</returns>
     [Theory]
+    [InlineData("webview", "UI.WebView", "WebView.Helper,WebView")]
     [InlineData("layout", "UI", "Layout")]
     [InlineData("controls", "UI.Controls", "Controls")]
     [InlineData("media", "UI.Media,UI.Media.Parley", "Media")]
@@ -117,6 +118,11 @@ public sealed class TaskSelectionTests
         Assert.Equal(projects.Split(',').Select(name => (name.StartsWith("Diagnostics.", StringComparison.Ordinal) ? "tests/Diagnostics/Lumyte." : "tests/UI/Lumyte.") + name + ".Tests"), calls.Where(call => call[0] == "test").Select(call => call[1]));
         Assert.Equal(samples.Split(',').Select(name => "samples/Lumyte.UI." + name + ".Sample"), calls.Where(call => call[0] == "run").Select(call => call[Array.IndexOf(call, "--project") + 1]));
         Assert.Equal(projects.Split(',').Length + samples.Split(',').Length, calls.Length);
+        if (feature == "webview")
+        {
+            Assert.All(calls.Where(call => call[0] == "run"), call => Assert.Contains("--selfcheck", call));
+        }
+
         if (feature is "controls" or "media" or "scroll" or "menus" or "tabs" or "collections" or "virtualization" or "treeview" or "numeric")
         {
             Assert.All(calls.Where(call => call[0] == "run"), call => Assert.Contains("tests/Graphics/Lumyte.Graphics.Text.Parley.Tests/Fonts/DejaVuSans.ttf", call));

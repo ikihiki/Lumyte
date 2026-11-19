@@ -54,7 +54,7 @@ public sealed partial class UiSurface
                 _applyingRebuild = true;
                 try
                 {
-                    using var plan = new RebuildPlan(_rootElement, candidate, validators: _treeValidators, shared: _sharedElements, prepareArguments: PrepareAnimationUpdate);
+                    using var plan = new RebuildPlan(_rootElement, candidate, validators: _treeValidators, shared: _sharedElements, prepareArguments: PrepareAnimationUpdate, rootEnvironment: _rootEnvironment);
                     if (plan.Updates.Any(update => update.Next.RequiresViewportPreparation))
                     {
                         _forceViewportRebuild = true;
@@ -62,7 +62,7 @@ public sealed partial class UiSurface
                     }
 
                     PrepareAnimationUpdates(plan);
-                    plan.Prepare();
+                    plan.Prepare(this);
                     PrepareSignalUpdates(plan);
                     if (_isDisposed)
                     {
@@ -111,9 +111,9 @@ public sealed partial class UiSurface
         _applyingRebuild = true;
         try
         {
-            using var plan = new RebuildPlan(previous, next, true, _rootElement, _treeValidators, _sharedElements, PrepareAnimationUpdate, refreshContent: refreshContent);
+            using var plan = new RebuildPlan(previous, next, true, _rootElement, _treeValidators, _sharedElements, PrepareAnimationUpdate, rootEnvironment: _rootEnvironment, refreshContent: refreshContent);
             PrepareAnimationUpdates(plan);
-            plan.Prepare();
+            plan.Prepare(this);
             PrepareSignalUpdates(plan);
             if (!_isDisposed && _pendingRebuild is null && ReferenceEquals(previous.Surface, this))
             {
@@ -141,13 +141,13 @@ public sealed partial class UiSurface
         {
             if (_viewportContentPlans is { } proposals)
             {
-                proposals.Add(new RebuildPlan(element, _viewportProjection?.Configuration(element) ?? element.Widget, true, _rootElement, _treeValidators, _sharedElements, PrepareAnimationUpdate, refreshContent: true, baseline: _viewportProjection));
+                proposals.Add(new RebuildPlan(element, _viewportProjection?.Configuration(element) ?? element.Widget, true, _rootElement, _treeValidators, _sharedElements, PrepareAnimationUpdate, refreshContent: true, baseline: _viewportProjection, rootEnvironment: _rootEnvironment));
                 return;
             }
 
-            using var plan = new RebuildPlan(element, element.Widget, true, _rootElement, _treeValidators, _sharedElements, PrepareAnimationUpdate, refreshContent: true);
+            using var plan = new RebuildPlan(element, element.Widget, true, _rootElement, _treeValidators, _sharedElements, PrepareAnimationUpdate, refreshContent: true, rootEnvironment: _rootEnvironment);
             PrepareAnimationUpdates(plan);
-            plan.Prepare();
+            plan.Prepare(this);
             PrepareSignalUpdates(plan);
             if (!_isDisposed)
             {

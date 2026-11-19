@@ -6,6 +6,7 @@ internal sealed partial class Build
 
     private static readonly IReadOnlyDictionary<string, UiScenario> _uiScenarios = new Dictionary<string, UiScenario>(StringComparer.Ordinal)
     {
+        ["webview"] = new(["tests/UI/Lumyte.UI.WebView.Tests"], ["samples/Lumyte.UI.WebView.Helper.Sample", "samples/Lumyte.UI.WebView.Sample"], false, false),
         ["media"] = new(["tests/UI/Lumyte.UI.Media.Tests", "tests/UI/Lumyte.UI.Media.Parley.Tests"], ["samples/Lumyte.UI.Media.Sample"], true, false),
         ["layout"] = new(["tests/UI/Lumyte.UI.Tests"], ["samples/Lumyte.UI.Layout.Sample"], false, true),
         ["scroll"] = new(["tests/UI/Lumyte.UI.Tests", "tests/UI/Lumyte.UI.Controls.Tests"], ["samples/Lumyte.UI.Scroll.Sample"], true, true),
@@ -38,7 +39,7 @@ internal sealed partial class Build
     private async Task RunUiFeatureAsync()
     {
         UiScenario scenario = _uiScenarios[Feature!];
-        string[] arguments = scenario.Font ? ["tests/Graphics/Lumyte.Graphics.Text.Parley.Tests/Fonts/DejaVuSans.ttf"] : [];
+        string[] arguments = Feature == "webview" ? ["--selfcheck"] : scenario.Font ? ["tests/Graphics/Lumyte.Graphics.Text.Parley.Tests/Fonts/DejaVuSans.ttf"] : [];
         if (!Aot)
         {
             foreach (string project in scenario.Projects)

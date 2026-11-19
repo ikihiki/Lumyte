@@ -107,6 +107,8 @@
     <Project Path="samples/Lumyte.Graphics.DeviceCaps.Sample/Lumyte.Graphics.DeviceCaps.Sample.csproj" />
     <Project Path="samples/Lumyte.Graphics.Direct3D12.Sample/Lumyte.Graphics.Direct3D12.Sample.csproj" />
     <Project Path="samples/Lumyte.Graphics.Shared/Lumyte.Graphics.Shared.csproj" />
+    <Project Path="samples/Lumyte.UI.WebView.Sample/Lumyte.UI.WebView.Sample.csproj" />
+    <Project Path="samples/Lumyte.UI.WebView.Helper.Sample/Lumyte.UI.WebView.Helper.Sample.csproj" />
   </Folder>
   <Folder Name="/src/Audio/">
     <Project Path="src/Audio/Lumyte.Resources.Audio.DependencyInjection/Lumyte.Resources.Audio.DependencyInjection.csproj" />
@@ -213,6 +215,7 @@
     <Project Path="src/UI/Lumyte.UI.Windowing.TextInput/Lumyte.UI.Windowing.TextInput.csproj" />
     <Project Path="src/UI/Lumyte.UI.TextEditing.Automation/Lumyte.UI.TextEditing.Automation.csproj" />
     <Project Path="src/UI/Lumyte.UI.Automation/Lumyte.UI.Automation.csproj" />
+    <Project Path="src/UI/Lumyte.UI.WebView/Lumyte.UI.WebView.csproj" />
     <Project Path="src/UI/Lumyte.UI.Windowing.Automation/Lumyte.UI.Windowing.Automation.csproj" />
     <Project Path="src/UI/Lumyte.UI.Windowing.WindowSystem/Lumyte.UI.Windowing.WindowSystem.csproj" />
     <Project Path="src/UI/Lumyte.UI.Windowing/Lumyte.UI.Windowing.csproj" />
@@ -307,6 +310,7 @@
     <Project Path="tests/UI/Lumyte.UI.Controls.Tests/Lumyte.UI.Controls.Tests.csproj" />
     <Project Path="tests/UI/Lumyte.UI.Collections.Tests/Lumyte.UI.Collections.Tests.csproj" />
     <Project Path="tests/UI/Lumyte.UI.IntegrationTests/Lumyte.UI.IntegrationTests.csproj" />
+    <Project Path="tests/UI/Lumyte.UI.WebView.Tests/Lumyte.UI.WebView.Tests.csproj" />
     <Project Path="tests/UI/Lumyte.UI.Windowing.Tests/Lumyte.UI.Windowing.Tests.csproj" />
   </Folder>
   <Folder Name="/tools/colors/">

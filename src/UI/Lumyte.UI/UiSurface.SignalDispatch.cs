@@ -217,6 +217,12 @@ public sealed partial class UiSurface
             return CancelKey(keyCancel.Key) || consumed;
         }
 
+        if (input is UiCommittedTextInput text)
+        {
+            ArgumentNullException.ThrowIfNull(text.Text);
+            return _focusedElement is { } focused && IsFocusEligible(focused) && RouteInput(focused, text);
+        }
+
         if (input is UiKeyInput key)
         {
             return DispatchKey(key);

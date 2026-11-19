@@ -27,6 +27,13 @@ public sealed partial class UiSurface
         _animationClock = animationClock;
     }
 
+    internal UiSurface(Widget root, IUiDispatcher dispatcher, IMonotonicClock animationClock, UiUseEnvironment? environment)
+        : this(RequireDispatcher(RequireAnimationClock(root, animationClock), dispatcher), environment)
+    {
+        _signalDispatcher = dispatcher;
+        _animationClock = animationClock;
+    }
+
     /// <summary>Gets a value indicating whether any visible producer needs continuous time progression.</summary>
     public bool HasRunningAnimations => !_isDisposed && _animationUpdatesEnabled && _animationFailure is null && (HasVisibleAnimation(true) || HasPresenceAnimation(true) || HasVisibleFrameAnimation());
 
@@ -110,6 +117,9 @@ public sealed partial class UiSurface
                 if (_presenceEntries.Count != 0)
                 {
                     AdvanceVisuals(capturedTime!.Value);
+
+                    // Presence completion can hide a subtree after its frame callback ran.
+                    FreezeHiddenFrameAnimations();
                 }
 
                 if (_isDisposed || _animationProducers.Count == 0)

@@ -201,7 +201,7 @@
         },
         "Feature": {
           "type": "string",
-          "description": "UI feature: layout, controls, media, scroll, menus, tabs, collections, virtualization, treeview, numeric, application, navigation, or pages"
+          "description": "UI feature: layout, controls, media, scroll, menus, dialogs, tabs, collections, virtualization, treeview, numeric, application, navigation, pages, or webview"
         },
         "GalleryRepository": {
           "type": "string",
@@ -217,7 +217,7 @@
         },
         "NativeBackend": {
           "type": "string",
-          "description": "Native backend: parley, parley-wasm, wgpu, usvg, or direct3d12"
+          "description": "Native backend: parley, parley-wasm, wgpu, usvg, direct3d12, or cef-supervisor"
         },
         "NoBuild": {
           "type": "boolean",
@@ -325,7 +325,7 @@
         },
         "Suite": {
           "type": "string",
-          "description": "Test suite: managed, ui, aot, browser, wasm, browser-contracts, browser-audio, diagnostics-processes, diagnostics-ui, signals, text, windowing, rust"
+          "description": "Test suite: managed, ui, aot, browser, wasm, browser-contracts, browser-audio, diagnostics-processes, diagnostics-ui, signals, text, windowing, rust, native"
         },
         "TestConcurrency": {
           "type": "integer",
