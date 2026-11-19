@@ -32,6 +32,7 @@ fn serialized_native_lifecycle() {
         ("exit 0", 0),
         ("exit 134", 134),
         ("ulimit -c 0; kill -ABRT $$", 134),
+        ("ulimit -c 0; kill -TRAP $$", 133),
         ("printf trailing; exit 0", 0),
         ("setsid /bin/sleep 60 & exit 0", 0),
         (
@@ -237,4 +238,76 @@ fn serialized_native_lifecycle() {
     assert!(!r.join("portal-runtime/bus").exists());
     fs::remove_dir_all(r).unwrap();
     fs::remove_dir_all(base).unwrap();
+}
+
+// A portal bus is a sibling dependency, not a disposable orphan while the
+// primary is still performing its orderly close after the stop marker.
+#[test]
+fn cooperative_stop_preserves_bus_until_primary_exits() {
+    let supervisor = env!("CARGO_BIN_EXE_lumyte-cef-supervisor");
+    let base = std::env::temp_dir().join(format!("supervisor-dependency-{}", std::process::id()));
+    fs::create_dir(&base).unwrap();
+    let r = PathBuf::from(format!("/tmp/lumyte-browser-grace-{}", std::process::id()));
+    fs::create_dir(&r).unwrap();
+    fs::set_permissions(&r, fs::Permissions::from_mode(0o700)).unwrap();
+    fs::create_dir(r.join("portal-runtime")).unwrap();
+    let bus = base.join("dbus-daemon");
+    fs::write(
+        &bus,
+        r#"#!/bin/bash
+trap 'printf dead > "$TMPDIR/bus-dead"; exit 0' TERM
+: > "$TMPDIR/portal-runtime/bus"
+while :; do /bin/sleep .01; done
+"#,
+    )
+    .unwrap();
+    let helper = base.join("helper");
+    fs::write(
+        &helper,
+        r#"#!/bin/bash
+trap '' TERM
+: > "$TMPDIR/ready"
+while [[ ! -e "$TMPDIR/isolated-stop" ]]; do /bin/sleep .01; done
+/bin/sleep .15
+[[ ! -e "$TMPDIR/bus-dead" ]] || exit 42
+exit 0
+"#,
+    )
+    .unwrap();
+    for file in [&bus, &helper] {
+        fs::set_permissions(file, fs::Permissions::from_mode(0o700)).unwrap();
+    }
+    let mut child = Command::new(supervisor)
+        .args([
+            "--portal-session",
+            "--owner",
+            &std::process::id().to_string(),
+            "--root",
+            r.to_str().unwrap(),
+            "--stop",
+            r.join("isolated-stop").to_str().unwrap(),
+            "--",
+            helper.to_str().unwrap(),
+            "--lumyte-helper",
+        ])
+        .env("TMPDIR", &r)
+        .env("PATH", format!("{}:/usr/bin:/bin", base.display()))
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .unwrap();
+    let deadline = Instant::now() + Duration::from_secs(3);
+    while !r.join("ready").exists() {
+        assert!(Instant::now() < deadline, "primary startup handshake");
+        thread::sleep(Duration::from_millis(10));
+    }
+    fs::write(r.join("isolated-stop"), []).unwrap();
+    let code = wait(&mut child);
+    fs::remove_dir_all(&r).unwrap();
+    fs::remove_dir_all(&base).unwrap();
+    assert_eq!(
+        code, 0,
+        "bus must remain alive until the primary completes its own shutdown"
+    );
 }

@@ -93,6 +93,8 @@ Browser backendはprivateなLumyte.Execution runtimeとinstance WorkflowPortでs
 
 起動期限は既定10秒、初期文書の期限は既定15秒とし、正の有限な上限付き値だけを受理する。UI ownerはpipeのread/write、native初期化、プロセス終了を同期的に待たない。startupの無応答、ロードの無応答、EOF、異常packet、queue上限、native processの終了は理由付きFaultedにし、未処理命令を再送しない。中止・失敗時は所有child treeの終了とreader/writerの回収を行う。
 
+監督は終了要求後も、primaryの実終了をreapするまで専用bus・portalを先に停止しない。graceは既存8秒のcleanup期限内で最大2秒とし、応答しないprimaryにはその後SIGTERM、さらに500ms後SIGKILLを使って所有子孫を回収する。正常な依存順序を守ることと、hang時の有界な強制回収を両立する。返す終了statusはcleanup後にreapした実primaryの値であり、資源回収に成功しただけで異常終了を成功へ変換しない。
+
 helperの終了とGPU資源の退役を分ける。Window停止の第一段階はhelperの受入停止・プロセス終了までとし、ここでsceneの破棄を待たない。既存ApplicationのGPU drain・Surface detach後に、内部RetireWindowResourcesAsyncで画素・upload・画像のleaseを退役する。新しい終了判定が、既存のdetach到達条件と循環しないようにする。
 
 ### IPC、レイアウトと資源寿命

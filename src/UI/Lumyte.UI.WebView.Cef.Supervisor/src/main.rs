@@ -155,6 +155,7 @@ fn reap(primary: i32, result: &mut Option<i32>) -> io::Result<()> {
 }
 fn cleanup(primary: i32, result: &mut Option<i32>) -> io::Result<()> {
     let started = Instant::now();
+    let mut terminating_at = None;
     loop {
         reap(primary, result)?;
         let owned = children()?;
@@ -167,13 +168,22 @@ fn cleanup(primary: i32, result: &mut Option<i32>) -> io::Result<()> {
                 "owned children not reaped; root retained",
             ));
         }
+        // EOF/stop reaches the primary independently of this reaper. Keep its
+        // sibling bus/portal dependencies alive until it really exits, rather
+        // than disconnecting CEF's D-Bus thread during CefShutdown. A stuck or
+        // backpressured primary still enters the existing bounded kill phase.
+        if primary > 0 && result.is_none() && started.elapsed() < Duration::from_secs(2) {
+            thread::sleep(Duration::from_millis(10));
+            continue;
+        }
+        let terminating = terminating_at.get_or_insert_with(Instant::now);
         for pid in owned {
             match pidfd(pid) {
                 Ok(fd) => {
                     if children()?.contains(&pid)
                         && let Err(e) = send(
                             &fd,
-                            if started.elapsed() < Duration::from_millis(500) {
+                            if terminating.elapsed() < Duration::from_millis(500) {
                                 15
                             } else {
                                 9
@@ -320,11 +330,14 @@ fn run(o: Options) -> io::Result<i32> {
             thread::sleep(Duration::from_millis(10));
         }
     }
-    let code = result.unwrap_or_else(|| {
+    let interrupted_code = {
         let sig = STOP.load(Ordering::Relaxed);
         if sig == 0 { 143 } else { 128 + sig }
-    });
+    };
     cleanup(primary, &mut result)?;
+    // Return the actual primary status only after it and every owned child
+    // have been reaped. Never manufacture success from a cleanup receipt.
+    let code = result.unwrap_or(interrupted_code);
     validate_root(&o.root)?;
     let current_root = fs::symlink_metadata(&o.root)?;
     if current_root.dev() != root_identity.dev() || current_root.ino() != root_identity.ino() {
