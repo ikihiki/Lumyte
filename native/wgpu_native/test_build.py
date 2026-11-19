@@ -51,6 +51,54 @@ class ProvenanceTests(unittest.TestCase):
             build.verify(self.binary, self.provenance, "linux-x64")
 
 
+class PreparationTests(unittest.TestCase):
+    def test_preparation_fetches_but_never_builds_or_stages_artifacts(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            output = root / "output"
+            source = output / ("wgpu-native-" + build.COMMIT)
+            (source / "src").mkdir(parents=True)
+            (source / "ffi/webgpu-headers").mkdir(parents=True)
+            (source / "src/lib.rs").write_bytes(b"patched")
+            (source / "Cargo.lock").write_bytes(b"locked")
+            (root / "source-info.json").write_text(json.dumps({
+                "archiveSha256": build.ARCHIVE_SHA, "headerSha256": build.HEADER_SHA,
+                "cargoLockSha256": hashlib.sha256(b"locked").hexdigest()}))
+            (output / "provenance.json").write_bytes(b"must not stage")
+            arguments = ["build.py", "--output", str(output), "--prepare-only", "--cargo", "pinned-cargo"]
+            def version(arguments, environment):
+                return "cargo 1.99.1 (pinned)" if arguments[0] == "pinned-cargo" else "rustc 1.99.1 (pinned)"
+            with patch("sys.argv", arguments), patch.object(build, "__file__", str(root / "build.py")), \
+                    patch.object(build, "PATCHED_SHA", hashlib.sha256(b"patched").hexdigest()), \
+                    patch.object(build, "fetch", return_value=b"header"), \
+                    patch.object(build, "tool_output", side_effect=version), \
+                    patch.object(build.clang_runtime, "prepare") as prepare, \
+                    patch.object(build.subprocess, "run") as run, contextlib.redirect_stdout(io.StringIO()):
+                build.main()
+            prepare.assert_called_once()
+            run.assert_called_once()
+            self.assertEqual(["pinned-cargo", "fetch", "--locked", "--manifest-path", str(source / "Cargo.toml")], run.call_args.args[0])
+            self.assertEqual(b"must not stage", (output / "provenance.json").read_bytes())
+            self.assertFalse((output / "target").exists())
+
+
+class HeaderFreshnessTests(unittest.TestCase):
+    def test_identical_header_does_not_write(self):
+        with tempfile.TemporaryDirectory() as directory:
+            header = Path(directory) / "header.h"
+            header.write_bytes(b"pinned header")
+            with patch.object(Path, "write_bytes", side_effect=AssertionError("unexpected header rewrite")):
+                build.write_if_changed(header, b"pinned header")
+
+    def test_missing_or_changed_header_is_written(self):
+        with tempfile.TemporaryDirectory() as directory:
+            header = Path(directory) / "header.h"
+            build.write_if_changed(header, b"pinned header")
+            self.assertEqual(b"pinned header", header.read_bytes())
+            build.write_if_changed(header, b"updated header")
+            self.assertEqual(b"updated header", header.read_bytes())
+
+
 class ToolEncodingTests(unittest.TestCase):
     def test_utf8_metadata_ignores_windows_default_code_page(self):
         expected = {"packages": [{"name": "ā_日本語", "manifest_path": "C:/利用者/ā/Cargo.toml"}]}

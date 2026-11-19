@@ -70,7 +70,7 @@ configurationを省略してDebug／Releaseを混同せず、GPU testsは対応d
     dotnet run --project build -c Release -- --target Test --project tests/Graphics/Lumyte.Graphics.Validation.Tests --configuration Debug
     dotnet run --project build -c Release -- --target Test --project tests/Graphics/Lumyte.Graphics.RenderGraph.Tests --configuration Debug
     dotnet run --project build -c Release -- --target Test --project tests/Graphics/Lumyte.Graphics.Direct3D12.Tests --configuration Debug
-    dotnet run --project build -c Release -- --target CheckMarkdown
+    dotnet run --project build -c Release -- --target Quality --quality-scope markdown
     node tools/markdown/adr-rules.test.mjs
 
 対象projectをReleaseでも実行する。GPU実行時はLUMYTE_GRAPHICS_GPU_TESTS=1と実際のICDを指定し、
@@ -952,7 +952,7 @@ RADV、Mesa26.0.8-1ubuntu0.3で成功した。presentationや全GPU suiteは再�
     dotnet run --project build -c Release -- --target Test --project tests/Graphics/Lumyte.Graphics.Direct3D12.Tests --configuration Debug
     dotnet run --project build -c Release -- --target Test --project tests/Graphics/Lumyte.Graphics.Direct3D12.Tests --configuration Release
     LUMYTE_GRAPHICS_GPU_TESTS=1 VK_DRIVER_FILES=/usr/share/vulkan/icd.d/radeon_icd.json dotnet test tests/Graphics/Lumyte.Graphics.Tests --configuration Release --no-build --no-restore --filter 'FullyQualifiedName~UnmanagedShaderTransferTests|FullyQualifiedName~ColorShaderTransferTests' --logger trx --results-directory artifacts/test-results
-    dotnet run --project build -c Release -- --target CheckMarkdown
+    dotnet run --project build -c Release -- --target Quality --quality-scope markdown
 
 ログはartifacts/validation4-{fullhost,graphics-debug,d3d-debug,d3d-release,transfer-hardware,vulkaninfo,markdown}.logに
 保持する。Windows実D3D12、Browser実WebGPU、NativeAOT、物理画面／presentationの
@@ -994,7 +994,7 @@ EnableDebugLayerとは別の、Lumyteの管理側契約に対する診断であ�
     dotnet run --project build -c Release -- --target Test --project tests/Graphics/Lumyte.Graphics.Tests --configuration Debug
     dotnet run --project build -c Release -- --target Test --project tests/Graphics/Lumyte.Graphics.Tests --configuration Release
     LUMYTE_GRAPHICS_GPU_TESTS=1 VK_DRIVER_FILES=/usr/share/vulkan/icd.d/radeon_icd.json dotnet run --project build -c Release -- --target Test --project tests/Graphics/Lumyte.Graphics.Tests --configuration Release
-    dotnet run --project build -c Release -- --target CheckMarkdown
+    dotnet run --project build -c Release -- --target Quality --quality-scope markdown
 
 - 全ホストRelease: 2,972成功、失敗0、101スキップ。
 - Graphics Debug/Release: 各179成功、失敗0、80スキップ。
@@ -1101,7 +1101,7 @@ Use the activation/TMPDIR setup below and the official Fallout runner:
     dotnet run --project build -c Release -- --target Test --project tests/Graphics/Lumyte.Graphics.RenderGraph.Tests --configuration Release
     dotnet run --project build -c Release -- --target Test --project tests/Graphics/Lumyte.Graphics.Direct3D12.Tests --configuration Debug
     dotnet run --project build -c Release -- --target Test --project tests/Graphics/Lumyte.Graphics.Direct3D12.Tests --configuration Release
-    dotnet run --project build -c Release -- --target CheckMarkdown
+    dotnet run --project build -c Release -- --target Quality --quality-scope markdown
 
 Final targeted results:
 

@@ -6,8 +6,8 @@ Tooltipは明示的なIsOpenの変化で開閉し、実際のTextBox接続のfoc
 
 ```sh
 dotnet run --project samples/Lumyte.Samples -c Release -- --sample ui-menus --backend headless --configuration Release -- tests/Graphics/Lumyte.Graphics.Text.Parley.Tests/Fonts/DejaVuSans.ttf
-dotnet run --project build -c Release -- --target TestUiMenus
-dotnet run --project build -c Release -- --target TestUiMenusAot
+dotnet run --project build -c Release -- --target Test --suite ui --feature menus
+dotnet run --project build -c Release -- --target Test --suite ui --feature menus --aot
 ```
 
 Menuは既存Popupの通常内容であり、表示のisOpenを変える責務はアプリにあります。

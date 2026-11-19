@@ -10,6 +10,7 @@ public sealed class ResourceEnvironmentTests
     /// <summary>All declared services are observed once and remain tracked after registration inputs change.</summary>
     /// <param name="invalidateFirst">Whether the first or second independent service is invalidated.</param>
     /// <returns>Completion of the old and rebuilt generations and provider unsubscription.</returns>
+    [Trait("Execution", "Integration")]
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
@@ -54,6 +55,7 @@ public sealed class ResourceEnvironmentTests
 
     /// <summary>Changing the runtime's configuration later cannot redirect a registered environment's jobs.</summary>
     /// <returns>Completion of construction and release through the captured executor.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task ExecutorSelectionIsFrozenThroughReleaseAsync()
     {

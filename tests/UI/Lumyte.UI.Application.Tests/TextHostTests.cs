@@ -35,6 +35,7 @@ public sealed class TextHostTests
 
     /// <summary>Checks a hosted focus switch drains the old session before beginning another and connects controlled string updates.</summary>
     /// <returns>The verification.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task HostedEditorsShareOneBackendAndDrainBeforeSwitchingAsync()
     {

@@ -49,6 +49,7 @@ public sealed class UnifiedTransferInterfaceTests
 
     /// <summary>Vulkan consumes the same struct as a root and a GPU-loaded typed element.</summary>
     /// <returns>The completed readback checks in both validation modes.</returns>
+    [Trait("Execution", "Gpu")]
     [GpuFact]
     public async Task VulkanSameStructSupportsRootAndTypedBufferAsync()
     {
@@ -66,6 +67,7 @@ public sealed class UnifiedTransferInterfaceTests
 
     /// <summary>Wgpu consumes the same struct as a root and a GPU-loaded typed element.</summary>
     /// <returns>The completed readback checks in both validation modes.</returns>
+    [Trait("Execution", "Gpu")]
     [GpuFact]
     public async Task WgpuSameStructSupportsRootAndTypedBufferAsync()
     {

@@ -15,6 +15,7 @@ public sealed class MapVisualTests
 {
     /// <summary>Executes both host DPI scales against independent known interior and seam colors.</summary>
     /// <returns>The actual GPU readback checks.</returns>
+    [Trait("Execution", "Gpu")]
     [MapGpuFact]
     public async Task AdjacentExtentsTransparencyDpiParentClipAndOverlayAsync()
     {
@@ -78,6 +79,7 @@ public sealed class MapVisualTests
 
     /// <summary>A fractional source-tile scale must not double-own the pixel centered on a shared edge.</summary>
     /// <returns>The independent analytic seam oracle.</returns>
+    [Trait("Execution", "Gpu")]
     [MapGpuFact]
     public async Task FractionalZoomSharedEdgeOwnsEachPixelOnceAsync()
     {
@@ -107,6 +109,7 @@ public sealed class MapVisualTests
 
     /// <summary>A deterministic public camera path preserves alpha ownership and direct/retained output.</summary>
     /// <returns>The hardware movement oracle.</returns>
+    [Trait("Execution", "Gpu")]
     [MapGpuFact]
     public async Task DeterministicPanZoomPathMatchesRetainedAnalyticWaterAsync()
     {
@@ -160,6 +163,7 @@ public sealed class MapVisualTests
 
     /// <summary>Loaded children replace only their owned cells; translucent parent fallback never draws beneath them.</summary>
     /// <returns>The actual hardware fallback oracle.</returns>
+    [Trait("Execution", "Gpu")]
     [MapGpuFact]
     public async Task SpatialParentFallbackPartitionsChildAlphaWithoutOverlapAsync()
     {

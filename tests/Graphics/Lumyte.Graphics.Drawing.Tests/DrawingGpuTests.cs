@@ -14,41 +14,49 @@ public sealed class DrawingGpuTests
 {
     /// <summary>Checks unlit material color, HDR sampling, exposure and grayscale output.</summary>
     /// <returns>The asynchronous rendering check.</returns>
+    [Trait("Execution", "Gpu")]
     [DrawingGpuFact]
     public async Task UnlitModelAndEffectsRenderAsync() => await RenderAsync(lit: false, expected: 190);
 
     /// <summary>Checks normal-mapped PBR execution, emissive color, fog and fullscreen effects.</summary>
     /// <returns>The asynchronous rendering check.</returns>
+    [Trait("Execution", "Gpu")]
     [DrawingGpuFact]
     public async Task LitModelFogAndEffectsRenderAsync() => await RenderAsync(lit: true, expected: 95);
 
     /// <summary>Checks the base-color UV transform samples the selected texel rather than the original coordinates.</summary>
     /// <returns>The asynchronous rendering check.</returns>
+    [Trait("Execution", "Gpu")]
     [DrawingGpuFact]
     public async Task MaterialTextureTransformRendersAsync() => await RenderAsync(lit: false, expected: 37, transformed: true);
 
     /// <summary>Checks HDR emissive strength multiplies the emitted material color.</summary>
     /// <returns>The asynchronous rendering check.</returns>
+    [Trait("Execution", "Gpu")]
     [DrawingGpuFact]
     public async Task EmissiveStrengthRendersAsync() => await RenderAsync(lit: true, expected: 237, strongEmission: true);
 
     /// <summary>Checks straight-color grading returns premultiplied RGB and preserves scene alpha.</summary>
     /// <returns>The asynchronous rendering check.</returns>
+    [Trait("Execution", "Gpu")]
     [DrawingGpuFact]
     public async Task TransparentModelEffectsPreserveAlphaAsync() => await RenderAsync(lit: false, expected: 95, transparent: true);
 
     /// <summary>Checks tone mapping changes values and explicitly marks display-linear output.</summary>
     /// <returns>The asynchronous rendering check.</returns>
+    [Trait("Execution", "Gpu")]
     [DrawingGpuFact]
     public async Task SceneToneMappingRendersAsync() => await RenderAsync(lit: false, expected: 109, toneMap: true);
 
     /// <summary>Checks the vignette attenuates corners while preserving the center.</summary>
     /// <returns>The asynchronous rendering check.</returns>
+    [Trait("Execution", "Gpu")]
     [DrawingGpuFact]
     public async Task VignetteRendersAsync() => await RenderAsync(lit: false, expected: 190, vignette: 1);
 
     /// <summary>Checks smooth dielectric highlights against the analytic GGX peak under direct lighting.</summary>
     /// <returns>The asynchronous rendering checks.</returns>
+    [Trait("Execution", "Gpu")]
     [DrawingGpuFact]
     public async Task SmoothMaterialsRetainGgxHighlightsAsync()
     {
@@ -61,6 +69,7 @@ public sealed class DrawingGpuTests
 
     /// <summary>Checks rotating a constant normal map remains stable across uniform UV scales.</summary>
     /// <returns>The asynchronous rendering checks.</returns>
+    [Trait("Execution", "Gpu")]
     [DrawingGpuFact]
     public async Task NormalUvRotationIsIndependentOfDerivativeMagnitudeAsync()
     {

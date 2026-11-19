@@ -32,6 +32,8 @@ public static partial class Compose
             [ComposeParameter]
             public UiOrientation Orientation { get; set; }
 
+            internal bool DeferredPosition { get; init; }
+
             /// <inheritdoc/>
             protected override UiElement CreateElement() => new ScrollViewElement(this);
 

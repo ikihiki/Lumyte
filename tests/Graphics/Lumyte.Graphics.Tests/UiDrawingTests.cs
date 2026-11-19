@@ -16,6 +16,7 @@ public sealed class UiDrawingTests
 {
     /// <summary>Checks direct UI rendering and successive fixed-content frames on Vulkan.</summary>
     /// <returns>The asynchronous pixel verification.</returns>
+    [Trait("Execution", "Gpu")]
     [GpuFact]
     public async Task VulkanUiClippingAndRedrawAsync()
     {
@@ -25,6 +26,7 @@ public sealed class UiDrawingTests
 
     /// <summary>Checks direct UI rendering and successive fixed-content frames on wgpu.</summary>
     /// <returns>The asynchronous pixel verification.</returns>
+    [Trait("Execution", "Gpu")]
     [GpuFact]
     public async Task WgpuUiClippingAndRedrawAsync()
     {

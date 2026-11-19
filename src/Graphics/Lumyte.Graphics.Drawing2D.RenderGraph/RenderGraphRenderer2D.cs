@@ -26,14 +26,33 @@ public sealed class RenderGraphRenderer2D(DrawingCommandRenderers2D renderers, R
     private readonly DrawingGraphBindings2D _bindings = bindings ?? throw new ArgumentNullException(nameof(bindings));
     private readonly DrawingResourceState2D _resources = new(bindings.Graph.Device, resources, resourceOwner, validateResources);
 
+    private readonly IDisposable? _sharedUse;
+
     private bool _disposed;
     private int _preparing;
+
+    // Fixture-only sharing leaves arguments, targets and commands graph-local.
+    internal RenderGraphRenderer2D(DrawingCommandRenderers2D renderers, RenderGraphDrawList2D list, RenderTargetBinding2D target, DrawingGraphBindings2D bindings, DrawingResourceState2D sharedResources)
+        : this(renderers, list, target, bindings)
+    {
+        sharedResources.ValidateDevice(bindings.Graph.Device!);
+        _sharedUse = sharedResources.Retain();
+        _resources.Dispose();
+        _resources = sharedResources;
+    }
 
     /// <summary>Releases this host without disposing borrowed strategies or waiting for GPU work.</summary>
     public void Dispose()
     {
         _disposed = true;
-        _resources.Dispose();
+        if (_sharedUse is not null)
+        {
+            _sharedUse.Dispose();
+        }
+        else
+        {
+            _resources.Dispose();
+        }
     }
 
     /// <summary>Appends drawing passes to a shared graph and returns their fixed resource owner.</summary>

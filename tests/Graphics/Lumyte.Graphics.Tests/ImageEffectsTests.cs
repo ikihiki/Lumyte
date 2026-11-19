@@ -15,6 +15,7 @@ public sealed class ImageEffectsTests
 {
     /// <summary>Checks matrix algebra, finite composite gaps, and two-axis convolution on Vulkan.</summary>
     /// <returns>The asynchronous GPU readback checks.</returns>
+    [Trait("Execution", "Gpu")]
     [GpuFact]
     public async Task VulkanImageEffectReadbackAsync()
     {
@@ -29,6 +30,7 @@ public sealed class ImageEffectsTests
 
     /// <summary>Checks matrix algebra, finite composite gaps, and two-axis convolution on wgpu.</summary>
     /// <returns>The asynchronous GPU readback checks.</returns>
+    [Trait("Execution", "Gpu")]
     [GpuFact]
     public async Task WgpuImageEffectReadbackAsync()
     {

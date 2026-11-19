@@ -11,6 +11,7 @@ public sealed class TransferTests
     /// <summary>Checks byte-exact transfers across submissions and split command lists.</summary>
     /// <param name="split">Whether copies span two lists in one submission.</param>
     /// <returns>The asynchronous verification.</returns>
+    [Trait("Execution", "Gpu")]
     [AgilityTheory]
     [InlineData(false)]
     [InlineData(true)]
@@ -59,6 +60,7 @@ public sealed class TransferTests
 
     /// <summary>Checks mapping direction, cancellation, byte bounds and GPU-use validation.</summary>
     /// <returns>The asynchronous verification.</returns>
+    [Trait("Execution", "Gpu")]
     [AgilityFact]
     public async Task MappingAndCopyValidationAsync()
     {
@@ -96,6 +98,7 @@ public sealed class TransferTests
     }
 
     /// <summary>Checks adapter selection, lifetime and ownership boundaries.</summary>
+    [Trait("Execution", "Gpu")]
     [AgilityFact]
     public void DeviceAndOwnershipValidation()
     {

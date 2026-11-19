@@ -32,6 +32,7 @@ public sealed class GraphTests
     }
 
     /// <summary>Range workers claim disjoint chunks and stay within CPU concurrency.</summary>
+    [Trait("Execution", "Integration")]
     [Fact]
     public void ThreadPoolRangesRunInParallelWithinLimit()
     {
@@ -53,6 +54,7 @@ public sealed class GraphTests
     }
 
     /// <summary>A waiting owner does not occupy the sole CPU slot.</summary>
+    [Trait("Execution", "Integration")]
     [Fact]
     public void OwnerGateWaitDoesNotBlockIndependentCpuCommand()
     {
@@ -141,11 +143,56 @@ public sealed class GraphTests
     }
 
     /// <summary>Adjacent ranges with different worker counts retain independent claims across graph reuse.</summary>
-    /// <param name="mode">The CPU scheduling mode.</param>
-    [Theory]
-    [InlineData(CpuExecutionMode.Cooperative)]
-    [InlineData(CpuExecutionMode.ThreadPool)]
-    public void MultipleRangesWithDifferentChunkSizesCompleteExactlyOnce(CpuExecutionMode mode)
+    [Fact]
+    public void MultipleRangesWithDifferentChunkSizesCompleteExactlyOnceCooperative()
+        => MultipleRangesWithDifferentChunkSizesCompleteExactlyOnce(CpuExecutionMode.Cooperative);
+
+    /// <summary>Checks the same contract using actual worker execution.</summary>
+    [Trait("Execution", "Integration")]
+    [Fact]
+    public void MultipleRangesWithDifferentChunkSizesCompleteExactlyOnceThreadPool()
+        => MultipleRangesWithDifferentChunkSizesCompleteExactlyOnce(CpuExecutionMode.ThreadPool);
+
+    /// <summary>Cycles, cross-builder nodes, and empty graphs fail before submission.</summary>
+    [Fact]
+    public void InvalidGraphDefinitionsAreRejected()
+    {
+        var module = new GraphModule();
+        _ = new ExecutionRuntime([module]);
+        var builder = new JobGraphBuilder<GraphInput>();
+        Assert.Throws<InvalidOperationException>(() => builder.Build());
+        JobNodeId a = builder.Add("a", module.Prepare);
+        JobNodeId b = builder.Add("b", module.Apply);
+        builder.DependsOn(a, b);
+        builder.DependsOn(b, a);
+        Assert.Throws<InvalidOperationException>(() => builder.Build());
+        var other = new JobGraphBuilder<GraphInput>();
+        JobNodeId c = other.Add("c", module.Prepare);
+        Assert.Throws<ArgumentException>(() => builder.DependsOn(a, c));
+    }
+
+    /// <summary>Token cancellation wakes gate-blocked CPU work without executing its handler on Host.</summary>
+    [Trait("Execution", "Integration")]
+    [Fact]
+    public void CancellationWakesGatedThreadPoolCommand()
+    {
+        var module = new GraphModule { GatedCpu = true };
+        var runtime = new ExecutionRuntime([module]);
+        runtime.PrepareOnCurrentHost(OwnerPlacement.Host, CpuExecutionMode.ThreadPool, 1, new ExecutionOptions());
+        CompletedResult.Read(runtime.StartAsync());
+        var data = new GraphData(1);
+        var input = new GraphInput(data);
+        using var cancellation = new CancellationTokenSource();
+        ValueTask<Unit> result = runtime.Bind(module.Prepare).ExecuteAsync(input, cancellation.Token);
+        Assert.False(result.IsCompleted);
+        cancellation.Cancel();
+        Assert.True(SpinWait.SpinUntil(() => result.IsCompleted, TimeSpan.FromSeconds(5)));
+        Assert.Throws<OperationCanceledException>(() => CompletedResult.Read(result));
+        Assert.Empty(data.Events);
+        Stop(runtime, module);
+    }
+
+    private static void MultipleRangesWithDifferentChunkSizesCompleteExactlyOnce(CpuExecutionMode mode)
     {
         var module = new GraphModule();
         var runtime = new ExecutionRuntime([module]);
@@ -178,44 +225,6 @@ public sealed class GraphTests
             run.Dispose();
         }
 
-        Stop(runtime, module);
-    }
-
-    /// <summary>Cycles, cross-builder nodes, and empty graphs fail before submission.</summary>
-    [Fact]
-    public void InvalidGraphDefinitionsAreRejected()
-    {
-        var module = new GraphModule();
-        _ = new ExecutionRuntime([module]);
-        var builder = new JobGraphBuilder<GraphInput>();
-        Assert.Throws<InvalidOperationException>(() => builder.Build());
-        JobNodeId a = builder.Add("a", module.Prepare);
-        JobNodeId b = builder.Add("b", module.Apply);
-        builder.DependsOn(a, b);
-        builder.DependsOn(b, a);
-        Assert.Throws<InvalidOperationException>(() => builder.Build());
-        var other = new JobGraphBuilder<GraphInput>();
-        JobNodeId c = other.Add("c", module.Prepare);
-        Assert.Throws<ArgumentException>(() => builder.DependsOn(a, c));
-    }
-
-    /// <summary>Token cancellation wakes gate-blocked CPU work without executing its handler on Host.</summary>
-    [Fact]
-    public void CancellationWakesGatedThreadPoolCommand()
-    {
-        var module = new GraphModule { GatedCpu = true };
-        var runtime = new ExecutionRuntime([module]);
-        runtime.PrepareOnCurrentHost(OwnerPlacement.Host, CpuExecutionMode.ThreadPool, 1, new ExecutionOptions());
-        CompletedResult.Read(runtime.StartAsync());
-        var data = new GraphData(1);
-        var input = new GraphInput(data);
-        using var cancellation = new CancellationTokenSource();
-        ValueTask<Unit> result = runtime.Bind(module.Prepare).ExecuteAsync(input, cancellation.Token);
-        Assert.False(result.IsCompleted);
-        cancellation.Cancel();
-        Assert.True(SpinWait.SpinUntil(() => result.IsCompleted, TimeSpan.FromSeconds(5)));
-        Assert.Throws<OperationCanceledException>(() => CompletedResult.Read(result));
-        Assert.Empty(data.Events);
         Stop(runtime, module);
     }
 

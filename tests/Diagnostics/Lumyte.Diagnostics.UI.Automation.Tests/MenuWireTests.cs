@@ -32,11 +32,12 @@ public sealed class MenuWireTests
         string tail = ",\"kind\":\"count\",\"locator\":[{\"kind\":\"role\",\"role\":\"" + role + "\"}]}";
         Assert.Throws<JsonException>(() => UiRemoteSchema.ParsePlan("{\"schemaVersion\":8" + tail));
         Assert.Equal(9, UiRemoteSchema.ParsePlan("{\"schemaVersion\":9" + tail).SchemaVersion);
-        Assert.Throws<JsonException>(() => UiRemoteSchema.ParsePlan("{\"schemaVersion\":10" + tail));
+        Assert.Throws<JsonException>(() => UiRemoteSchema.ParsePlan("{\"schemaVersion\":11" + tail));
     }
 
     /// <summary>Real menu Check uses exclusive ordinary input, not semantic-role inference.</summary>
     /// <returns>The asynchronous check.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task RemoteMenuCheckingIsLeasedAndIdempotentAsync()
     {
@@ -56,6 +57,7 @@ public sealed class MenuWireTests
     /// <summary>Every old strict reader retains its exact field set and numeric metadata.</summary>
     /// <param name="version">The requested wire version.</param>
     /// <returns>The asynchronous check.</returns>
+    [Trait("Execution", "Integration")]
     [Theory]
     [InlineData(1)]
     [InlineData(2)]

@@ -9,6 +9,7 @@ public sealed class NativePassRetirementTests
 {
     /// <summary>Retirement releases unfinished render and compute passes without ending them on the lost device.</summary>
     /// <returns>Completion of native retirement confirmation and child cleanup.</returns>
+    [Trait("Execution", "Gpu")]
     [NativeGpuFact]
     public async Task LossAllowsDisposalOfUnfinishedPassesAsync()
     {

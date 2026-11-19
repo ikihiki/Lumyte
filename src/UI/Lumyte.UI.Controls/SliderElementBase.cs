@@ -74,6 +74,12 @@ public abstract class SliderElementBase<TWidget>(TWidget widget) : UiElement<TWi
         get;
     }
 
+    /// <summary>Gets a value indicating whether owned decorative content replaces the built-in thumb.</summary>
+    protected virtual bool HasThumbVisual => false;
+
+    /// <summary>Gets a value indicating whether owned content replaces the track.</summary>
+    protected virtual bool HasTrackVisual => false;
+
     /// <inheritdoc/>
     protected override bool PreservePointerGesture => true;
 
@@ -81,13 +87,37 @@ public abstract class SliderElementBase<TWidget>(TWidget widget) : UiElement<TWi
     protected override bool CacheRetainedDrawing => true;
 
     /// <inheritdoc/>
+    protected override bool UsesDefaultRecordingOrder => !HasTrackVisual;
+
+    /// <inheritdoc/>
     protected override bool HasAutomationActivePress => _gesture;
+
+    /// <inheritdoc/>
+    protected override IEnumerable<UiElement> GetInputChildren() => Array.Empty<UiElement>();
+
+    /// <inheritdoc/>
+    protected override IEnumerable<UiElement> GetAutomationChildren() => Array.Empty<UiElement>();
 
     /// <inheritdoc/>
     protected override UiInputResult OnProbePointerDown(Vector2 localPosition) => IsInsideInputBody(localPosition) ? UiInputResult.Handled : UiInputResult.StopPropagation;
 
     /// <inheritdoc/>
-    protected override Vector2 LayoutOverride(UiBoxConstraints constraints) => constraints.Constrain(Orientation == UiOrientation.Horizontal ? new(160, 24) : new(24, 160));
+    protected override Vector2 LayoutOverride(UiBoxConstraints constraints)
+    {
+        Vector2 size = constraints.Constrain(Orientation == UiOrientation.Horizontal ? new(160, 24) : new(24, 160));
+        foreach (UiElement child in Children)
+        {
+            LayoutChild(child, UiBoxConstraints.Tight(size));
+            SetChildOffset(child, Vector2.Zero);
+        }
+
+        return size;
+    }
+
+    /// <summary>Gets whether a specific thumb is replaced.</summary>
+    /// <param name="index">The lower-to-upper thumb index.</param>
+    /// <returns>Whether owned content replaces this thumb.</returns>
+    protected virtual bool HasThumbVisualAt(int index) => HasThumbVisual;
 
     /// <summary>Selects the thumb nearest a pointer, preserving deterministic ties.</summary>
     /// <param name="fraction">The numeric track fraction.</param>
@@ -282,11 +312,43 @@ public abstract class SliderElementBase<TWidget>(TWidget widget) : UiElement<TWi
     }
 
     /// <inheritdoc/>
+    protected override void RecordOverride(DrawingCanvas2D canvas)
+    {
+        if (!HasTrackVisual)
+        {
+            base.RecordOverride(canvas);
+            return;
+        }
+
+        RecordSelf(canvas);
+        foreach (UiElement child in Children)
+        {
+            RecordChild(child, canvas);
+        }
+
+        RecordBuiltinThumbs(canvas);
+    }
+
+    /// <inheritdoc/>
     protected override void OnRecord(DrawingCanvas2D canvas)
     {
-        canvas.FillRect(new(0, 0, ContentSize.X, ContentSize.Y), TrackColor);
+        if (!HasTrackVisual)
+        {
+            canvas.FillRect(new(0, 0, ContentSize.X, ContentSize.Y), TrackColor);
+            RecordBuiltinThumbs(canvas);
+        }
+    }
+
+    private void RecordBuiltinThumbs(DrawingCanvas2D canvas)
+    {
+        int index = 0;
         foreach (double value in ThumbValues)
         {
+            if (HasThumbVisualAt(index++))
+            {
+                continue;
+            }
+
             float position = (float)SliderScale.Fraction(value, Minimum, Maximum);
             if (Reversed)
             {

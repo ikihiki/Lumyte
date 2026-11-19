@@ -15,7 +15,7 @@ dotnet run --project samples/Lumyte.UI.Media.Sample -c Release --no-build -- tes
 solutionをCompileした場合は共通runnerから検査と実行をまとめられます。
 
 ```sh
-dotnet run --project build -c Release -- --target TestUiMedia --no-build --no-restore
+dotnet run --project build -c Release -- --target Test --suite ui --feature media --no-build --no-restore
 ```
 
 既定の画像は未供給placeholderです。準備済み画像の供給例とGPU完了までの所有者保持は

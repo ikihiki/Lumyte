@@ -17,6 +17,7 @@ namespace Lumyte.Graphics.Tests;
 /// <summary>Checks the complete 2D pipeline against independently specified GPU pixel results.</summary>
 public sealed partial class Drawing2DTests
 {
+    private static readonly AsyncLocal<SerialDrawingResources?> _serialResources = new();
     private static readonly AsyncLocal<bool> _fixedRecordEffects = new();
     private static readonly SRgba<float> _white = new(1, 1, 1, 1);
     private static readonly SRgba<float> _red = new(1, 0, 0, 1);
@@ -27,6 +28,7 @@ public sealed partial class Drawing2DTests
 
     /// <summary>Checks geometry, winding, transformed clips and coverage on Vulkan.</summary>
     /// <returns>The asynchronous GPU checks.</returns>
+    [Trait("Execution", "Gpu")]
     [GpuFact]
     public async Task VulkanGeometryAndCoverageAsync()
     {
@@ -37,6 +39,7 @@ public sealed partial class Drawing2DTests
 
     /// <summary>Checks geometry, winding, transformed clips and coverage on wgpu.</summary>
     /// <returns>The asynchronous GPU checks.</returns>
+    [Trait("Execution", "Gpu")]
     [GpuFact]
     public async Task WgpuGeometryAndCoverageAsync()
     {
@@ -47,6 +50,7 @@ public sealed partial class Drawing2DTests
 
     /// <summary>Checks linear-light paints and all COLRv1 composite modes on Vulkan.</summary>
     /// <returns>The asynchronous GPU checks.</returns>
+    [Trait("Execution", "Gpu")]
     [GpuFact]
     public async Task VulkanPaintAndCompositeAsync()
     {
@@ -58,6 +62,7 @@ public sealed partial class Drawing2DTests
 
     /// <summary>Checks linear-light paints and all COLRv1 composite modes on wgpu.</summary>
     /// <returns>The asynchronous GPU checks.</returns>
+    [Trait("Execution", "Gpu")]
     [GpuFact]
     public async Task WgpuPaintAndCompositeAsync()
     {
@@ -69,6 +74,7 @@ public sealed partial class Drawing2DTests
 
     /// <summary>Checks images, atlas sampling and external glyph representations on Vulkan.</summary>
     /// <returns>The asynchronous GPU checks.</returns>
+    [Trait("Execution", "Gpu")]
     [GpuFact]
     public async Task VulkanImagesAndGlyphRepresentationsAsync()
     {
@@ -79,6 +85,7 @@ public sealed partial class Drawing2DTests
 
     /// <summary>Checks images, atlas sampling and external glyph representations on wgpu.</summary>
     /// <returns>The asynchronous GPU checks.</returns>
+    [Trait("Execution", "Gpu")]
     [GpuFact]
     public async Task WgpuImagesAndGlyphRepresentationsAsync()
     {
@@ -89,10 +96,12 @@ public sealed partial class Drawing2DTests
 
     /// <summary>Checks layer effects, clip timing and backdrop replacement on Vulkan.</summary>
     /// <returns>The asynchronous GPU checks.</returns>
+    [Trait("Execution", "Gpu")]
     [GpuFact]
     public async Task VulkanLayersEffectsAndBackdropAsync()
     {
         using var device = VulkanDevice.Create();
+        using var reuse = new SerialDrawingResources(device);
         await CheckLayersAsync(device);
         await CheckEffectsAsync(device);
         await CheckBackdropAsync(device);
@@ -113,10 +122,12 @@ public sealed partial class Drawing2DTests
 
     /// <summary>Checks layer effects, clip timing and backdrop replacement on wgpu.</summary>
     /// <returns>The asynchronous GPU checks.</returns>
+    [Trait("Execution", "Gpu")]
     [GpuFact]
     public async Task WgpuLayersEffectsAndBackdropAsync()
     {
         using var device = WgpuDevice.Create();
+        using var reuse = new SerialDrawingResources(device);
         await CheckLayersAsync(device);
         await CheckEffectsAsync(device);
         await CheckBackdropAsync(device);
@@ -137,6 +148,7 @@ public sealed partial class Drawing2DTests
 
     /// <summary>Checks standalone preparation and sRGB encoding on Vulkan.</summary>
     /// <returns>The asynchronous GPU checks.</returns>
+    [Trait("Execution", "Gpu")]
     [GpuFact]
     public async Task VulkanStandaloneSrgbTargetAsync()
     {
@@ -146,6 +158,7 @@ public sealed partial class Drawing2DTests
 
     /// <summary>Checks standalone preparation and sRGB encoding on wgpu.</summary>
     /// <returns>The asynchronous GPU checks.</returns>
+    [Trait("Execution", "Gpu")]
     [GpuFact]
     public async Task WgpuStandaloneSrgbTargetAsync()
     {
@@ -625,7 +638,8 @@ public sealed partial class Drawing2DTests
     private static async Task<Vector4[]> RenderAsync(IGraphicDevice device, int width, int height, Action<RenderGraphCanvas2D> draw, IGraphicsTexture[]? inputs = null, float pixelScale = 1, bool useDefaultResources = false, bool individualPaths = false, Func<IGraphicsCommandBuffer, IGraphicsCommandBuffer>? observe = null)
     {
         useDefaultResources |= _fixedRecordEffects.Value;
-        using ExternalDrawingResources? resources = useDefaultResources ? null : new(device);
+        DrawingResourceState2D? shared = _serialResources.Value?.Get(device, useDefaultResources);
+        using ExternalDrawingResources? resources = useDefaultResources || shared is not null ? null : new(device);
         var canvas = new RenderGraphCanvas2D();
         canvas.Begin();
         draw(canvas);
@@ -649,7 +663,10 @@ public sealed partial class Drawing2DTests
         DrawingCommandRenderers2D strategies = individualPaths
             ? new(defaults.FillRect, defaults.FillRoundedRect, defaults.FillCircle, defaults.DrawLine, new IndividualPathRenderer(), defaults.StrokePath, defaults.DrawImage, defaults.DrawCoverageMask, defaults.DrawDistanceField, defaults.DrawMesh, defaults.DrawPaintGraph)
             : defaults;
-        using var renderer = new RenderGraphRenderer2D(strategies, list, new() { Texture = target, Description = description, LoadOp = AttachmentLoadOp.Clear, PixelScale = pixelScale }, bindings, resources?.Resources, resourceOwner: resources);
+        var targetBinding = new RenderTargetBinding2D { Texture = target, Description = description, LoadOp = AttachmentLoadOp.Clear, PixelScale = pixelScale };
+        using RenderGraphRenderer2D renderer = shared is null
+            ? new RenderGraphRenderer2D(strategies, list, targetBinding, bindings, resources?.Resources, resourceOwner: resources)
+            : new RenderGraphRenderer2D(strategies, list, targetBinding, bindings, shared);
         PreparedDrawingPasses2D drawing = await graph.Append2D(renderer);
         renderer.Dispose();
         TextureCopyLayout layout = device.GetTextureCopyLayout(description.Format);

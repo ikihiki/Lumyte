@@ -15,7 +15,7 @@ compilerやSlang等の開発ツールは、以下の共通環境で準備する�
 dotnet run --project build -c Release -- --target Compile
 dotnet run --project build -c Release -- --target Test
 dotnet run --project build -c Release -- --target Publish
-dotnet run --project build -c Release -- --target Pack
+dotnet run --project build -c Release -- --target Distribution --distribution-output packages
 ```
 
 .NET、Cargo、Slang、CMakeは各工程のworkerとして使用する。
@@ -141,7 +141,7 @@ GitHub の Windows runner は管理者権限で動くため、システム依存
 開発環境を有効化して、対象プロジェクトの書式確認とビルドを実行する。
 
 ```bash
-dotnet run --project build -c Release -- --target CheckFormat
+dotnet run --project build -c Release -- --target Quality --quality-scope managed
 dotnet run --project build -c Release -- --target Compile
 ```
 
@@ -178,7 +178,7 @@ mise run format-markdown
 `VCPKG_ROOT`は固定コミットのvcpkgを指す。Nativeプロジェクトを追加する際はmanifestとCMakeのtargetを定義し、共通runnerからconfigure／buildを呼ぶ。Native smokeは次の入口で実行する。
 
 ```sh
-dotnet run --project build -c Release -- --target NativeSmoke
+dotnet run --project build -c Release -- --target Verify --verify-scope native
 ```
 
 runnerはCMakeへvcpkgのtoolchainと対象tripletを渡す。非特権モードでは`LUMYTE_VULKAN_INCLUDE_DIR`と`LUMYTE_VULKAN_LIBRARY`も使用する。
@@ -236,7 +236,7 @@ mise run setup-wasm
 CHROME=/usr/bin/google-chrome mise run test-wasm
 ```
 
-`test-wasm`はFalloutの`TestWasm`を呼び、Browserサンプルのtrimmed publishと実ブラウザー上の.NET／WebGPU検証を順に実行します。Parleyの文字組み・COLR v1・MSDF/MTSDFと、全28composite・gradient境界条件も同じBrowser検証で確認します。既にインストール済みの pack は再利用します。ローカルで Chromium の実行ファイル名が `chromium` の場合、`CHROME` の指定は不要です。
+`test-wasm`はFalloutの`Test --suite wasm`を呼び、Browserサンプルのtrimmed publishと実ブラウザー上の.NET／WebGPU検証を順に実行します。Parleyの文字組み・COLR v1・MSDF/MTSDFと、全28composite・gradient境界条件も同じBrowser検証で確認します。既にインストール済みの pack は再利用します。ローカルで Chromium の実行ファイル名が `chromium` の場合、`CHROME` の指定は不要です。
 
 既存 CI の Linux x64 ジョブで同じタスクを実行し、出力ログをテスト結果 artifact に保存します。Browser CIはChrome for Testing 156.0.8078.47を固定し、同梱のSwiftShader libraryとICD manifestの存在を検査してから起動します。runnerの可変なsystem Chromeには依存しません。ANGLEとDawnの両方でSwiftShaderを明示選択する共通起動設定を使います。
 

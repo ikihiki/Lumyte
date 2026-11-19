@@ -16,6 +16,7 @@ public sealed class ResourceWatchRegistrationTests
 
     /// <summary>The manager owns subscription lifetime and tracks only inputs retained by the loaded graph.</summary>
     /// <returns>Completion of automatic startup, signal-driven reload and watcher shutdown.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task DirectManagerOwnsWatchingAndUpdatesLoadedTargetsAsync()
     {
@@ -71,6 +72,7 @@ public sealed class ResourceWatchRegistrationTests
 
     /// <summary>Trimming a build-only input keeps its provenance watched while a published parent uses it.</summary>
     /// <returns>Completion of build-input reclamation and automatic parent reload.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task TrimmedBuildInputsRemainWatchedUntilTheirParentIsReleasedAsync()
     {
@@ -114,6 +116,7 @@ public sealed class ResourceWatchRegistrationTests
 
     /// <summary>A source without notifications loads normally without allocating a background reload worker.</summary>
     /// <returns>Completion of loading and source ownership checks.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task SourcesWithoutNotificationsDoNotStartMonitoringAsync()
     {
@@ -131,6 +134,7 @@ public sealed class ResourceWatchRegistrationTests
 
     /// <summary>Reload settings can disable source monitoring without changing the stream provider or disposing its notifications.</summary>
     /// <returns>Completion of loading without an active watcher.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task DisabledReloadDoesNotSubscribeToTheSourceAsync()
     {
@@ -156,6 +160,7 @@ public sealed class ResourceWatchRegistrationTests
 
     /// <summary>All scopes share one source subscription, and scope disposal leaves the manager running.</summary>
     /// <returns>Completion of shared monitoring and ordered application shutdown.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task ScopesShareOneManagerAndSourceSubscriptionAsync()
     {
@@ -198,6 +203,7 @@ public sealed class ResourceWatchRegistrationTests
 
     /// <summary>Manager disposal cancels and joins a running rebuild before releasing its published output.</summary>
     /// <returns>Completion of cancellation, generation cleanup and DI service disposal.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task ManagerDisposalStopsReloadBeforeReleasingOutputsAsync()
     {
@@ -238,6 +244,7 @@ public sealed class ResourceWatchRegistrationTests
 
     /// <summary>An observable watcher failure does not interrupt disposal of the manager and its borrowed services.</summary>
     /// <returns>Completion of failed monitoring and successful application cleanup.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task WatchFailureDoesNotPreventManagerCleanupAsync()
     {
@@ -288,6 +295,7 @@ public sealed class ResourceWatchRegistrationTests
 
     /// <summary>Unloaded files do not cause source access or prevent a loaded resource from being revalidated.</summary>
     /// <returns>Completion of targeted and full revalidation.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task ReloadIgnoresUntrackedSourceHintsBeforeReadingRevisionsAsync()
     {

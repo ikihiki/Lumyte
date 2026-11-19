@@ -40,6 +40,7 @@ internal static class SampleCatalog
         new("ui-menus", "UI: メニュー・チェック・submenu・受動tooltip (font file が必要)", Native("headless", "UI.Menus")),
         new("ui-dialogs", "UI: 宣言的Dialog・通知FIFO・recipes (font file が必要)", Native("headless", "UI.Dialogs")),
         new("ui-tabs", "UI: 保持タブ・折り畳み・編集 (font file が必要)", Native("headless", "UI.Tabs")),
+        new("ui-virtualization", "UI: 固定長の仮想化一覧 (font file が必要)", Native("headless", "UI.Virtualization")),
         new("ui-collections", "UI: 項目・単一選択・非編集combo (font file が必要)", Native("headless", "UI.Collections")),
         new("ui-numeric", "UI: 数値・範囲・実editor入力 (font file が必要)", Native("headless", "UI.Numeric")),
         Managed("ui-functions", "UI: 関数コンポーネントとUseSignal", "UI.Functions"),

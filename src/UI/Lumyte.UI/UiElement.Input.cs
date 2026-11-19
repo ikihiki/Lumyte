@@ -16,8 +16,13 @@ public partial class UiElement
 
     internal bool BlocksAncestorPan => PreservePointerGesture;
 
+    internal bool HasPendingInputLifetime => PreserveRealization;
+
     /// <summary>Gets a value indicating whether ancestor touch panning must preserve this component gesture.</summary>
     protected virtual bool PreservePointerGesture => false;
+
+    /// <summary>Gets a value indicating whether an asynchronous input session still borrows this realization.</summary>
+    protected virtual bool PreserveRealization => false;
 
     internal UiInputResult InvokeInput(in UiInputContext context) => OnInput(in context);
 

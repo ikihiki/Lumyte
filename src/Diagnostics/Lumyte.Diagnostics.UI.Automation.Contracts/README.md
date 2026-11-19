@@ -27,3 +27,7 @@ schemaVersion 9はmenu／menuitem／tooltipのroleを追加します。新しい
 schemaVersion 8はtabview／tabitem／expanderの検索、expand／collapse、nullableなisExpandedを追加します。v1–7の厳密なfield集合と数値metadataは保持し、新しいroleをnoneへ投影します。v8以降は25 node fieldを公開します。expand／collapseは普通のheader probeと排他的leaseでUiExpandInputを配送し、既に目的値なら入力しません。
 
 schemaVersion 7はlistbox／listitem／comboboxの検索を追加します。通常入力に接続されたListBoxは既存select-optionを使い、ComboBoxはclick／pressと独立popup pageを使います。新しいfieldと数値commandを追加しません。v1–3の18、v4–5の23、v6の24 node fieldは保持し、新roleをnoneへ投影します。v6の数値情報は変更しません。
+
+## キー付き仮想項目
+
+schema 10では所有者locatorのGetByItemKey(key)がモデルキーを選択所有者の接続IDで限定します。TestIdとは別で、キーは非空・最大256文字です。Countとassertionは実体化済みの項目だけを読み、画面外の内容を構築しません。BringIntoViewAsyncとClickは通常の排他的入力leaseと実際のwindow hitを通して表示範囲を準備します。Observeだけのpageでは実体化・scrollを変更できません。wireの新しい検索kindはitem-key、入力kindはbring-itemです。v1〜v9のsnapshotの厳密なfield集合、数値metadataと権限境界は維持します。

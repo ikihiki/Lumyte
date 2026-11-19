@@ -4,24 +4,11 @@ using System.Runtime.InteropServices;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Xml.Linq;
-using Fallout.Common;
 
 namespace Lumyte.Build;
 
 internal sealed partial class Build
 {
-    private Target VerifyEnvironment => definition => definition
-        .DependsOn(CheckNativeFormat, CheckMarkdown, NativeSmoke);
-
-    private Target VerifySdk => definition => definition
-        .Executes(VerifySdkAsync);
-
-    private Target ConfigureLavapipe => definition => definition
-        .Executes(ConfigureLavapipeManifest);
-
-    private Target NativeSmoke => definition => definition
-        .Executes(RunNativeSmokeAsync);
-
     private async Task VerifySdkAsync()
     {
         using var global = JsonDocument.Parse(await File.ReadAllTextAsync(Path.Combine(RootDirectory, "global.json")).ConfigureAwait(false));

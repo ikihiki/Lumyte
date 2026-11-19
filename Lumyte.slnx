@@ -68,6 +68,7 @@
     <Project Path="samples/Lumyte.Signals.Sample/Lumyte.Signals.Sample.csproj" />
     <Project Path="samples/Lumyte.UI.Controls.Sample/Lumyte.UI.Controls.Sample.csproj" />
     <Project Path="samples/Lumyte.UI.Collections.Sample/Lumyte.UI.Collections.Sample.csproj" />
+    <Project Path="samples/Lumyte.UI.Virtualization.Sample/Lumyte.UI.Virtualization.Sample.csproj" />
     <Project Path="samples/Lumyte.UI.Menus.Sample/Lumyte.UI.Menus.Sample.csproj" />
     <Project Path="samples/Lumyte.UI.Tabs.Sample/Lumyte.UI.Tabs.Sample.csproj" />
     <Project Path="samples/Lumyte.UI.Dialogs.Sample/Lumyte.UI.Dialogs.Sample.csproj" />
@@ -285,6 +286,7 @@
   <Folder Name="/tests/Tools/">
     <Project Path="tests/Tools/Lumyte.Samples.Tests/Lumyte.Samples.Tests.csproj" />
     <Project Path="tests/Tools/Lumyte.Build.Tests/Lumyte.Build.Tests.csproj" />
+    <Project Path="tests/Tools/Lumyte.TestRunner.Tests/Lumyte.TestRunner.Tests.csproj" />
   </Folder>
   <Folder Name="/build/">
     <Project Path="build/_build.csproj">

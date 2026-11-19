@@ -30,6 +30,7 @@ public class NumericMemoryTextTests
     }
 
     /// <summary>Executes finite chunk, reservation and dependency-injection lifetime checks.</summary>
+    [Trait("Execution", "Integration")]
     [Fact]
     public void MemoryContracts() => Lumyte.Memory.Benchmark.BenchmarkChecks.Verify();
 

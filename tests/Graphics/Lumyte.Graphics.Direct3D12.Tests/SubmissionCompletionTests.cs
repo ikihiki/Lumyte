@@ -8,6 +8,7 @@ public sealed class SubmissionCompletionTests
 {
     /// <summary>Checks one caller can cancel without canceling other waiters or consuming the fence event.</summary>
     /// <returns>The asynchronous verification.</returns>
+    [Trait("Execution", "Gpu")]
     [AgilityFact]
     public async Task PendingWaitsShareSignalAndCancelIndependentlyAsync()
     {
@@ -43,6 +44,7 @@ public sealed class SubmissionCompletionTests
 
     /// <summary>Checks pending disposal is rejected without interrupting the native fence wait.</summary>
     /// <returns>The asynchronous verification.</returns>
+    [Trait("Execution", "Gpu")]
     [AgilityFact]
     public async Task NativeWaitSurvivesRejectedPendingDisposalAsync()
     {

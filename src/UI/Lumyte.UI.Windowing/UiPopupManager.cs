@@ -438,6 +438,16 @@ public sealed partial class UiPopupManager : IDisposable
             input = expand with { Position = at };
         }
 
+        if (input is UiBringItemInput bring)
+        {
+            if (!_windows.TryTransformPoint(window, snapshot.PresentationRoot, bring.Position, out Vector2 at))
+            {
+                throw new InvalidOperationException("coordinate-unavailable");
+            }
+
+            input = bring with { Position = at };
+        }
+
         if (input is UiSetNumericInput numeric)
         {
             if (!_windows.TryTransformPoint(window, snapshot.PresentationRoot, numeric.Position, out Vector2 at))
@@ -1218,6 +1228,34 @@ public sealed partial class UiPopupManager : IDisposable
             }
 
             return targetSurface.Dispatch(expand with { Position = destination.LocalPosition });
+        }
+
+        if (input is UiBringItemInput bring)
+        {
+            UiWindowHit? hit = _windows.HitTest(originRoot, bring.Position);
+            if (hit is not { } destination || destination.InputMode == UiWindowInputMode.Candidate
+                || (menu is not null && menu.Handle.State != UiPopupState.Open)
+                || Surface(destination.Window) is not { } targetSurface)
+            {
+                return false;
+            }
+
+            Popup? hitPopup = _popups.Values.FirstOrDefault(p => p.Window == destination.Window && !p.Closing && p.Mode == UiPopupInputMode.Menu && p.Handle.State == UiPopupState.Open);
+            if (menu is not null && hitPopup is null)
+            {
+                return false;
+            }
+
+            if (hitPopup is not null)
+            {
+                foreach (Popup child in _popups.Values.Where(p => p.Parent == hitPopup).ToArray())
+                {
+                    child.SuppressRestore = true;
+                    Close(child, UiPopupCloseReason.OutsidePress);
+                }
+            }
+
+            return targetSurface.Dispatch(bring with { Position = destination.LocalPosition });
         }
 
         if (input is UiSetNumericInput numeric)

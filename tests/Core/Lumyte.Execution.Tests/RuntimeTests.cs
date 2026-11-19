@@ -22,6 +22,7 @@ public sealed class RuntimeTests
     }
 
     /// <summary>Unprepared and wrong-host operations are rejected.</summary>
+    [Trait("Execution", "Integration")]
     [Fact]
     public void PreparationAndFixedHostAreRequired()
     {
@@ -79,6 +80,7 @@ public sealed class RuntimeTests
     }
 
     /// <summary>A failed cleanup is retried on the original owner without restarting resources.</summary>
+    [Trait("Execution", "Integration")]
     [Fact]
     public void FailedCleanupKeepsOwnerForRetry()
     {
@@ -125,6 +127,7 @@ public sealed class RuntimeTests
     }
 
     /// <summary>A cancellation after start preserves the actual result and does not complete early.</summary>
+    [Trait("Execution", "Integration")]
     [Fact]
     public void CancellationAfterStartRetainsActualResult()
     {
@@ -185,6 +188,7 @@ public sealed class RuntimeTests
     }
 
     /// <summary>Concurrent producers preserve each producer's order on one physical owner.</summary>
+    [Trait("Execution", "Integration")]
     [Fact]
     public void MultipleProducersDoNotLoseCommands()
     {
@@ -261,6 +265,7 @@ public sealed class RuntimeTests
     }
 
     /// <summary>Periodic updates run directly without an external producer loop.</summary>
+    [Trait("Execution", "Integration")]
     [Fact]
     public void DedicatedOwnerDrivesUpdatesIndependently()
     {

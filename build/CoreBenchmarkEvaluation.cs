@@ -4,7 +4,7 @@ using System.Text.Json.Nodes;
 
 namespace Lumyte.Build;
 
-// Data policy for BenchmarkCoreEvaluate. No clocks or benchmark execution lives here.
+// Data policy for Benchmark --benchmark-area core --benchmark-evaluate. No clocks or benchmark execution lives here.
 internal static class CoreBenchmarkEvaluation
 {
     internal static void Validate(string configuration, string filter, double timeout, string? category = null)
@@ -16,7 +16,7 @@ internal static class CoreBenchmarkEvaluation
 
         if (string.IsNullOrWhiteSpace(filter))
         {
-            throw new ArgumentException("BenchmarkCoreEvaluate requires a nonempty native BDN benchmark filter.");
+            throw new ArgumentException("Benchmark --benchmark-area core --benchmark-evaluate requires a nonempty native BDN benchmark filter.");
         }
 
         ValidateCategory(category);

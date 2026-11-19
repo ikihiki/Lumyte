@@ -83,6 +83,7 @@ public sealed class TextAndShaderCpuTests
     /// <summary>CPU compilation yields a real target artifact which survives transport parsing.</summary>
     /// <returns>The completed external compiler verification.</returns>
     [Fact]
+    [Trait("Execution", "Integration")]
     public async Task ShaderCompilerUsesRealSlangArtifactAsync()
     {
         var fixture = new ShaderCompilerBenchmarks();
@@ -101,6 +102,7 @@ public sealed class TextAndShaderCpuTests
     [InlineData("Latin")]
     [InlineData("Multiscript")]
     [InlineData("Wrapped")]
+    [Trait("Execution", "Integration")]
     public void ParleyShapesLicensedFontsAndRetainsSnapshots(string paragraph)
     {
         var fixture = new ParleyLayoutBenchmarks { Paragraph = paragraph };

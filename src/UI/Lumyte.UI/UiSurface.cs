@@ -100,6 +100,7 @@ public sealed partial class UiSurface : IDisposable
         _sharedElements.Clear();
         _signalDispatcher = null;
         _pendingRebuild = null;
+        ClearContentRefreshes();
         _treeValidators.Clear();
         try
         {

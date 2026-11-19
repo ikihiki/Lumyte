@@ -47,6 +47,7 @@ public sealed class VulkanDescriptorGenerationTests
 
     /// <summary>A dispatch seals sampled descriptors even without root arguments.</summary>
     /// <returns>The completed shader compilation and assertions.</returns>
+    [Trait("Execution", "Gpu")]
     [GpuFact]
     public async Task DispatchSealsAndCoalescesDescriptorGenerationsAsync()
     {
@@ -96,6 +97,7 @@ public sealed class VulkanDescriptorGenerationTests
     }
 
     /// <summary>Different canonical shapes allocate adequate pool descriptor counts and reclaim independently.</summary>
+    [Trait("Execution", "Gpu")]
     [GpuFact]
     public unsafe void DescriptorShapesUseSeparatePagesAndPruneImmediately()
     {
@@ -120,6 +122,7 @@ public sealed class VulkanDescriptorGenerationTests
     }
 
     /// <summary>Distinct table users serialize native pool allocation and release without claiming table mutation safety.</summary>
+    [Trait("Execution", "Gpu")]
     [GpuFact]
     public unsafe void PoolAllocationAcrossIndependentUsersIsSynchronized()
     {
@@ -142,6 +145,7 @@ public sealed class VulkanDescriptorGenerationTests
     }
 
     /// <summary>Outstanding allocator leases can be released after device destruction without native calls.</summary>
+    [Trait("Execution", "Gpu")]
     [GpuFact]
     public void AllocatorLeaseCanOutliveDevice()
     {

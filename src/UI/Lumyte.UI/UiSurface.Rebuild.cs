@@ -6,7 +6,12 @@ namespace Lumyte.UI;
 public sealed partial class UiSurface
 {
     private Widget? _pendingRebuild;
+    private Func<Widget>? _pendingViewportBuild;
+    private bool _forceViewportRebuild;
     private bool _applyingRebuild;
+    private List<RebuildPlan>? _viewportContentPlans;
+    private UiProposedTree? _viewportProjection;
+    private Dictionary<UiElement, UiElementContent> _viewportPreparedContent = new(ReferenceEqualityComparer.Instance);
 
     /// <summary>Queues a fresh root configuration for the next update boundary.</summary>
     /// <param name="root">The passive root declaration.</param>
@@ -21,9 +26,11 @@ public sealed partial class UiSurface
 
         ValidateRoot(root);
         _pendingRebuild = root;
+        _pendingViewportBuild = null;
+        _forceViewportRebuild = false;
     }
 
-    /// <summary>Adopts prepared configuration changes without computing layout.</summary>
+    /// <summary>Adopts prepared configuration changes without computing layout; virtual item models await UpdateLayout.</summary>
     public void UpdateTree()
     {
         using UiProfiling.Scope? profile = UiProfiling.Begin(1);
@@ -37,12 +44,23 @@ public sealed partial class UiSurface
                 return;
             }
 
+            if (_pendingRebuild is { } virtualCandidate && (_pendingViewportBuild is not null || _forceViewportRebuild || CollectElements(_rootElement).Any(element => element.Widget.RequiresViewportPreparation) || ContainsViewportDeclaration(virtualCandidate)))
+            {
+                return;
+            }
+
             if (_pendingRebuild is { } candidate)
             {
                 _applyingRebuild = true;
                 try
                 {
                     using var plan = new RebuildPlan(_rootElement, candidate, validators: _treeValidators, shared: _sharedElements, prepareArguments: PrepareAnimationUpdate);
+                    if (plan.Updates.Any(update => update.Next.RequiresViewportPreparation))
+                    {
+                        _forceViewportRebuild = true;
+                        return;
+                    }
+
                     PrepareAnimationUpdates(plan);
                     plan.Prepare();
                     PrepareSignalUpdates(plan);
@@ -56,6 +74,7 @@ public sealed partial class UiSurface
                         _pendingRebuild = null;
                     }
 
+                    _pendingViewportElements.Clear();
                     Publish(plan);
                 }
                 finally
@@ -64,6 +83,7 @@ public sealed partial class UiSurface
                 }
             }
 
+            ProcessContentRefreshes();
             ProcessSignals(true);
             ReconcileVisuals();
         }
@@ -106,7 +126,41 @@ public sealed partial class UiSurface
         }
     }
 
-    private void Publish(RebuildPlan plan)
+    internal UiElementContent? PreparedViewportContent(UiElement element) => _viewportPreparedContent.GetValueOrDefault(element);
+
+    internal void RefreshElementContent(UiElement element)
+    {
+        ThrowIfDisposed();
+        if (_layoutPass is not null || _applyingRebuild || _dispatchDepth != 0 || _recordDepth != 0 || !ReferenceEquals(element.PreparationSurface, this))
+        {
+            throw new InvalidOperationException("Content preparation requires an idle owning surface.");
+        }
+
+        _applyingRebuild = true;
+        try
+        {
+            if (_viewportContentPlans is { } proposals)
+            {
+                proposals.Add(new RebuildPlan(element, _viewportProjection?.Configuration(element) ?? element.Widget, true, _rootElement, _treeValidators, _sharedElements, PrepareAnimationUpdate, refreshContent: true, baseline: _viewportProjection));
+                return;
+            }
+
+            using var plan = new RebuildPlan(element, element.Widget, true, _rootElement, _treeValidators, _sharedElements, PrepareAnimationUpdate, refreshContent: true);
+            PrepareAnimationUpdates(plan);
+            plan.Prepare();
+            PrepareSignalUpdates(plan);
+            if (!_isDisposed)
+            {
+                Publish(plan);
+            }
+        }
+        finally
+        {
+            _applyingRebuild = false;
+        }
+    }
+
+    private void Publish(RebuildPlan plan, bool drainAdoption = false)
     {
         plan.FinalizeScrollBindings();
         UiProfiling.Add(1, 101, plan.Updates.Count);
@@ -145,6 +199,7 @@ public sealed partial class UiSurface
             {
                 update.Element.ContentReads = update.Content.Reads;
                 update.Element.RequiresFreshContentDescendants = update.Content.RequiresFreshDescendants;
+                update.Element.FreshItemRealizations = update.Content.FreshRealizations;
             }
 
             update.Element.ConnectPresence(this, update.Previous);
@@ -212,17 +267,53 @@ public sealed partial class UiSurface
         }
 
         List<Exception>? failures = null;
+
+        void Apply(Action? commit)
+        {
+            if (!drainAdoption)
+            {
+                commit?.Invoke();
+                return;
+            }
+
+            foreach (Action action in commit?.GetInvocationList() ?? [])
+            {
+                if (_isDisposed)
+                {
+                    break;
+                }
+
+                try
+                {
+                    action();
+                }
+                catch (Exception error)
+                {
+                    (failures ??= []).Add(error);
+                }
+            }
+        }
+
         try
         {
             foreach (ElementUpdate update in plan.Updates)
             {
-                update.Animations?.Commit();
-                update.Signals?.Commit();
+                Apply(update.Animations is { } animations ? animations.Commit : null);
+                Apply(update.Signals is { } signals ? signals.Commit : null);
+            }
+
+            if (drainAdoption)
+            {
+                // Mandatory component state must match every published subtree before user commits run.
+                foreach (ElementUpdate update in plan.Updates)
+                {
+                    Apply(update.ContentCommit);
+                }
             }
 
             if (!_isDisposed)
             {
-                UpdateHostValidation(plan);
+                Apply(() => UpdateHostValidation(plan));
             }
 
             foreach (ElementUpdate update in plan.Updates)
@@ -232,7 +323,7 @@ public sealed partial class UiSurface
                     break;
                 }
 
-                update.Commit?.Invoke();
+                Apply(drainAdoption ? update.Commit : update.ContentCommit + update.Commit);
             }
         }
         catch (Exception error)
