@@ -52,6 +52,8 @@ public sealed partial class FallbackUiWindowManager : IUiWindowManager, IUiWindo
     /// <inheritdoc/>
     public bool IsStopped => _stopping && _entries.Values.All(e => e.Terminal && e.Surface is null && e.Loans == 0 && (e.Registration is null || e.Registration.IsReleased));
 
+    internal long KeyboardTargetGeneration { get; private set; }
+
     /// <inheritdoc/>
     public UiWindowRegistration Register(IUiWindowSource source, UiWindowId? keyboardRoot = null)
     {
@@ -362,6 +364,7 @@ public sealed partial class FallbackUiWindowManager : IUiWindowManager, IUiWindo
         }
 
         _keyboardTargets[entry.Keyboard] = window;
+        KeyboardTargetGeneration++;
     }
 
     /// <inheritdoc />

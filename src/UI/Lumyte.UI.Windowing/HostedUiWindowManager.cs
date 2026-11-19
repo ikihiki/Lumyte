@@ -30,6 +30,8 @@ public sealed class HostedUiWindowManager : IUiWindowManager, IUiWindowPresentat
     /// <inheritdoc/>
     public bool IsStopped => _inner.IsStopped;
 
+    internal long KeyboardTargetGeneration => _inner.KeyboardTargetGeneration;
+
     /// <inheritdoc/>
     public UiWindowRegistration Register(IUiWindowSource source, UiWindowId? keyboardRoot = null) => _inner.Register(source, keyboardRoot);
 

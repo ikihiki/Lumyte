@@ -15,6 +15,7 @@ internal sealed class UiApplicationDiagnosticsParticipant : IUiApplicationPartic
     private readonly bool _enabled;
     private readonly Dictionary<Guid, UiAutomationDiagnosticRegistration> _windows = [];
     private readonly Dictionary<Guid, UiAutomationDiagnosticRegistration> _popups = [];
+    private readonly Dictionary<Guid, UiAutomationDiagnosticRegistration> _dialogs = [];
     private readonly Dictionary<Guid, List<UiAutomationDiagnosticRegistration>> _chrome = [];
     private readonly HashSet<Guid> _unregisteredPopups = [];
     private UiAutomationDiagnosticsRuntime? _runtime;
@@ -149,6 +150,29 @@ internal sealed class UiApplicationDiagnosticsParticipant : IUiApplicationPartic
             }
         }
 
+        if (_primary is { } dialogOwner && _windows.TryGetValue(dialogOwner.Id, out UiAutomationDiagnosticRegistration? dialogParent) && !dialogParent.IsReleased)
+        {
+            foreach (Lumyte.UI.Windowing.UiDialogOpened dialog in dialogOwner.CaptureDialogs())
+            {
+                if (_dialogs.ContainsKey(dialog.DialogId) || !dialogOwner.TryGetDialogSurface(dialog.DialogId, out UiSurface? surface) || surface is null)
+                {
+                    continue;
+                }
+
+                var host = new RegistrationHost(dialogOwner, surface, dialogOwner.GetDialogAutomationForDiagnostics(dialog.DialogId, _options.Target.AllowTextInspection));
+                try
+                {
+                    UiAutomationDiagnosticRegistration registration = Runtime.RegisterPopup(dialogParent, dialog.DialogId, Name(dialog.DialogId), surface, host, _options.Target);
+                    _dialogs.Add(dialog.DialogId, registration);
+                    dialogOwner.BindDialogLifetime(dialog.DialogId, registration);
+                }
+                catch (InvalidOperationException)
+                {
+                    // Capacity limits target publication, never the lifetime of a displayed dialog.
+                }
+            }
+        }
+
         var frame = new DiagnosticFrame(_frame++, _clock.GetTimestamp());
         _pump.Pump(frame, new(TimeSpan.FromMilliseconds(2), 32));
         _runtime.Advance(frame);
@@ -160,6 +184,11 @@ internal sealed class UiApplicationDiagnosticsParticipant : IUiApplicationPartic
             {
                 _primary = null;
             }
+        }
+
+        foreach (Guid id in _dialogs.Where(pair => pair.Value.IsReleased).Select(pair => pair.Key).ToArray())
+        {
+            _dialogs.Remove(id);
         }
 
         foreach (Guid id in _popups.Where(pair => pair.Value.IsReleased).Select(pair => pair.Key).ToArray())
