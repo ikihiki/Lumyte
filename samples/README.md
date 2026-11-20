@@ -121,3 +121,13 @@ dotnet run --project samples/Lumyte.Samples -c Release -- --sample ui-datagrid -
 dotnet run --project build -c Release -- --target Test --suite ui --feature datagrid
 dotnet run --project build -c Release -- --target Test --suite ui --feature datagrid --aot
 ```
+
+## 領域分割
+
+ui-splitview は明示 font を借用する Headless／Parley の三領域と入れ子の SplitView です。読み取り専用表と編集欄を通常内容へ置き、通常入力 lease の数値要求、ポインター取消し、キーボードによる境界操作と編集内容の保持を確認します。
+
+```sh
+dotnet run --project samples/Lumyte.Samples -c Release -- --sample ui-splitview --configuration Release -- tests/Graphics/Lumyte.Graphics.Text.Parley.Tests/Fonts/DejaVuSans.ttf
+dotnet run --project build -c Release -- --target Test --suite ui --feature splitview
+dotnet run --project build -c Release -- --target Test --suite ui --feature splitview --aot
+```

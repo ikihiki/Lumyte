@@ -585,6 +585,31 @@ public sealed class AutomationTests
         Assert.DoesNotContain(fixture.Surface.CaptureAutomationSnapshot().Nodes, node => node.GridCell?.RowKey == "999");
     }
 
+    /// <summary>A real hosted menu blocks separator mutation before accepted geometry changes.</summary>
+    /// <returns>The asynchronous check.</returns>
+    [Fact]
+    public async Task MenuScopeBlocksSplitViewBeforeResizeAsync()
+    {
+        using var fixture = new Fixture();
+        int changes = 0;
+        fixture.Surface.Rebuild(Lumyte.UI.Compose.Panel()[fixture.Root.Children[0], Lumyte.UI.Compose.SplitView(onChanged: _ => changes++)[Lumyte.UI.Compose.SizedBox(), Lumyte.UI.Compose.SizedBox()]]);
+        fixture.Surface.UpdateLayout();
+        var split = (SplitViewElement)fixture.Surface.RootElement.Children[1];
+        using var gate = new SemaphoreSlim(1, 1);
+        IUiAutomationHost Factory(UiSurface surface) => new Host(surface, () => fixture.Pump(1), gate);
+        await using var session = new UiPopupAutomationSession(fixture.Popups, Factory(fixture.Surface), Factory);
+        var page = new UiAutomationPage(session.CreateOwnerHost(fixture.Surface));
+        UiLocator divider = page.GetByRole(UiRole.SplitView).GetByRole(UiRole.Separator);
+        await divider.SetValueAsync(0.6);
+        fixture.Surface.UpdateLayout();
+        Assert.Equal(1, changes);
+        IReadOnlyList<float> before = split.PaneSizes;
+        fixture.Open();
+        await Assert.ThrowsAsync<UiAutomationException>(() => divider.SetValueAsync(0.8, new() { Timeout = TimeSpan.FromMilliseconds(30) }));
+        Assert.Equal(before, split.PaneSizes);
+        Assert.Equal(1, changes);
+    }
+
     private sealed class Host(UiSurface surface, Action nextFrame, SemaphoreSlim gate) : IUiAutomationHost
     {
         private static long _next;

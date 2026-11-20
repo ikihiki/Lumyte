@@ -72,7 +72,7 @@ internal static class C4Layout
             throw new InvalidOperationException("A child accepts exactly one parent placement operation.");
         }
 
-        if (!context.IsOrdinaryChild(widget, widget.ParentData[0].Kind == UiParentDataKind.Grid))
+        if (!context.IsOrdinaryChild(widget, widget.ParentData[0].Kind))
         {
             throw new InvalidOperationException("Placement requires the matching direct ordinary parent slot.");
         }

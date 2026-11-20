@@ -56,6 +56,7 @@
     <Project Path="benchmarks/Core/Lumyte.Worlds.Benchmark/Lumyte.Worlds.Benchmark.csproj" />
   </Folder>
   <Folder Name="/samples/">
+    <Project Path="samples/Lumyte.UI.SplitView.Sample/Lumyte.UI.SplitView.Sample.csproj" />
     <Project Path="samples/Lumyte.Maps.Browser.Sample/Lumyte.Maps.Browser.Sample.csproj" />
     <Project Path="samples/Lumyte.Maps.Sample/Lumyte.Maps.Sample.csproj" />
     <Project Path="samples/Lumyte.UI.Layout.Sample/Lumyte.UI.Layout.Sample.csproj" />

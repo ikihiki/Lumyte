@@ -12,6 +12,16 @@ public partial class UiElement
 
     internal virtual bool PrepareViewportContent() => false;
 
+    internal virtual IReadOnlyList<WidgetDefinition>[]? PrepareDeclaredSlots(WidgetDefinition next, IReadOnlyList<WidgetDefinition>[] slots, bool retainUninitialized) => null;
+
+    internal virtual bool RetainUninitializedSlot(int slot) => true;
+
+    internal virtual Action? TakeViewportNotification() => null;
+
+    internal virtual void DiscardViewportPreparation()
+    {
+    }
+
     internal virtual void AcceptViewportPreparation()
     {
     }

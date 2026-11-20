@@ -66,6 +66,7 @@ public sealed partial class UiSurface
                         ? [Array.AsReadOnly(new[] { content.Content })]
                         : widget.ChildCollections.Select((slot, index) => ReferenceEquals(element.Widget, widget) && element.IsMounted && !slot.IsPortal
                             ? (IReadOnlyList<Widget>)element.Slots[index].Select(child => child.Widget).ToArray() : slot).ToArray();
+                    declaredSlots = element.PrepareDeclaredSlots(widget, declaredSlots, retainUninitialized && ReferenceEquals(element, changedRoot) && !widget.RebuildsChildTree) ?? declaredSlots;
                     var slots = new IReadOnlyList<UiElement>[declaredSlots.Length];
                     bool childrenChanged = slots.Length != element.Slots.Count;
                     for (int slotIndex = 0; slotIndex < slots.Length; slotIndex++)
@@ -80,7 +81,7 @@ public sealed partial class UiSurface
 
                         IReadOnlyList<UiElement>[] beforeSlots = baseline?.Slots(element) ?? element.Slots.Select(slot => (IReadOnlyList<UiElement>)slot).ToArray();
                         IReadOnlyList<UiElement> before = slotIndex < beforeSlots.Length ? beforeSlots[slotIndex] : Array.Empty<UiElement>();
-                        if (retainUninitialized && ReferenceEquals(element, changedRoot) && !widget.RebuildsChildTree && definition is { IsInitialized: false } && slotIndex < element.Slots.Count)
+                        if (retainUninitialized && ReferenceEquals(element, changedRoot) && !widget.RebuildsChildTree && definition is { IsInitialized: false } && slotIndex < element.Slots.Count && element.RetainUninitializedSlot(slotIndex))
                         {
                             slots[slotIndex] = before;
                             unchanged.UnionWith(before);

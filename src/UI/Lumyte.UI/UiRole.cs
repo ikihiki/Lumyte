@@ -101,4 +101,10 @@ public enum UiRole
 
     /// <summary>A read-only semantic table cell.</summary>
     GridCell,
+
+    /// <summary>A finite multi-pane layout.</summary>
+    SplitView,
+
+    /// <summary>A focusable resizable boundary between panes.</summary>
+    Separator,
 }
