@@ -31,6 +31,7 @@ public sealed partial class UiLocator
 
         var owner = new UiLocator(Page, _queries[..index]);
         string key = _queries[index].ItemKey!;
+        string? columnKey = _queries.FirstOrDefault(query => query.ColumnKey is not null)?.ColumnKey;
         while (true)
         {
             run.Check();
@@ -39,19 +40,19 @@ public sealed partial class UiLocator
             if (currentOwner is not null)
             {
                 RequireAction(run, currentOwner, UiAutomationActions.SelectOption);
-                UiAutomationNode? realized = current.Nodes.SingleOrDefault(node => node.SelectionGroup == currentOwner.Id && node.OptionKey == key);
+                UiAutomationNode? realized = current.Nodes.SingleOrDefault(node => node.SelectionGroup == currentOwner.Id && (columnKey is null ? node.OptionKey == key : node.GridCell is { } cell && cell.RowKey == key && cell.ColumnKey == columnKey));
                 if (realized is not null && Actionable(realized, null, out _))
                 {
                     return;
                 }
             }
 
-            if (await owner.RevealOptionAsync(run, key))
+            if (await owner.RevealOptionAsync(run, key, columnKey))
             {
                 await run.NextFrameAsync("complete item range preparation after owner input");
                 UiAutomationSnapshot snapshot = await run.SnapshotAsync();
                 UiAutomationNode? group = owner.Single(run, snapshot);
-                if (group is not null && snapshot.Nodes.Any(node => node.SelectionGroup == group.Id && node.OptionKey == key))
+                if (group is not null && snapshot.Nodes.Any(node => node.SelectionGroup == group.Id && (columnKey is null ? node.OptionKey == key : node.GridCell is { } cell && cell.RowKey == key && cell.ColumnKey == columnKey) && Actionable(node, null, out _)))
                 {
                     return;
                 }

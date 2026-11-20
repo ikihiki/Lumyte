@@ -15,6 +15,8 @@ internal sealed class CollectionItem : Widget
 
     internal WidgetChildren Content { get; }
 
+    internal bool PassiveRow { get; set; }
+
     internal Func<bool>? Expanded { get; set; }
 
     internal Action<bool>? Expand { get; set; }

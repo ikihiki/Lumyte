@@ -3,6 +3,7 @@ using Lumyte.Diagnostics.UI.Automation;
 using Lumyte.Diagnostics.UI.Automation.Contracts;
 using Lumyte.Input.Abstractions;
 using Lumyte.UI.Automation;
+using Lumyte.UI.Collections;
 using Lumyte.UI.Windowing.Automation;
 using Xunit;
 
@@ -538,6 +539,50 @@ public sealed class AutomationTests
         Assert.Equal(0, f.Clicks);
         popup.Close();
         f.Pump();
+    }
+
+    /// <summary>Menu ownership rejects a covered grid header and offscreen cell before model callbacks or reveal.</summary>
+    /// <returns>The asynchronous check.</returns>
+    [Fact]
+    public async Task MenuScopeRejectsGridSortAndCellRevealBeforeStateChangesAsync()
+    {
+        using var fixture = new Fixture();
+        int comparisons = 0;
+        int factories = 0;
+        var comparer = Comparer<int>.Create((left, right) =>
+        {
+            comparisons++;
+            return left.CompareTo(right);
+        });
+        Lumyte.UI.Compose.Definitions.Widget Header(DataGridColumn<int> column, Collections.Compose.Definitions.DataGrid<int> owner) => Lumyte.UI.Compose.SizedBox();
+        Lumyte.UI.Compose.Definitions.Widget Cell(DataGridCellContext<int> cell, Collections.Compose.Definitions.DataGrid<int> owner)
+        {
+            factories++;
+            return Lumyte.UI.Compose.SizedBox();
+        }
+
+        Collections.Compose.Definitions.DataGrid<int> gridDeclaration = Collections.Compose.DataGrid<int>(items: Enumerable.Range(0, 1000).ToArray(), keySelector: value => value.ToString(System.Globalization.CultureInfo.InvariantCulture), columns: new[] { new DataGridColumn<int>("value", "Value", 100, comparer: comparer) }, testId: "grid", height: 100, virtualization: new UiItemVirtualization(20, 0))[
+            Collections.Compose.DataGridFactory<int>().Header()[Header], Collections.Compose.DataGridFactory<int>().Cell()[Cell]];
+        fixture.Surface.Rebuild(Lumyte.UI.Compose.Panel()[fixture.Root.Children[0], gridDeclaration]);
+        fixture.Surface.UpdateLayout();
+        DataGridElement<int> grid = Assert.IsType<DataGridElement<int>>(fixture.Surface.RootElement.Children[1]);
+        int before = factories;
+        using var gate = new SemaphoreSlim(1, 1);
+        IUiAutomationHost Factory(UiSurface surface) => new Host(surface, () => fixture.Pump(1), gate);
+        await using var session = new UiPopupAutomationSession(fixture.Popups, Factory(fixture.Surface), Factory);
+        var page = new UiAutomationPage(session.CreateOwnerHost(fixture.Surface));
+        UiAutomationException editing = await Assert.ThrowsAsync<UiAutomationException>(() => page.GetByTestId("grid").GetByItemKey("999").GetByColumnKey("value").FillAsync("not an editor"));
+        Assert.Equal(UiAutomationFailureKind.UnsupportedAction, editing.Kind);
+        Assert.Equal(before, factories);
+        fixture.Open();
+        await Assert.ThrowsAsync<UiAutomationException>(() => page.GetByRole(UiRole.Button, "Value").ClickAsync(new() { Timeout = TimeSpan.FromMilliseconds(30) }));
+        await Assert.ThrowsAsync<UiAutomationException>(() => page.GetByTestId("grid").GetByItemKey("999").GetByColumnKey("value").BringIntoViewAsync(new() { Timeout = TimeSpan.FromMilliseconds(30) }));
+        await Assert.ThrowsAsync<UiAutomationException>(() => page.GetByTestId("grid").GetByItemKey("999").GetByColumnKey("value").FocusAsync(new() { Timeout = TimeSpan.FromMilliseconds(30) }));
+        Assert.Equal(0, comparisons);
+        Assert.Equal(before, factories);
+        Assert.Equal(DataGridSortDirection.None, grid.Sort.Direction);
+        Assert.Null(grid.SelectedKey);
+        Assert.DoesNotContain(fixture.Surface.CaptureAutomationSnapshot().Nodes, node => node.GridCell?.RowKey == "999");
     }
 
     private sealed class Host(UiSurface surface, Action nextFrame, SemaphoreSlim gate) : IUiAutomationHost

@@ -92,4 +92,13 @@ public enum UiRole
 
     /// <summary>A hierarchical item.</summary>
     TreeItem,
+
+    /// <summary>A read-only tabular collection.</summary>
+    DataGrid,
+
+    /// <summary>A semantic table row.</summary>
+    GridRow,
+
+    /// <summary>A read-only semantic table cell.</summary>
+    GridCell,
 }

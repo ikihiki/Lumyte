@@ -21,6 +21,24 @@ public sealed class LauncherTests
         Assert.Empty(fixture.Descendants("ProjectReference"));
     }
 
+    /// <summary>DataGrid selects the standard headless consumer and keeps the explicit Release/font arguments.</summary>
+    [Fact]
+    public void DataGridSampleSelectsPublicHeadlessConsumer()
+    {
+        using var console = new TestConsole();
+        var options = SampleOptions.Parse(["--sample", "ui-datagrid", "--configuration", "Release", "--", "font.ttf"]);
+        (SampleDefinition sample, SampleBackend backend) = SampleSelector.Select(SampleCatalog.All, options, console);
+        Assert.Equal("ui-datagrid", sample.Id);
+        Assert.Equal("headless", backend.Id);
+        Assert.Equal("samples/Lumyte.UI.DataGrid.Sample", backend.Project);
+        Assert.Equal("Release", options.Configuration);
+        Assert.Equal(new[] { "font.ttf" }, options.Arguments);
+        Assert.Empty(console.Output);
+        string root = SampleHost.FindRoot(AppContext.BaseDirectory);
+        var solution = XDocument.Load(Path.Combine(root, "Lumyte.slnx"));
+        Assert.Contains(solution.Descendants("Project"), element => (string?)element.Attribute("Path") == backend.Project + "/Lumyte.UI.DataGrid.Sample.csproj");
+    }
+
     /// <summary>TreeView selects the public headless hierarchy consumer.</summary>
     [Fact]
     public void TreeViewSampleSelectsHeadlessConsumer()
