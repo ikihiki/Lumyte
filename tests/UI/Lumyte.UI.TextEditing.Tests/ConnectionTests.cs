@@ -842,6 +842,40 @@ public sealed class ConnectionTests
         Assert.Equal(3, Assert.IsType<Collections.ListBoxElement<int>>(fixture.Surface.RootElement).Items.Count);
     }
 
+    /// <summary>Real Parley preedit and one backend session survive finite pane viewport changes.</summary>
+    [Fact]
+    public void SplitViewResizeRepublishesCurrentImeGeometryWithoutReplacingSession()
+    {
+        using var fixture = new Fixture(split: true);
+        Assert.True(fixture.Surface.TryFocus(fixture.Editor));
+        fixture.Pump();
+        Session session = fixture.Service.Current!;
+        TextDocument document = fixture.Document;
+        var composition = new TextCompositionSnapshot(Guid.NewGuid(), new(0, 0), []);
+        using (TextDocumentTransaction edit = document.BeginEdit(TextEditOrigin.Platform))
+        {
+            edit.SetComposition(composition);
+            edit.Replace(new(0, 0), "かな", new(1, 1));
+            edit.Commit();
+        }
+
+        fixture.Pump();
+        TextInputGeometry before = fixture.Connection.Geometry!;
+        fixture.Source.Size = new(400, 200);
+        fixture.Pump();
+        TextInputGeometry after = fixture.Connection.Geometry!;
+        Assert.Same(document, fixture.Editor.Document);
+        Assert.Same(session, fixture.Service.Current);
+        Assert.True(session.Status.IsActive);
+        Assert.Equal(composition.Id, document.CaptureSnapshot().Composition!.Id);
+        Assert.NotSame(before, after);
+        Assert.NotEqual(before.Viewport, after.Viewport);
+        Assert.NotEqual(before.Caret.X, after.Caret.X);
+        Assert.Equal(document.CaptureSnapshot().Revision, after.DocumentRevision);
+        Assert.Equal(fixture.Editor.CurrentLayout!.DocumentRevision, after.DocumentRevision);
+        Assert.True(after.LayoutRevision > before.LayoutRevision);
+    }
+
     private static TextBoxElement Element(UiSurface surface, Lumyte.UI.Compose.Definitions.Widget declaration)
     {
         var pending = new Stack<UiElement>();
@@ -876,7 +910,8 @@ public sealed class ConnectionTests
         /// <param name="numeric">An optional actual numeric editor declaration.</param>
         /// <param name="panel">Zero for none, one for Expander, two for tabs.</param>
         /// <param name="virtualized">Whether to place the editor in a bounded virtual item range.</param>
-        public Fixture(bool multipleEditors = false, bool decorated = false, bool scrolled = false, Compose.Definitions.NumericBox? numeric = null, int panel = 0, bool virtualized = false)
+        /// <param name="split">Whether to place the editor in a real finite SplitView pane.</param>
+        public Fixture(bool multipleEditors = false, bool decorated = false, bool scrolled = false, Compose.Definitions.NumericBox? numeric = null, int panel = 0, bool virtualized = false, bool split = false)
         {
             using Stream font = File.OpenRead(Path.Combine(AppContext.BaseDirectory, "Fonts/DejaVuSans.ttf"));
             string family = _engine.AddFont(font);
@@ -910,7 +945,13 @@ public sealed class ConnectionTests
                     : Controls.Compose.TabView(selectedKey: "a")[Controls.Compose.TabItem(key: "a")[Controls.Compose.TabItem.Content()[editor]], Controls.Compose.TabItem(key: "b")]);
             }
 
-            if (virtualized)
+            if (split)
+            {
+                Surface.Dispose();
+                Surface = new(Lumyte.UI.Compose.SplitView()[Lumyte.UI.Compose.SizedBox(), editor]);
+            }
+
+            if (virtualized || split)
             {
                 Surface.SetViewport(Source.Size);
                 Surface.UpdateLayout();

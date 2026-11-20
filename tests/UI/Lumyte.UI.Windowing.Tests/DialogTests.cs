@@ -462,6 +462,37 @@ public sealed class DialogTests
         }
     }
 
+    /// <summary>A hosted modal blocks a real divider series before any accepted resize.</summary>
+    [Fact]
+    public void HostedModalBlocksSplitViewPointerMutation()
+    {
+        using var fixture = new DialogFixture();
+        var open = Signal.Create(false);
+        int changes = 0;
+        fixture.Set(Panel()[SplitView(onChanged: _ => changes++)[SizedBox(), SizedBox()], Dialog("modal-split", "Modal", isOpen: open, initialClientSize: new(80, 60))[Button(width: 20, height: 20)]]);
+        var split = (SplitViewElement)fixture.Base.Surface.RootElement.Children[0];
+        UiAutomationNode boundary = fixture.Base.Surface.CaptureAutomationSnapshot().Nodes.Single(node => node.Role == UiRole.Separator);
+        var point = new System.Numerics.Vector2(boundary.ActionableBounds.X + 2, boundary.ActionableBounds.Y + 20);
+        fixture.Base.Send(new UiPointerInput(8, UiPointerPhase.Down, point));
+        fixture.Base.Send(new UiPointerInput(8, UiPointerPhase.Move, point + new System.Numerics.Vector2(10, 0)));
+        fixture.Base.Send(new UiPointerInput(8, UiPointerPhase.Up, point));
+        fixture.Pump();
+        Assert.Equal(1, changes);
+        open.Value = true;
+        fixture.Pump();
+        Assert.Single(fixture.Dialogs.CaptureDialogs());
+        IReadOnlyList<float> before = split.PaneSizes;
+        boundary = fixture.Base.Surface.CaptureAutomationSnapshot().Nodes.Single(node => node.Role == UiRole.Separator);
+        point = new(boundary.ActionableBounds.X + 2, boundary.ActionableBounds.Y + 20);
+        Assert.Null(fixture.Base.Popups.ProbePointer(fixture.Base.Surface, point).ActivationTarget);
+        fixture.Base.Send(new UiPointerInput(9, UiPointerPhase.Down, point));
+        fixture.Base.Send(new UiPointerInput(9, UiPointerPhase.Move, point + new System.Numerics.Vector2(20, 0)));
+        fixture.Base.Send(new UiPointerInput(9, UiPointerPhase.Up, point));
+        fixture.Pump();
+        Assert.Equal(before, split.PaneSizes);
+        Assert.Equal(1, changes);
+    }
+
     private sealed class DelayedLifetime(Task gate) : IAsyncDisposable
     {
         public ValueTask DisposeAsync() => new(gate);

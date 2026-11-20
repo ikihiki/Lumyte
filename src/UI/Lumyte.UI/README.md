@@ -223,3 +223,22 @@ ScrollViewは0〜1個の内容を有限viewportへ配置する。両軸の有限
 UiWheelInputのdeltaは論理pixelで正方向が内容末尾。入れ子は軸別残余を祖先へ渡す。
 UiPointerInput.DeviceがTouchの場合だけslop後にpanし、通常mouseとTextBoxの選択は維持する。
 UiSurface.BringIntoViewは対象ローカル矩形を祖先viewportまで移動する。慣性・仮想化は含まない。
+
+## 境界を操作できる領域分割
+
+SplitView は通常内容を有限の領域へ分割します。with の Pane は元の子へ重みと最小寸法を保存し、配置用ラッパーを増やしません。
+
+```csharp
+using Lumyte.UI;
+using static Lumyte.UI.Compose;
+
+var panes = SplitView(orientation: UiOrientation.Horizontal)[
+    SizedBox(with: [SplitView.Pane(minimum: 80)]),
+    SizedBox(with: [SplitView.Pane(weight: 2, minimum: 100)])];
+```
+
+両軸に有限の制約が必要です。最小寸法の合計が利用可能な長さを超えると同比率で縮め、親領域からあふれません。空と一領域も合法です。通常の子の同一性と編集状態を保持し、境界だけが入力とフォーカスを所有します。
+
+境界の主軸の矢印は8単位、Shift／Control付きは40単位、Home／Endは隣接領域の最小寸法を満たす両端へ移動します。SmallStep と LargeStep で変更できます。取消しは受理済みの配分を維持し、OnCommitted を呼びません。変更要求は次の成功したレイアウトで受理し、OnChanged を一回通知します。宣言の重みが変わった場合だけ通知なしでリセットし、無関係な引数の更新では操作後の配分を維持します。
+
+SplitView と Separator の論理 Automation 役割を公開します。Separator の SetValue は隣接二領域に対する0〜1の連続比率を要求し、同じ最小寸法へ制限されます。診断クライアントでは schema 13 が必要です。部品自身は Signal や宣言へ値を書き戻さず、永続化は利用側が明示的に行います。

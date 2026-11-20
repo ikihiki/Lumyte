@@ -1,7 +1,7 @@
 namespace Lumyte.UI;
 
 /// <summary>Provides passive parent placement operations on existing declarations.</summary>
-public static class UiParentDataFactories
+public static partial class UiParentDataFactories
 {
     /// <summary>Places the same widget in an explicit grid cell.</summary>
     /// <param name="factory">The Grid factory.</param>

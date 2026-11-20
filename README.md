@@ -13,6 +13,7 @@ dotnet run --project build -c Release -- --target Test
 必要なcompiler・SDKの準備は開発環境のセットアップを参照してください。
 
 - [サンプル一覧と共通ランチャー](samples/README.md)
+- [境界を操作できる有限領域分割](samples/Lumyte.UI.SplitView.Sample/README.md)
 - [固定長の仮想化一覧](samples/Lumyte.UI.Virtualization.Sample/README.md)
 - [型付き項目と単一選択](src/UI/Lumyte.UI.Collections/README.md)／[既存Popupへのadapter](src/UI/Lumyte.UI.Controls.Windowing/README.md)
 - [テストの分類と実行手順](tests/README.md)／[ベンチマーク一覧](benchmarks/README.md)

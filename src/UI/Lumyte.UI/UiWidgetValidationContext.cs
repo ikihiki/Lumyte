@@ -56,9 +56,9 @@ public sealed class UiWidgetValidationContext
         return _tree.GetParent(widget, _receiver);
     }
 
-    internal bool IsOrdinaryChild(Widget widget, bool grid)
+    internal bool IsOrdinaryChild(Widget widget, UiParentDataKind kind)
     {
         UsesTree = true;
-        return _tree.IsOrdinaryChild(widget, _receiver, grid);
+        return _tree.IsOrdinaryChild(widget, _receiver, kind);
     }
 }

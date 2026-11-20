@@ -42,6 +42,7 @@ internal static class SampleCatalog
         new("ui-menus", "UI: メニュー・チェック・submenu・受動tooltip (font file が必要)", Native("headless", "UI.Menus")),
         new("ui-dialogs", "UI: 宣言的Dialog・通知FIFO・recipes (font file が必要)", Native("headless", "UI.Dialogs")),
         new("ui-tabs", "UI: 保持タブ・折り畳み・編集 (font file が必要)", Native("headless", "UI.Tabs")),
+        new("ui-splitview", "UI: 有限ペイン分割・境界操作 (font file が必要)", Native("headless", "UI.SplitView")),
         new("ui-datagrid", "UI: 読み取り専用表・列幅・並べ替え (font file が必要)", Native("headless", "UI.DataGrid")),
         new("ui-treeview", "UI: 遅延階層・展開・キー表示 (font file が必要)", Native("headless", "UI.TreeView")),
         new("ui-virtualization", "UI: 固定長の仮想化一覧 (font file が必要)", Native("headless", "UI.Virtualization")),

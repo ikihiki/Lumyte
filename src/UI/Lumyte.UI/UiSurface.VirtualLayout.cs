@@ -126,6 +126,7 @@ public sealed partial class UiSurface
             throw new InvalidOperationException("Viewport callbacks exceeded the bounded owner update depth.");
         }
 
+        bool inputGeometryChanged = _rootElement.IsLayoutDirty || initial is not null;
         _viewportPreparationDepth++;
         var ownedPlans = new List<RebuildPlan>();
         var touched = new HashSet<UiElement>(ReferenceEqualityComparer.Instance);
@@ -254,6 +255,10 @@ public sealed partial class UiSurface
                     foreach (UiElement element in nodes)
                     {
                         element.AcceptViewportPreparation();
+                        if (element.TakeViewportNotification() is { } notification)
+                        {
+                            notifications.Add(notification);
+                        }
                     }
 
                     committed = true;
@@ -287,7 +292,11 @@ public sealed partial class UiSurface
 
                     try
                     {
-                        InvalidateInput();
+                        if (inputGeometryChanged || combined is not null)
+                        {
+                            InvalidateInput();
+                        }
+
                         UpdateInput();
                         CompleteVirtualPresentation();
                     }
@@ -355,6 +364,7 @@ public sealed partial class UiSurface
                 if (!committed)
                 {
                     element.CompletePreparedLayout(false);
+                    element.DiscardViewportPreparation();
                     if (element is ScrollViewElement scroll)
                     {
                         scroll.PreparationController.DiscardProposedGeometry();

@@ -21,6 +21,24 @@ public sealed class LauncherTests
         Assert.Empty(fixture.Descendants("ProjectReference"));
     }
 
+    /// <summary>SplitView selects the standard headless consumer and keeps the explicit Release/font arguments.</summary>
+    [Fact]
+    public void SplitViewSampleSelectsPublicHeadlessConsumer()
+    {
+        using var console = new TestConsole();
+        var options = SampleOptions.Parse(["--sample", "ui-splitview", "--configuration", "Release", "--", "font.ttf"]);
+        (SampleDefinition sample, SampleBackend backend) = SampleSelector.Select(SampleCatalog.All, options, console);
+        Assert.Equal("ui-splitview", sample.Id);
+        Assert.Equal("headless", backend.Id);
+        Assert.Equal("samples/Lumyte.UI.SplitView.Sample", backend.Project);
+        Assert.Equal("Release", options.Configuration);
+        Assert.Equal(new[] { "font.ttf" }, options.Arguments);
+        Assert.Empty(console.Output);
+        string root = SampleHost.FindRoot(AppContext.BaseDirectory);
+        var solution = XDocument.Load(Path.Combine(root, "Lumyte.slnx"));
+        Assert.Contains(solution.Descendants("Project"), element => (string?)element.Attribute("Path") == backend.Project + "/Lumyte.UI.SplitView.Sample.csproj");
+    }
+
     /// <summary>DataGrid selects the standard headless consumer and keeps the explicit Release/font arguments.</summary>
     [Fact]
     public void DataGridSampleSelectsPublicHeadlessConsumer()

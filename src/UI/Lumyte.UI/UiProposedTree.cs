@@ -62,7 +62,7 @@ internal sealed class UiProposedTree
         return Array.AsReadOnly(children.Select(Configuration).ToArray());
     }
 
-    internal bool IsOrdinaryChild(Widget widget, UiElement? receiver, bool grid)
+    internal bool IsOrdinaryChild(Widget widget, UiElement? receiver, UiParentDataKind kind)
     {
         EnsureIndex();
         UiElement child = Resolve(widget, receiver);
@@ -72,7 +72,13 @@ internal sealed class UiProposedTree
         }
 
         Widget configuration = Configuration(parent);
-        WidgetChildren? ordinary = grid ? (configuration as Compose.Definitions.Grid)?.Children : (configuration as Compose.Definitions.Flex)?.Children;
+        WidgetChildren? ordinary = kind switch
+        {
+            UiParentDataKind.Grid => (configuration as Compose.Definitions.Grid)?.Children,
+            UiParentDataKind.Flex => (configuration as Compose.Definitions.Flex)?.Children,
+            UiParentDataKind.SplitView => (configuration as Compose.Definitions.SplitView)?.Children,
+            _ => null,
+        };
         if (ordinary is null)
         {
             return false;
