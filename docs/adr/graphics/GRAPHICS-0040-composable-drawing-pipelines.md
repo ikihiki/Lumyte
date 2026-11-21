@@ -1,4 +1,4 @@
-# ADR-GRAPHICS-0040: 型付きデータフローから描画パイプラインを構築する
+# ADR-GRAPHICS-0040: 直列チェーンと型付き分岐で描画パイプラインを構築する
 
 - 状態: 採用
 - 日付: 2026-11-17
@@ -19,7 +19,7 @@ renderer の作者は、CPU で形状を準備し、Compute で coverage を作�
 
 ## 決定
 
-`Stage(implementation, inputs...)` が型付き出力 port を返す DAG を、CPU・Compute・Raster・Mesh 共通の構築構文とする。意味上の schema と Host/Device 配置を分け、転送と変換を明示し、完成した graph を共有資源管理の下で `IRenderer2D` へ構築する。融合は作者がソース内で完成させた具体的な実装型を選ぶ操作とし、実行時に graph を融合する仕組みは持たない。
+直列部分は `Then(implementation)` のチェーン、分岐と合流は `Stage(implementation, inputs...)` の型付き変数で記述する。両者を CPU・Compute・Raster・Mesh 共通の一つの DAG 構築へ統一し、意味上の schema と Host/Device 配置、明示的な転送を検証して `IRenderer2D` へ構築する。融合はソース内で完成した具体的な実装型の選択であり、チェーンの省略記法や実行時の自動最適化ではない。
 
 ### 利用者の変更前・変更後
 
@@ -53,10 +53,14 @@ var routes = new CommandRoutes2D(fillRect: true, fillRoundedRect: true, fillCirc
     drawCoverageMask: true, drawDistanceField: true, drawMesh: true, drawPaintGraph: true);
 var g = new PipelineGraph2D();
 PipelineInputs2D i = g.Inputs;
-var scene = g.Stage(CpuStages2D.Normalize(sceneLimits),
-    i.Commands, i.ResourceManifest, i.Frame);
-var gpuScene = g.Stage(Transfers2D.Upload<SceneV1>(), scene);
-var gpuFrame = g.Stage(Transfers2D.Upload<FrameV1>(), i.Frame);
+// 直列部分はチェーン。Then は直前の出力を次の一入力へ接続する。
+var gpuScene = g
+    .Stage(CpuStages2D.Normalize(sceneLimits),
+        i.Commands, i.ResourceManifest, i.Frame)
+    .Then(Transfers2D.Upload<SceneV1>());
+var gpuFrame = g.Upload(i.Frame);
+
+// 分岐は同じ型付き出力の再利用、合流は Stage の複数入力で表す。
 var coverage = g.Stage(ComputeStages2D.Coverage(samplePolicy), gpuScene, gpuFrame);
 var paint = g.Stage(ComputeStages2D.Paint(samplePolicy),
     gpuScene, i.ResourceViews, gpuFrame);
@@ -83,6 +87,16 @@ PipelineDeclaration2D declaration = g.Complete(output, routes, policy);
 ~~~
 
 これは既製の融合 shader と pass を持つ具体型 `RasterEvaluateAndComposite2D` の選択である。独立版は本当に別 pass と中間保存を持ち、融合版は中間 coverage/paint/clip buffer を公開しない。独立版の ports を後から結合する optimizer、融合 hint、`FuseRequired`、source IR からの shader 生成は設けない。型を選んだ時点で物理的な処理の違いが確定する。
+
+### 直列チェーン、分岐と合流の書き方
+
+`g.Stage(stage, input)` と `input.Then(stage)` は、所有 graph に同形の一入力 node と辺を同じ規則で追加する。各呼出しは独立した node を追加し、両記法を呼んだからといって node identity を共有・重複排除しない。Then は入力を消費・再配置せず、新しい出力 port を返す。型の一致、所有 graph、凍結状態、null の検査も同じであり、チェーンの長さによって別 scheduler や追加 buffer を作らない。複数入力が必要な処理は長いチェーンへ押し込まず、途中結果を変数へ取り出して Stage で合流する。
+
+`g.Upload(hostPort)` は `g.Stage(Transfers2D.Upload<S>(), hostPort)`、`g.Download(devicePort)` は Download stage の同形の省略記法である。S は port から推論する。チェーン中では `.Then(Transfers2D.Upload<S>())` と明示でき、どの記法でも転送 node を省略しない。構築時に CPU 処理・GPU 計算・転送・提出・完了待機は実行せず、実行時には同じ転送と同期が必要となる。
+
+共有したい途中出力は一度変数へ束縛し、必要な node に渡す。`var next = previous.Then(stage)` を二回呼ぶと別 node が二つできるが、next を複数箇所で使っても producer は一つの Prepare で一回だけ評価する。GPU 実行の順序はソースの行順やメソッド呼出し順でなくデータ依存と target 書込み鎖から決める。
+
+長い構成は、意味のある処理単位ごとに graph と型付き入力を受け、型付き出力を返す通常の C# helper へ分割できる。helper は同じ graph に明示した node を追加するだけで、別 renderer、既定アルゴリズム、隠れた転送、送信 loop を作らない。省略記法も外部 stage も同じ node/edge として DescribeDataflow に現れる。
 
 ### 型付き接続と schema
 
@@ -135,13 +149,17 @@ using Lumyte.Graphics.Drawing2D.Pipelines;
 
 var g = new PipelineGraph2D();
 var i = g.Inputs;
-var scene = g.Stage(CpuStages2D.Normalize(sceneLimits), i.Commands, i.ResourceManifest, i.Frame);
-var ds = g.Stage(Transfers2D.Upload<SceneV1>(), scene);
-var df = g.Stage(Transfers2D.Upload<FrameV1>(), i.Frame);
-var dc = g.Stage(ComputeStages2D.Coverage(samplePolicy), ds, df);
-var hc = g.Stage(Transfers2D.Download<Coverage16V1>(), dc);
-var validated = g.Stage(CpuStages2D.ValidateCoverage(samplePolicy), hc, i.Frame);
-var validatedDevice = g.Stage(Transfers2D.Upload<Coverage16V1>(), validated);
+var ds = g
+    .Stage(CpuStages2D.Normalize(sceneLimits), i.Commands, i.ResourceManifest, i.Frame)
+    .Then(Transfers2D.Upload<SceneV1>());
+var df = g.Upload(i.Frame);
+var hc = g
+    .Stage(ComputeStages2D.Coverage(samplePolicy), ds, df)
+    .Then(Transfers2D.Download<Coverage16V1>());
+// CPU 検証は frame との合流なので Stage へ戻す。
+var validatedDevice = g
+    .Stage(CpuStages2D.ValidateCoverage(samplePolicy), hc, i.Frame)
+    .Then(Transfers2D.Upload<Coverage16V1>());
 var paint = g.Stage(ComputeStages2D.Paint(samplePolicy), ds, i.ResourceViews, df);
 var clip = g.Stage(ComputeStages2D.Clip(samplePolicy), ds, df);
 var output = g.Stage(RasterStages2D.Compose(samplePolicy), ds, validatedDevice, paint, clip, i.Target);
@@ -263,7 +281,12 @@ Canvas は論理命令の記録だけを行い、stage や実行 backend を持�
 +        int SampleCount, int GridVersion, string Coordinates, string ColorAlphaSemantics);
 +    public readonly struct Host<S> where S : ISchema2D;
 +    public readonly struct Device<S> where S : ISchema2D;
-+    public sealed class Port<V> { internal Port(); } // graph 専用。実行能力なし。
++    public sealed class Port<V>
++    {
++        internal Port(); // 所有 graph に固定。実データや実行能力は持たない。
++        // owner.Stage(implementation, this) と同じ node 追加。凍結後は拒否。
++        public Port<O> Then<O>(IStage2D<V, O> implementation);
++    }
 +    public interface IStageDefinition2D { } // 不変設定と schema/capability 契約。
 +    public interface IStage2D<A, O> : IStageDefinition2D
 +    {
@@ -292,6 +315,9 @@ Canvas は論理命令の記録だけを行い、stage や実行 backend を持�
 +    public sealed class PipelineGraph2D
 +    {
 +        public PipelineInputs2D Inputs { get; }
++        // 明示転送 node のみを追加。同 graph と配置・schema を検証。
++        public Port<Device<S>> Upload<S>(Port<Host<S>> input) where S : ISchema2D;
++        public Port<Host<S>> Download<S>(Port<Device<S>> input) where S : ISchema2D;
 +        public Port<O> Stage<A, O>(IStage2D<A, O> implementation, Port<A> a);
 +        public Port<O> Stage<A, B, O>(IStage2D<A, B, O> implementation, Port<A> a, Port<B> b);
 +        public Port<O> Stage<A, B, C, O>(IStage2D<A, B, C, O> implementation,
@@ -602,8 +628,14 @@ public sealed class FiniteCoverageCheck(long maxElements)
         public void Dispose() { }
     }
 }
-// readback 例の validated を次に交換し、後続の upload/合成は変えない。
-// var validated = g.Stage(new FiniteCoverageCheck(16L * 1048576), hc);
+~~~
+
+readback 例の `validatedDevice` の定義を次に交換し、後続の合成は変えない。以下は同じ構築 scope 内の抜粋である。
+
+~~~csharp
+var validatedDevice = g
+    .Stage(new FiniteCoverageCheck(16L * 1048576), hc)
+    .Then(Transfers2D.Upload<Coverage16V1>());
 ~~~
 
 ### 完成済み shader と pass 資源の供給
@@ -659,6 +691,8 @@ provider は immutable な artifact inventory を捕捉する。build context �
 
 ## 検討した代替案
 
+- 全工程を一つの fluent chain にする: 直列部分は短く読めるが、分岐・共有・複数入力を lambda や入れ子へ隠すことになる。Then は一入力の直列接続だけに用い、分岐・合流は型付き変数と Stage に戻す。
+- 全工程を名前付き node と文字列 edge で別々に登録する: グラフ編集ツールと対応づけやすいが、手書きコードの改名・補完・接続型検査が弱くなる。診断名と port identity を分離し、接続は型付き値で表す。
 - Composition の Slot/indexer を公開構文にする: 命令種別ごとの宣言には向くが、途中の型付き出力、fan-in/fan-out、明示転送を主語にできない。今回の公開境界は Stage と Port に統一する。
 - RenderPass を公開構文にする: attachment と GPU 順序を直接表せるが、CPU 入出力を含む共通の意味 schema と異なる階層になる。内部の RenderGraph は再利用し、公開 grammar にはしない。
 - 独立 stage を実行時に自動融合する: 同じ宣言から実行形態を変えられる一方、shader 生成・互換判定と資源予算が不透明になる。独立型とソースで完成した融合型を明示的に選ぶ。
@@ -671,4 +705,4 @@ renderer 作者は実装、全入力、転送、route、予算を明示する責
 
 この新しい構築境界では Browser backend の Compute 構成を対応対象にせず、構築前に拒否する。これは基準の `src/Graphics/Lumyte.Graphics.Browser/BrowserComputePipeline.cs` に汎用 Compute pipeline 型が存在しないという主張ではない。対象 device/backend で必要な Compute、Mesh、storage format、readback が未対応なら確保前に拒否し、Raster や CPU へ黙って切り替えない。本 ADR の採用は実装済み、GPU 検証済み、性能優位という意味ではない。
 
-受入れ条件は、型不一致と graph 外 port の拒否、fan-in/fan-out と Prepare 内一回評価、schema/version/sample/grid/source/世代検証、外部 assembly の CPU と GPU stage の factory/processor 接続、artifact ABI/target/世代の拒否、独立版とソース完成融合版の数値一致、非二値 mesh の center 補間維持、16 sample の部分重なりと painter order、有限予算の確保前拒否である。直接・retained・Graph の共有構築と資源保持、受付不明・取消し・mapping 失敗・cleanup retry、owner-context 再開、ticket の二重使用拒否、偽造・別世代の退役証明拒否と authority 不在時の隔離維持も必要とする。document lint はこれらの実装・GPU 適合性検証を代替しない。
+受入れ条件は、Stage と Then の node/edge・実行意味の同一性、Upload/Download 省略記法と明示転送 stage の同一性、凍結後のチェーン追加拒否、型不一致と graph 外 port の拒否、fan-in/fan-out と Prepare 内一回評価、schema/version/sample/grid/source/世代検証、外部 assembly の CPU と GPU stage の factory/processor 接続、artifact ABI/target/世代の拒否、独立版とソース完成融合版の数値一致、非二値 mesh の center 補間維持、16 sample の部分重なりと painter order、有限予算の確保前拒否である。直接・retained・Graph の共有構築と資源保持、受付不明・取消し・mapping 失敗・cleanup retry、owner-context 再開、ticket の二重使用拒否、偽造・別世代の退役証明拒否と authority 不在時の隔離維持も必要とする。document lint はこれらの実装・GPU 適合性検証を代替しない。
