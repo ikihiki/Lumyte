@@ -23,6 +23,7 @@ public sealed unsafe partial class VulkanDevice : IGraphicDevice, IDisposable
     private VulkanDevice(Vk api, Instance instance, Device device, PhysicalDevice physicalDevice, DeviceCaps caps, uint maxPushConstantsSize, bool supportsCubeArrays, uint queueFamily, bool cacheGraphicsPipelines, VulkanPresentation? presentation = null)
     {
         _lifetime = new(this);
+        RetirementAuthority = new RetirementAuthorityAdapter(this);
         (_api, _instance, _device, Caps) = (api, instance, device, caps);
         _physicalDevice = physicalDevice;
         _presentation = presentation;
@@ -369,6 +370,12 @@ public sealed unsafe partial class VulkanDevice : IGraphicDevice, IDisposable
     /// <inheritdoc />
     public ValueTask WaitForRetirementAsync(CancellationToken cancellationToken = default)
     {
+        ObjectDisposedException.ThrowIf(Status == GraphicsDeviceStatus.Disposed, this);
+        if (Status != GraphicsDeviceStatus.Lost)
+        {
+            throw new InvalidOperationException("Retirement requires confirmed native device loss.");
+        }
+
         cancellationToken.ThrowIfCancellationRequested();
         Result result = _api.DeviceWaitIdle(_device);
 

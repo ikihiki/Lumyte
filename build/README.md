@@ -5,6 +5,19 @@
 compiler・Slang・mise環境の準備は[開発環境](../docs/development-environment.md)を参照してください。
 Linuxの初期セットアップも利用可能な.NET 10 SDKを前提にし、JSON読み取りやNative smokeにシステムPythonを使用しません。
 
+## 汎用描画pipelineのnativeテスト
+
+- `tests/Graphics/Lumyte.Graphics.Drawing2D.Tests/GenericGpu/GenericGpu.NativeTests.csproj`
+- `tests/Graphics/Lumyte.Graphics.Drawing2D.Tests/GenericGraphNative/GenericGraph.NativeTests.csproj`
+
+上記は `Lumyte.slnx` の正式なテストprojectです。`Compile` が両projectを構築し、`CiNative → Test` が同じhost solutionから実行します。
+各projectのassembly名とartifact directoryは通常のDrawing2D.Testsとも相互にも別です。親テストprojectからの除外は二重コンパイルを避けるもので、solutionからの除外ではありません。
+
+Linux x64 CIが既に設定する `LUMYTE_GRAPHICS_GPU_TESTS=1` と `VK_DRIVER_FILES=$LUMYTE_LAVAPIPE_ICD` で、Compute/Rasterの全命令corpusとlayer/backdrop/明示readbackテストを実行します。
+非LinuxまたはGPU未指定のlaneはnativeテストをskipし、GPUを必要としないmetadata検査は実行します。
+Mesh専用の2テストは、mesh対応Vulkan deviceのlaneで `LUMYTE_GENERIC_MESH_TESTS=1` を追加して実行します。指定後のcapability不足やpixel不一致は失敗です。通常CIにmesh capabilityを仮定しません。
+`LUMYTE_GRAPH_NATIVE_EVIDENCE` はpixel/pass/snapshotの任意出力先であり、未指定でもテストのpixel assertionを省略しません。
+
 ## 通常の実行
 
 リポジトリルートから実行します。引数なしの既定targetは`Compile`です。

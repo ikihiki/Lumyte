@@ -57,7 +57,7 @@
     </ItemGroup>
   </Target>
   <Target Name="CompileSlangShaders" DependsOnTargets="PrepareLumyteShaderCompiler"
-          Inputs="%(SlangShader.FullPath);$(MSBuildThisFileDirectory)include/lumyte.slang;$(MSBuildThisFileFullPath);$(MSBuildAllProjects);$(SlangCompilerPath);@(_LumyteShaderToolInputs)"
+          Inputs="%(SlangShader.FullPath);%(SlangShader.AdditionalInputs);$(MSBuildThisFileDirectory)include/lumyte.slang;$(MSBuildThisFileFullPath);$(MSBuildAllProjects);$(SlangCompilerPath);@(_LumyteShaderToolInputs)"
           Outputs="$(IntermediateOutputPath)Slang/%(SlangShader.ResourceName).lshader"
           Condition="'@(SlangShader)' != '' and '$(NoBuild)' != 'true'">
     <Error Condition="'%(SlangShader.ResourceName)' == ''" Text="SlangShader requires a unique ResourceName." />

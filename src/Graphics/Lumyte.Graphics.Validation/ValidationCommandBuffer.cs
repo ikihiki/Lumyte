@@ -2,7 +2,7 @@ using Lumyte.Graphics.Abstractions;
 
 namespace Lumyte.Graphics.Validation;
 
-internal sealed class ValidationCommandBuffer : ValidationResource<IGraphicsCommandBuffer>, IGraphicsCommandBuffer
+internal sealed partial class ValidationCommandBuffer : ValidationResource<IGraphicsCommandBuffer>, IGraphicsCommandBuffer
 {
     private readonly Dictionary<IShaderDataSource, IShaderReferenceMetadata> _overlay = new(ReferenceEqualityComparer.Instance);
     private readonly Dictionary<IShaderDataSource, Action<IShaderReferenceMetadata>> _publish = new(ReferenceEqualityComparer.Instance);

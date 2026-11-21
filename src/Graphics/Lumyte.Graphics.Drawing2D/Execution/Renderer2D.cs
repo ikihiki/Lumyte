@@ -16,6 +16,7 @@ public sealed partial class Renderer2D(IGraphicDevice device, DrawingCommandRend
     private readonly DrawingCommandRenderers2D _renderers = renderers ?? throw new ArgumentNullException(nameof(renderers));
     private readonly DrawingResourceState2D _resources = new(device, resources, resourceOwner, validateResources, retentionOptions?.MaxCachedBytes ?? 64 * 1024 * 1024);
     private readonly RetainedDrawingCache2D _retained = new(retentionOptions ?? new());
+    private readonly DrawingArgumentTableMode _argumentTableMode = DrawingArgumentTableMode.Auto;
     private bool _disposed;
     private int _preparing;
 
@@ -31,13 +32,28 @@ public sealed partial class Renderer2D(IGraphicDevice device, DrawingCommandRend
     }
 
     /// <summary>Gets the argument table policy used for direct and retained preparation.</summary>
-    public DrawingArgumentTableMode ArgumentTableMode { get; init; } = DrawingArgumentTableMode.Auto;
+    public DrawingArgumentTableMode ArgumentTableMode
+    {
+        get => _argumentTableMode;
+        init
+        {
+            if (_pipelineBinding is not null && value != _pipelineBinding.Policy.ArgumentTables)
+            {
+                throw new ArgumentException("Argument-table policy cannot rewrite a compiled pipeline binding.", nameof(value));
+            }
+
+            _argumentTableMode = value;
+        }
+    }
 
     /// <summary>Gets the borrowed generation-specific device.</summary>
     public IGraphicDevice Device => _device;
 
     /// <inheritdoc/>
     DrawingCommandRenderers2D IGraphRendererSource2D.CommandRenderers => _renderers;
+
+    /// <inheritdoc/>
+    Pipelines.PipelineBinding2D? IGraphRendererSource2D.PipelineBinding => _pipelineBinding;
 
     /// <inheritdoc/>
     DrawingResourceState2D IGraphRendererSource2D.ResourceState
@@ -63,6 +79,12 @@ public sealed partial class Renderer2D(IGraphicDevice device, DrawingCommandRend
             ArgumentNullException.ThrowIfNull(list);
             ArgumentNullException.ThrowIfNull(target);
             ArgumentNullException.ThrowIfNull(target.View);
+            if (_pipelineBinding?.RequiresReadback == true)
+            {
+                throw new NotSupportedException("Readback topologies require PrepareExecutionAsync before resource allocation.");
+            }
+
+            _pipelineBinding?.ValidateCommands(list.Commands);
             ValidateView(target.View);
             var info = new DrawingTargetInfo2D { Description = Describe(target.View.Texture), PixelScale = target.PixelScale, LoadOp = target.LoadOp, ClearColor = target.ClearColor };
             ValidateTarget(info);
@@ -74,14 +96,23 @@ public sealed partial class Renderer2D(IGraphicDevice device, DrawingCommandRend
 
             var batches = new List<IPreparedCommandBatch2D>();
             IDisposable? compositionUse = null;
+            IDisposable? pipelinePreparation = null;
             try
             {
+                if (_pipelineBinding is not null)
+                {
+                    pipelinePreparation = await _pipelineBinding.AcquirePreparationAsync(cancellationToken).ConfigureAwait(false);
+                }
+
                 compositionUse = _resources.RetainComposition();
                 _retained.BindStorageOwner(_resources);
                 _retained.RetryCleanup();
                 var plan = new DrawingArgumentPlan2D(_device) { ArgumentTableMode = ArgumentTableMode };
                 using IDisposable planOwner = _resources.CleanupOwner(plan);
-                var context = new RenderPreparationContext2D(_device, info with { LoadOp = AttachmentLoadOp.Load }, _resources, plan);
+                var context = new RenderPreparationContext2D(_device, info with { LoadOp = AttachmentLoadOp.Load }, _resources, plan)
+                {
+                    SourceBinding = _pipelineBinding is null ? null : new Pipelines.RenderSourceBinding2D(_device, target.View, _pipelineBinding.RecordContext),
+                };
                 int index = 0;
                 using (var build = DrawingProfileScope.Start(4))
                 {
@@ -90,7 +121,9 @@ public sealed partial class Renderer2D(IGraphicDevice device, DrawingCommandRend
                         while (index < list.Commands.Count)
                         {
                             cancellationToken.ThrowIfCancellationRequested();
-                            IPreparedCommandBatch2D batch = IsBuiltinRenderer(list.Commands[index]) && context.RecordResources() is not null
+                            IPreparedCommandBatch2D batch = _pipelineBinding is not null
+                                ? await _pipelineBinding.PrepareAsync(context, TakePipelineCommands(list, ref index, list.Commands.Count), cancellationToken).ConfigureAwait(false)
+                                : IsBuiltinRenderer(list.Commands[index]) && context.RecordResources() is not null
                                 ? await PreparedRecordBatch2D.PrepareAsync(context, TakeBuiltinBatch(list, ref index, list.Commands.Count), cancellationToken).ConfigureAwait(false)
                                 : list.Commands[index] switch
                                 {
@@ -152,6 +185,7 @@ public sealed partial class Renderer2D(IGraphicDevice device, DrawingCommandRend
             }
             finally
             {
+                pipelinePreparation?.Dispose();
                 Volatile.Write(ref _preparing, 0);
             }
         }

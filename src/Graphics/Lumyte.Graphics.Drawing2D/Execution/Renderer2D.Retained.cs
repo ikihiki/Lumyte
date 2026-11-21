@@ -69,6 +69,11 @@ public sealed partial class Renderer2D
 
     private async ValueTask<PreparedDrawingFrame2D> PrepareRetainedAsync(IDrawingSceneSource2D source, RenderTarget2D target, CancellationToken cancellationToken)
     {
+        if (_pipelineBinding is not null)
+        {
+            return await PrepareGenericRetainedAsync(source, target, cancellationToken).ConfigureAwait(false);
+        }
+
         using var profile = DrawingProfileScope.Start(2, root: true);
         long groups = 0;
         long reused = 0;

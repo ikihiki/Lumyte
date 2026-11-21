@@ -3,11 +3,12 @@ using Lumyte.Graphics.Abstractions;
 
 namespace Lumyte.Graphics.Browser;
 
-internal sealed class BrowserTexture : IGraphicsTexture
+internal sealed class BrowserTexture : IGraphicsTexture, IGraphicsNativeOrigin
 {
     private readonly BrowserDevice _owner;
     private readonly JSObject _native;
     private readonly SurfaceFrameLifetime? _surfaceFrame;
+    private object? _allocationIdentity;
     private bool _disposed;
 
     internal BrowserTexture(BrowserDevice owner, TextureDesc desc)
@@ -20,6 +21,10 @@ internal sealed class BrowserTexture : IGraphicsTexture
     {
         (_owner, Width, Height, MipLevels, ArrayLayers, Format, Usage, _native, _surfaceFrame) = (owner, desc.Width, desc.Height, 1, 1, desc.Format, desc.Usage, native, lifetime);
     }
+
+    IGraphicDevice IGraphicsNativeOrigin.Device => Owner;
+
+    object IGraphicsNativeOrigin.AllocationIdentity => _allocationIdentity ??= new NativeAllocationIdentity(Owner, _native);
 
     public uint Width { get; }
 
@@ -59,6 +64,21 @@ internal sealed class BrowserTexture : IGraphicsTexture
         return (Math.Max(1U, Width >> (int)mipLevel), Math.Max(1U, Height >> (int)mipLevel));
     }
 
+    void IGraphicsNativeOrigin.ValidateOrigin()
+    {
+        ObjectDisposedException.ThrowIf(Owner.Status == GraphicsDeviceStatus.Disposed, Owner);
+        if (Owner.Status == GraphicsDeviceStatus.Lost)
+        {
+            throw new GraphicsDeviceLostException(Owner.Loss!);
+        }
+
+        _ = Native;
+        if (SurfaceFrame != null && SurfaceFrame.Status != SurfaceFrameStatus.Acquired)
+        {
+            throw new InvalidOperationException("The surface image lease is no longer acquired.");
+        }
+    }
+
     public IGraphicsTextureView CreateView(TextureViewDesc? desc = null)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
@@ -95,4 +115,6 @@ internal sealed class BrowserTexture : IGraphicsTexture
         _native.Dispose();
         _disposed = true;
     }
+
+    private sealed record NativeAllocationIdentity(BrowserDevice Device, JSObject Handle);
 }

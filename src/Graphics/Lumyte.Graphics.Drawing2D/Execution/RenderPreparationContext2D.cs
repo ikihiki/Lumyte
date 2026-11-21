@@ -33,6 +33,8 @@ public sealed class RenderPreparationContext2D
 
     internal ClipNormalizationCache2D Clips { get; }
 
+    internal Pipelines.RenderSourceBinding2D? SourceBinding { get; init; }
+
     /// <summary>Retains the renderer's existing resource owner for prepared work through GPU completion.</summary>
     /// <returns>A lifetime token containing no pipeline or shader state.</returns>
     public IDisposable RetainResources() => _resources.Retain(_allowReturnedResources);
@@ -51,7 +53,7 @@ public sealed class RenderPreparationContext2D
             throw new ArgumentException("The argument plan belongs to another device.", nameof(argumentPlan));
         }
 
-        return new(Device, Target, _resources, argumentPlan, _allowReturnedResources);
+        return new(Device, Target, _resources, argumentPlan, _allowReturnedResources) { SourceBinding = SourceBinding };
     }
 
     internal void CleanupAfterFailure(IDisposable resource, Exception preparationFailure) => _resources.CleanupAfterFailure(resource, preparationFailure);

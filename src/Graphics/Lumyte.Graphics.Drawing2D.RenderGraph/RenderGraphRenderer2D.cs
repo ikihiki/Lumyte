@@ -1,5 +1,6 @@
 using System.Numerics;
 using Lumyte.Graphics.Abstractions;
+using Lumyte.Graphics.Drawing2D.Pipelines;
 using Lumyte.Graphics.ImageEffects;
 using Lumyte.Graphics.RenderGraph;
 using Lumyte.Mathematics.Colors;
@@ -9,27 +10,39 @@ using RenderGraphBuilder = Lumyte.Graphics.RenderGraph.RenderGraph;
 namespace Lumyte.Graphics.Drawing2D.RenderGraph;
 
 /// <summary>Prepares typed drawing commands and image effects for a single-queue render graph.</summary>
-/// <param name="list">The reusable layered recording.</param>
-/// <param name="target">The graph-local destination.</param>
-/// <param name="bindings">The external resource bindings.</param>
-/// <param name="renderers">The borrowed fixed command renderer table.</param>
-/// <param name="resources">Optional borrowed drawing resources; omission uses lazy embedded defaults.</param>
-/// <param name="resourceOwner">An optional owner transferred on successful construction and shared with prepared passes.</param>
-/// <param name="validateResources">An optional runtime validation used before preparation and recording.</param>
-public sealed class RenderGraphRenderer2D(DrawingCommandRenderers2D renderers, RenderGraphDrawList2D list, RenderTargetBinding2D target, DrawingGraphBindings2D bindings, DrawingResources2D? resources = null, IDisposable? resourceOwner = null, Action? validateResources = null) : IDisposable
+public sealed class RenderGraphRenderer2D : IDisposable
 {
     private static readonly BarrierScope _attachmentScope = new(PipelineStage.ColorOutput, ResourceAccess.ColorRead | ResourceAccess.ColorWrite);
     private static readonly BarrierScope _imageScope = new(PipelineStage.VertexShader | PipelineStage.FragmentShader | PipelineStage.ComputeShader, ResourceAccess.ShaderRead);
-    private readonly DrawingCommandRenderers2D _renderers = renderers ?? throw new ArgumentNullException(nameof(renderers));
-    private readonly DrawList2D _list = (list ?? throw new ArgumentNullException(nameof(list))).Commands;
-    private readonly RenderTargetBinding2D _target = target ?? throw new ArgumentNullException(nameof(target));
-    private readonly DrawingGraphBindings2D _bindings = bindings ?? throw new ArgumentNullException(nameof(bindings));
-    private readonly DrawingResourceState2D _resources = new(bindings.Graph.Device, resources, resourceOwner, validateResources);
+    private readonly DrawingCommandRenderers2D _renderers;
+    private readonly DrawList2D _list;
+    private readonly RenderTargetBinding2D _target;
+    private readonly DrawingGraphBindings2D _bindings;
+    private readonly DrawingResourceState2D _resources;
 
+    private readonly PipelineBinding2D? _pipelineBinding;
+    private readonly DrawingResources2D? _compositionResources;
     private readonly IDisposable? _resourceUse;
     private readonly DrawingArgumentTableMode _argumentTableMode = DrawingArgumentTableMode.Auto;
     private bool _disposed;
     private int _preparing;
+
+    /// <summary>Initializes a new instance of the <see cref="RenderGraphRenderer2D"/> class using the legacy command table.</summary>
+    /// <param name="renderers">The borrowed fixed command renderer table.</param>
+    /// <param name="list">The reusable layered recording.</param>
+    /// <param name="target">The graph-local destination.</param>
+    /// <param name="bindings">The external resource bindings.</param>
+    /// <param name="resources">Optional borrowed drawing resources; omission uses lazy embedded defaults.</param>
+    /// <param name="resourceOwner">An optional owner transferred on successful construction and shared with prepared passes.</param>
+    /// <param name="validateResources">An optional runtime validation used before preparation and recording.</param>
+    public RenderGraphRenderer2D(DrawingCommandRenderers2D renderers, RenderGraphDrawList2D list, RenderTargetBinding2D target, DrawingGraphBindings2D bindings, DrawingResources2D? resources = null, IDisposable? resourceOwner = null, Action? validateResources = null)
+    {
+        _renderers = renderers ?? throw new ArgumentNullException(nameof(renderers));
+        _list = (list ?? throw new ArgumentNullException(nameof(list))).Commands;
+        _target = target ?? throw new ArgumentNullException(nameof(target));
+        _bindings = bindings ?? throw new ArgumentNullException(nameof(bindings));
+        _resources = new(bindings.Graph.Device, resources, resourceOwner, validateResources);
+    }
 
     /// <summary>Initializes a new instance of the <see cref="RenderGraphRenderer2D"/> class using the compiled command table and resource coordinator.</summary>
     /// <param name="renderer">The configured renderer; external implementations without the internal bridge are rejected before graph mutation.</param>
@@ -42,8 +55,13 @@ public sealed class RenderGraphRenderer2D(DrawingCommandRenderers2D renderers, R
     }
 
     private RenderGraphRenderer2D(IGraphRendererSource2D source, RenderGraphDrawList2D list, RenderTargetBinding2D target, DrawingGraphBindings2D bindings)
-        : this(source.CommandRenderers, list, target, bindings)
     {
+        _renderers = source.CommandRenderers;
+        _list = list.Commands;
+        _target = target;
+        _bindings = bindings;
+        _pipelineBinding = source.PipelineBinding;
+        _compositionResources = RequiresComposition(list.Commands.Commands) ? _pipelineBinding?.GetGraphCompositionResources() : null;
         DrawingResourceState2D state = source.ResourceState;
         _resourceUse = state.Retain(ensureResources: false);
         _resources = state;
@@ -87,6 +105,8 @@ public sealed class RenderGraphRenderer2D(DrawingCommandRenderers2D renderers, R
             throw new ArgumentException("Image bindings belong to a different render graph.", nameof(bindings));
         }
 
+        ValidateGraphCommands(_pipelineBinding, list.Commands);
+        _resources.Validate();
         cancellationToken.ThrowIfCancellationRequested();
         DrawingGraphBindings2D snapshot = bindings.Snapshot();
         foreach (IGraphicsTexture image in GetImageAllocations(list.Commands))
@@ -94,6 +114,10 @@ public sealed class RenderGraphRenderer2D(DrawingCommandRenderers2D renderers, R
             _ = snapshot.GetTexture(image);
         }
 
+        using IDisposable? preparationUse = _pipelineBinding is null ? null : await _pipelineBinding.AcquirePreparationAsync(cancellationToken).ConfigureAwait(false);
+        _pipelineBinding?.ValidatePreparation();
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        _resources.Validate();
         if (Interlocked.CompareExchange(ref _preparing, 1, 0) != 0)
         {
             throw new InvalidOperationException("Concurrent preparation using one RenderGraphRenderer2D is not supported.");
@@ -177,8 +201,35 @@ public sealed class RenderGraphRenderer2D(DrawingCommandRenderers2D renderers, R
             throw new ArgumentException("Renderer and graph must use the same device.", nameof(renderer));
         }
 
-        return renderer as IGraphRendererSource2D ?? throw new NotSupportedException("This renderer does not expose the internal graph preparation bridge.");
+        IGraphRendererSource2D source = renderer as IGraphRendererSource2D ?? throw new NotSupportedException("This renderer does not expose the internal graph preparation bridge.");
+        if (source.PipelineBinding is PipelineBinding2D pipeline)
+        {
+            if (pipeline.RequiresReadback)
+            {
+                throw new NotSupportedException("Graph drawing cannot resume a readback pipeline during recording.");
+            }
+
+            ValidateGraphCommands(pipeline, list.Commands.Commands);
+            if (RequiresComposition(list.Commands.Commands))
+            {
+                _ = pipeline.GetGraphCompositionResources();
+            }
+        }
+
+        return source;
     }
+
+    private static void ValidateGraphCommands(PipelineBinding2D? pipeline, IReadOnlyList<DrawingCommand2D> commands)
+    {
+        if (pipeline is not null)
+        {
+            pipeline.ValidatePreparation();
+            pipeline.ValidateCommands(commands.Where(command => command is not (BeginLayerCommand2D or EndLayerCommand2D or DrawBackdropEffectCommand2D)).ToArray());
+        }
+    }
+
+    private static bool RequiresComposition(IReadOnlyList<DrawingCommand2D> commands)
+        => commands.Any(command => command is BeginLayerCommand2D or DrawBackdropEffectCommand2D);
 
     private static void ValidateTarget(RenderTargetBinding2D target)
     {
@@ -566,7 +617,7 @@ public sealed class RenderGraphRenderer2D(DrawingCommandRenderers2D renderers, R
     private async ValueTask AppendCommandsAsync(RenderGraphBuilder graph, DrawList2D list, int begin, int end, RenderTargetBinding2D target, DrawingGraphBindings2D bindings, PreparedDrawingPasses2D owner, DrawingArgumentPlan2D argumentPlan, CancellationToken cancellationToken)
     {
         IReadOnlyList<DrawingCommand2D> commands = list.Commands;
-        var context = new GraphPreparationContext2D(graph.Device!, graph, bindings, target, _resources, _resourceUse is not null);
+        var context = new GraphPreparationContext2D(graph.Device!, graph, bindings, target, _resources, _resourceUse is not null, _compositionResources);
         int index = begin;
         while (index < end)
         {
@@ -583,6 +634,37 @@ public sealed class RenderGraphRenderer2D(DrawingCommandRenderers2D renderers, R
             {
                 await AppendBackdropAsync(backdrop, context, owner, argumentPlan, cancellationToken).ConfigureAwait(false);
                 index++;
+                continue;
+            }
+
+            if (_pipelineBinding is PipelineBinding2D pipeline)
+            {
+                int first = index;
+                while (index < end && commands[index] is not (BeginLayerCommand2D or EndLayerCommand2D or DrawBackdropEffectCommand2D))
+                {
+                    index++;
+                }
+
+                if (first == index)
+                {
+                    throw new InvalidOperationException("The drawing snapshot contains an unexpected structural boundary.");
+                }
+
+                var sequence = new DrawingCommand2D[index - first];
+                for (int i = 0; i < sequence.Length; i++)
+                {
+                    sequence[i] = commands[first + i];
+                }
+
+                RenderGraphBuilder.PreparedTarget graphTarget = graph.PrepareTarget(target.Texture);
+                var genericPreparation = new RenderPreparationContext2D(context.Device, context.Target, context.ResourceState, argumentPlan, _resourceUse is not null)
+                {
+                    SourceBinding = new RenderSourceBinding2D(context.Device, graphTarget.View, pipeline.RecordContext, graphTarget.AcquireUse),
+                };
+                IPreparedCommandBatch2D genericBatch = await pipeline.PrepareAsync(genericPreparation, sequence, cancellationToken).ConfigureAwait(false);
+                owner.Own(genericBatch);
+                cancellationToken.ThrowIfCancellationRequested();
+                AppendBatch(graph, target, bindings, genericBatch, [], argumentPlan);
                 continue;
             }
 
@@ -662,7 +744,7 @@ public sealed class RenderGraphRenderer2D(DrawingCommandRenderers2D renderers, R
         EffectPixelRect captureBounds = Bounds(context.Target);
         RenderTargetBinding2D capture = CreateIntermediate(context.Graph, captureBounds, context.Target.PixelScale, "drawing2d.backdrop.snapshot");
         AppendClear(context.Graph, capture);
-        var captureContext = new GraphPreparationContext2D(context.Device, context.Graph, context.Bindings, capture with { LoadOp = AttachmentLoadOp.Load }, context.ResourceState, context.AllowReturnedResources);
+        var captureContext = new GraphPreparationContext2D(context.Device, context.Graph, context.Bindings, capture with { LoadOp = AttachmentLoadOp.Load }, context.ResourceState, context.AllowReturnedResources, context.ResourcesOverride);
         var targetSource = new GraphImageSource2D(context.Target.Texture, context.Target.Description, Bounds(context.Target));
         var emptyState = new DrawingState2D(Matrix3x2.Identity, ClipStack2D.Empty);
         IPreparedGraphCommandBatch2D snapshot = await DrawingGraphCompositor.PrepareAsync(captureContext, targetSource, emptyState, replace: true, ct: cancellationToken).ConfigureAwait(false);

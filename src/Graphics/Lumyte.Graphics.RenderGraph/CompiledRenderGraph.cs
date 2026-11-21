@@ -35,7 +35,7 @@ public sealed class CompiledRenderGraph : IDisposable
         foreach (RenderGraphResource resource in resources)
         {
             _states.Add(resource, (resource.InitialState, resource.InitialScope));
-            if (resource.Allocation is object allocation)
+            if ((resource.PreparedTarget?.Texture ?? resource.Allocation) is object allocation)
             {
                 _allocations.Add(resource, allocation);
             }
@@ -386,6 +386,14 @@ public sealed class CompiledRenderGraph : IDisposable
         if (_viewCache.TryGetValue(key, out IGraphicsTextureView? existing))
         {
             return existing;
+        }
+
+        if (resource.PreparedTarget is { } prepared && normalized.Dimension == TextureViewDimension.D2 &&
+            normalized.BaseMipLevel == 0 && normalized.MipLevelCount == 1 && normalized.BaseArrayLayer == 0 && normalized.ArrayLayerCount == 1)
+        {
+            IGraphicsTextureView preparedView = prepared.View;
+            _viewCache.Add(key, preparedView);
+            return preparedView;
         }
 
         IGraphicsTextureView view = texture.CreateView(normalized);
