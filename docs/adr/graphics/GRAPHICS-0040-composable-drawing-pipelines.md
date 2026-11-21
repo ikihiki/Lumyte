@@ -215,6 +215,97 @@ finally { await host.DrainAsync(); }
 // plan.Record(commands); → caller が Finish/Submit/実完了/command.Dispose → plan.Dispose。
 ~~~
 
+### 論理 pass として既存 RenderGraph に参加する
+
+GPU plan の作者は attachment や Load/Store、Begin/End を外側で管理する scope を作らず、一つの論理的な記録単位を RenderGraph の依存関係へ接続する。基準コミットの `src/Graphics/Lumyte.Graphics.RenderGraph/RenderGraph.cs` の `AddPass(name, Action<RenderGraphContext>)` と `RenderGraphPass.cs` の UseTexture/UseBuffer/DependsOn/KeepAlive をそのまま基礎にする。依存関係が決めるのは callback の実行順と GPU barrier であり、GPU 完了や時刻・所要時間の保証ではない。
+
+変更前は caller が既存 API で callback と全 resource use を別に宣言する。次の recordWork は caller が用意した既存の record-only 処理で、target/vertices は既に import 済みの graph resource、scope は実際の全 access の集合である。所有者を graph の寿命へ結びつける作業は caller に残る。
+
+~~~csharp
+using Lumyte.Graphics.RenderGraph;
+
+RenderGraphPass pass = graph.AddPass("work", context => recordWork(context.Commands))
+    .UseTexture(target, targetState, targetScope)
+    .UseBuffer(vertices, vertexScope)
+    .DependsOn(previous);
+// imported output への write は既存規則で root。その他の副作用なら pass.KeepAlive()。
+~~~
+
+変更後は no-readback の GraphicsPipelineRecordPlan と、その全外部資源に対する明示 binding を渡す。plan は前節の AcquireRecordPlan で得た caller 所有の借用元である。slot は plan.Resources.GetSlot(index) で取得し、捕捉された schema と access manifest に照合する。targetSlot/vertexSlot は plan の不変 manifest にある opaque key、targetTexture/vertexBuffer は pipeline request に渡したものと同一の native allocation であり、caller が同じ graph に import した target/vertices に対応する。scope/state は manifest と照合し、単に例の値を信用しない。
+
+~~~csharp
+using Lumyte.Graphics.Pipelines.RenderGraph;
+
+var bindings = new PipelineGraphBindings(
+    new[] { new PipelineGraphTextureBinding(targetSlot, target, targetTexture,
+        targetState, targetScope) },
+    new[] { PipelineGraphBufferBinding.Create(vertexSlot, vertices, vertexBuffer, vertexScope) });
+RenderGraphPass pass = graph.AddPipelinePass("work", plan, bindings).DependsOn(previous);
+// 非 output の独立した副作用を残す場合だけ pass.KeepAlive()。
+// graph.Compile → compiled.Record(commands) → caller の Finish/Submit → 実完了
+// → commands.Dispose → compiled.Dispose。未記録/cull は送信せず、保持 lease は compiled.Dispose で返す。
+~~~
+
+AddPipelinePass は新しい Lumyte.Graphics.Pipelines.RenderGraph assembly に置き、Core、Graphics.Pipelines、Graphics.RenderGraph にだけ依存する。Drawing2D を参照せず、Renderer2D への直接 pipeline 受渡しとも独立した汎用 adapter とする。外部の仕事を opaque plan の stage 間へ割り込ませる機能ではない。必要なら pipeline 作者が明示した境界で複数の plan を作り、それぞれを別 pass にして依存を結ぶ。
+
+### Graph に渡す資源と状態の境界
+
+plan は外部 texture/buffer の完全な不変 manifest と、slot ごとの native allocation/view/range、device generation、read/write scope、要求状態、終了状態を準備時に捕捉する。binding はその全 slot をちょうど一度対応づける。初期対応は既に import された texture と unmanaged typed buffer に限定し、未実体化 transient、外部 shader-data/sampler を含む plan は専用の完全 binding がない限り拒否する。非対応の種類を隠れた外部資源として通さない。artifact とそれだけが参照する不変 native owner も plan が lease を保持し、graph と共有する資源は manifest から省かない。
+
+基準の RenderGraphPass.AddUse は一つの allocation に一つの TextureState を持ち、異なる状態の重複 use を拒否する。entry/exit 別状態を既存 graph が扱えるとはしない。初期 adapter は、外部 texture の全 stage が同じ宣言状態で使え、最後もその状態に戻る plan だけを許し、複数状態が必要な plan は graph 変更前に拒否する。必要な構成は作者が明示的に別 plan/pass へ分割する。graph は pass 間の barrier を、plan は内部 scratch と同一状態内の必要な memory barrier を所有する。buffer scope は内部の copy/shader を含む全 access の集合とし、終了時に宣言から外れる状態・access を残さない。内部 scratch は pass-local の保持資源とし、peak live bytes を pipeline 予算に計上し、外部出力扱いや culling root にしない。
+
+AddPipelinePass は graph が building であること、name、device/世代、plan readiness、全 slot の不足・余分・重複、allocation/view/range の実 identity と imported handle の対応、alias ごとの state/scope 統合、local 所有者と有限予算を事前検証する。alias は名前でなく allocation identity で検出し、競合宣言や偽の別 allocation、別 graph、失効世代を拒否する。すべての preflight は graph の変更と plan の排他的記録権の claim より前に行う。成功時だけ一つの pass、use と保持 lease を原子的に追加し、記録権を graph に割り当てる。append 失敗は追加 pass/use/lifetime を rollback して claim を戻し、元 plan を再利用可能に保つ。同じ plan の二重登録・直接 Record との競合は拒否する。caller の plan/pipeline を Dispose しない。
+
+callback は active render/compute encoder の外側で plan の記録だけを行い、plan 自身が開いた encoder を例外時も閉じる。Submit、Finish、wait、readback mapping、隠れた CPU 再開は禁止する。途中 readback は AddPipelinePass の preflight で拒否し、GraphicsPipelineExecutionHost の区間実行に残す。明示的な DependsOn は資源で表せない順序を追加するが、無関係な副作用を自動的に存続させない。既存の imported write、MarkOutput または KeepAlive で観測可能性を明示する。
+
+### Graph の一回記録と完了までの所有権
+
+基準の `src/Graphics/Lumyte.Graphics.RenderGraph/IRenderGraphLifetime.cs` は Validate/Dispose、`RenderGraph.cs` の Retain は compiled plan への所有者移管を持つ。`CompiledRenderGraph.cs` の Record/Dispose は一回記録と command 状態検査を持つが、submission receipt を受け取って実完了を通知する bridge はない。この追加では private friend bridge を Graphics.RenderGraph と Graphics.Pipelines の双方から新 adapter assembly に限定して公開し、公開 scope や global extension registry は増やさない。
+
+Graphics.RenderGraph 側に追加する内部の transactional append は detached pass の検証、資源 identity 参照、use/lifetime の commit/rollback を一体で行う。Graphics.Pipelines 側の内部 bridge は plan の独立使用 lease と一回記録権を予約/commit/rollback し、record-only callback を発行する。adapter の IRenderGraphLifetime 実装が両者を結び、成功時に既存 graph.Retain と同じ lifetime 所有者リストへ保持する。これらの予約・transaction は新しい内部メンバーであり、現行 public AddPass/Retain だけで原子的 rollback ができるという主張ではない。friend-access はこの adapter assembly にだけ与え、GetOrAddExtension や登録表は使わない。
+
+cull または未記録 abort は callback を実行せず、独立 lease は graph/compiled plan の Dispose まで保守的に保持してから返す。即時の pass 別 cull 通知は追加しない。record callback の実行だけを lease が一度記録し、その後は caller が GPU 実完了と command 破棄を保証して compiled graph を Dispose するまで返さない。既存 Dispose の Completed/Faulted/Disposed 判定だけを実完了証明とは扱わず、未送信 command 破棄と送信済み command の実完了後破棄を caller が区別する既存契約を維持する。adapter に submission receipt API や新たな完了通知は追加せず、既存 Retain による coarse な保持を再利用する。受付不明では単に command を破棄して安全になったとは扱わず、前節の隔離・信頼された世代退役証明を満たすまで graph/compiled plan と lease を保持する。cleanup 失敗は独立 lease を保持して再試行し、借用元 plan/pipeline の所有権は奪わない。
+
+### 論理 pass adapter の公開 API 差分
+
+以下は同じ基準ソースへの追加提案であり、attachment、Load/Store、Begin/End を管理する公開型は追加しない。
+
+~~~diff
++namespace Lumyte.Graphics.Pipelines
++{
++    public sealed class PipelineResourceSlot
++    { internal PipelineResourceSlot(); } // plan manifest 内の opaque identity。
++    public sealed class GraphicsPipelineResourceManifest
++    {
++        public PipelineResourceSlot GetSlot(int index); // 捕捉済み順序。範囲外は拒否。
++        public int Count { get; }
++    }
++}
++namespace Lumyte.Graphics.Pipelines.RenderGraph
++{
++    public sealed record PipelineGraphTextureBinding(PipelineResourceSlot Slot,
++        RenderGraphTexture Resource, IGraphicsTexture Allocation,
++        TextureState State, BarrierScope Scope);
++    public sealed class PipelineGraphBufferBinding
++    {
++        public static PipelineGraphBufferBinding Create<T>(PipelineResourceSlot slot,
++            RenderGraphBuffer<T> resource, IGraphicsBuffer<T> allocation, BarrierScope scope)
++            where T : unmanaged; // 型と allocation/range は plan manifest に照合。
++    }
++    public sealed class PipelineGraphBindings
++    {
++        public PipelineGraphBindings(IReadOnlyList<PipelineGraphTextureBinding> textures,
++            IReadOnlyList<PipelineGraphBufferBinding> buffers); // null 拒否、不変コピー。
++    }
++    public static class PipelineGraphExtensions
++    {
++        // 全 preflight 後に原子的 append と一回記録権 claim。失敗は rollback。
++        public static RenderGraphPass AddPipelinePass(this RenderGraph graph, string name,
++            GraphicsPipelineRecordPlan plan, PipelineGraphBindings bindings);
++    }
++}
+~~~
+
 ### 受付不明の隔離と信頼された退役証明
 
 既存の queue/submission API には、例外となった Submit の受付を後から問い合わせる機能がない。したがって receipt がない受付不明区間に Drain の有限完了を保証しない。Drain は既知 submission の実完了と回収を試み、受付不明が残れば `PipelineQuarantinedException` を返して owner を host に残す。待ち続ければ安全になるとはしない。Retirement authority がない backend では、その隔離を解く機能はなく、host と依存 owner を保持し続ける必要がある。
@@ -469,6 +560,7 @@ owner context と authority は caller が host より長く保持する。autho
 +    }
 +    public sealed class GraphicsPipelineRecordPlan : IDisposable
 +    {
++        public GraphicsPipelineResourceManifest Resources { get; } // 不変の全外部資源 manifest。
 +        // no-readback のみ、一回。借用 command に記録するだけで Finish/Submit しない。
 +        public void Record(IGraphicsCommandBuffer commands);
 +        public void Dispose(); // 記録後は実完了・command 破棄まで owner を保持する。
@@ -709,6 +801,8 @@ provider は immutable な artifact inventory を捕捉する。build context �
 
 ## 検討した代替案
 
+- 論理 pass のために RenderPassScope/DrawContext を追加する: attachment や Load/Store、Begin/End の管理まで新たな外側へ広げてしまう。既存 AddPass と UseTexture/UseBuffer/DependsOn/KeepAlive を使い、汎用 record-plan adapter だけを追加する。
+
 - 2D graph が外側の renderer を生成する: 描画だけなら短いが汎用再利用と直接注入を分離できない。汎用定義・compiled pipeline と Renderer2D 内部 binding を分離する。
 - global registry で strategy を解決する: 引数は減るが選択と寿命が暗黙になる。constructor に instance を直接渡す。
 - 全工程を fluent chain または文字列 edge にする: 分岐・合流または型検査が弱くなる。一入力は Then、分岐・合流は型付き変数と Stage にする。
@@ -724,4 +818,4 @@ Browser Compute 構成は新境界の対象外として構築前に拒否する�
 
 受入れ条件は Core の Graphics/2D 非依存、CPU 専用定義と別 adapter、任意 TInput/TOutput の Complete/build、compiled IPipeline の直接受渡しと外側 IRenderer2D の役割分離、request 全体の upload 禁止、Graphics passthrough、Stage/Then/転送 helper の同一性、凍結後追加・型不一致・graph 外 port・循環の拒否、fan-in/fan-out の一回評価である。schema/version/layout/sample/grid/source/世代の拒否、独立版と具体的融合版の数値一致、16 sample の平均後 SrcOver と部分重なり、mesh の center 補間、先取りのない painter order、有限予算の確保前拒否も確認する。
 
-外部 assembly の１〜６入力 factory/processor と CPU/GPU 出力、artifact ABI/target/世代拒否、直接・retained・Graph の同一 pipeline/source/資源共有、borrowed owner と frame lease の解放、owner-context 上の区間再開、取消し・受付不明・mapping/cleanup 失敗と retry、ticket 二重使用拒否、偽造・別世代 proof 拒否、authority 不在時の隔離維持を検証する。文書 lint は実装・GPU 適合性検証を代替しない。
+外部 assembly の１〜６入力 factory/processor と CPU/GPU 出力、artifact ABI/target/世代拒否、直接・retained・Graph の同一 pipeline/source/資源共有、borrowed owner と frame lease の解放、owner-context 上の区間再開、取消し・受付不明・mapping/cleanup 失敗と retry、ticket 二重使用拒否、偽造・別世代 proof 拒否、authority 不在時の隔離維持を検証する。論理 pass の全外部 manifest、実 identity/世代/alias、単一外部 texture 状態の preflight 拒否、transactional append 失敗 rollback と二重 claim 拒否、内部 scratch 予算、cull/未記録の coarse 保持、記録済み GPU 実完了・command 破棄までの独立 lease、no-readback と encoder 閉鎖、DependsOn と GPU 完了の区別、KeepAlive/出力の culling 規則も受入れ条件とする。文書 lint は実装・GPU 適合性検証を代替しない。
