@@ -22,17 +22,7 @@ public sealed class CoverageValidationTests
     {
         var runtime = new ExecutionRuntime([]);
         runtime.PrepareOnCurrentHost(OwnerPlacement.Host, CpuExecutionMode.Cooperative, 1, new ExecutionOptions());
-        void Pump(Task task)
-        {
-            for (int i = 0; !task.IsCompleted && i < 100000; i++)
-            {
-                runtime.PumpHostLifecycle(64, TimeSpan.FromMilliseconds(2));
-                runtime.PumpJobs(64, TimeSpan.FromMilliseconds(2));
-            }
-
-            Assert.True(task.IsCompleted);
-            task.GetAwaiter().GetResult();
-        }
+        void Pump(Task task) => CooperativeTestPump.Complete(runtime, task);
 
         Pump(runtime.StartAsync().AsTask());
         try

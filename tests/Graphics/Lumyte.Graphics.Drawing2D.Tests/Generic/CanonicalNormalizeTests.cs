@@ -140,17 +140,7 @@ public sealed class CanonicalNormalizeTests
     {
         var runtime = new Lumyte.Execution.ExecutionRuntime([]);
         runtime.PrepareOnCurrentHost(Lumyte.Execution.OwnerPlacement.Host, Lumyte.Execution.CpuExecutionMode.Cooperative, 1, new Lumyte.Execution.ExecutionOptions());
-        void Pump(Task task)
-        {
-            for (int i = 0; !task.IsCompleted && i < 100000; i++)
-            {
-                runtime.PumpHostLifecycle(64, TimeSpan.FromMilliseconds(2));
-                runtime.PumpJobs(64, TimeSpan.FromMilliseconds(2));
-            }
-
-            Assert.True(task.IsCompleted);
-            task.GetAwaiter().GetResult();
-        }
+        void Pump(Task task) => CooperativeTestPump.Complete(runtime, task);
 
         Pump(runtime.StartAsync().AsTask());
         try

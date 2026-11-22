@@ -334,21 +334,7 @@ public sealed class GenericGraphBindingTests
             return task.GetAwaiter().GetResult();
         }
 
-        private void Pump(Task task)
-        {
-            var timeout = System.Diagnostics.Stopwatch.StartNew();
-            while (!task.IsCompleted)
-            {
-                _runtime.PumpHostLifecycle(64, TimeSpan.FromMilliseconds(2));
-                _runtime.PumpJobs(64, TimeSpan.FromMilliseconds(2));
-                if (timeout.Elapsed > TimeSpan.FromSeconds(15))
-                {
-                    throw new TimeoutException("Generic graph preparation did not complete.");
-                }
-            }
-
-            task.GetAwaiter().GetResult();
-        }
+        private void Pump(Task task) => CooperativeTestPump.Complete(_runtime, task, "generic graph fixture");
     }
 
     private sealed class Observe(Fixture fixture) : IStage<RenderRequest2D, RenderRequest2D>, IStageFactory<RenderRequest2D, RenderRequest2D>, IStageProcessor<RenderRequest2D, RenderRequest2D>
