@@ -11,6 +11,7 @@ public sealed class TrustedNativeRetirementTests
 {
     /// <summary>Native destruction and callback draining certify the fixed device generation.</summary>
     /// <returns>Completion of native retirement confirmation.</returns>
+    [Trait("Execution", "Gpu")]
     [Fact]
     public async Task NativeLossIssuesProofAsync()
     {
