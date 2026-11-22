@@ -4,7 +4,7 @@ using Lumyte.Graphics.Abstractions;
 namespace Lumyte.Graphics.Direct3D12;
 
 /// <summary>Owns a Direct3D 12 device and direct queue.</summary>
-public sealed class Direct3D12Device : IGraphicDevice, IDisposable
+public sealed partial class Direct3D12Device : IGraphicDevice, IDisposable
 {
     /// <summary>The application root capacity in DWORDs after the six-DWORD fixed root-signature cost.</summary>
     public const int RootConstantDwordCapacity = 58;
@@ -22,6 +22,7 @@ public sealed class Direct3D12Device : IGraphicDevice, IDisposable
     {
         _queueDriver = driver;
         _lifetime = new(this);
+        RetirementAuthority = new RetirementAuthorityAdapter(this);
         Queue = new Direct3D12Queue(this);
     }
 
@@ -29,6 +30,7 @@ public sealed class Direct3D12Device : IGraphicDevice, IDisposable
     {
         _native = native;
         _lifetime = new(this);
+        RetirementAuthority = new RetirementAuthorityAdapter(this);
         Queue = new Direct3D12Queue(this);
         SdkVersion = NativeMethods.DeviceSdkVersion(native);
         PartialGraphicsProgramsEnabled = partial;

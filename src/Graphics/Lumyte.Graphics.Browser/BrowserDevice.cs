@@ -5,7 +5,7 @@ using Lumyte.Graphics.Abstractions;
 namespace Lumyte.Graphics.Browser;
 
 /// <summary>Owns a browser WebGPU device and its immutable capability snapshot.</summary>
-public sealed class BrowserDevice : IGraphicDevice, IDisposable
+public sealed partial class BrowserDevice : IGraphicDevice, IDisposable
 {
     private readonly JSObject _handle;
     private readonly GraphicsDeviceLifetime _lifetime;
@@ -15,6 +15,7 @@ public sealed class BrowserDevice : IGraphicDevice, IDisposable
     private BrowserDevice(JSObject handle, DeviceCaps caps)
     {
         _lifetime = new(this);
+        RetirementAuthority = new RetirementAuthorityAdapter(this);
         (_handle, Caps) = (handle, caps);
         Queue = new BrowserQueue(this);
         _ = ObserveLossAsync();
@@ -315,6 +316,12 @@ public sealed class BrowserDevice : IGraphicDevice, IDisposable
     /// <inheritdoc />
     public ValueTask WaitForRetirementAsync(CancellationToken cancellationToken = default)
     {
+        ObjectDisposedException.ThrowIf(Status == GraphicsDeviceStatus.Disposed, this);
+        if (Status != GraphicsDeviceStatus.Lost)
+        {
+            throw new InvalidOperationException("Retirement requires confirmed native device loss.");
+        }
+
         cancellationToken.ThrowIfCancellationRequested();
         if (Loss?.Reason == "LossObservationFailed")
         {

@@ -6,12 +6,14 @@ namespace Lumyte.Graphics.Drawing2D;
 public sealed class RenderPreparationContext2D
 {
     private readonly DrawingResourceState2D _resources;
+    private readonly bool _allowReturnedResources;
 
-    internal RenderPreparationContext2D(IGraphicDevice device, DrawingTargetInfo2D target, DrawingResourceState2D resources, DrawingArgumentPlan2D? argumentPlan = null)
+    internal RenderPreparationContext2D(IGraphicDevice device, DrawingTargetInfo2D target, DrawingResourceState2D resources, DrawingArgumentPlan2D? argumentPlan = null, bool allowReturnedResources = false)
     {
         Device = device;
         Target = target;
         _resources = resources;
+        _allowReturnedResources = allowReturnedResources;
         ArgumentPlan = argumentPlan ?? new(device);
         Clips = new(target);
         ArgumentPlan.RegisterPreparationCache(Clips);
@@ -31,9 +33,11 @@ public sealed class RenderPreparationContext2D
 
     internal ClipNormalizationCache2D Clips { get; }
 
+    internal Pipelines.RenderSourceBinding2D? SourceBinding { get; init; }
+
     /// <summary>Retains the renderer's existing resource owner for prepared work through GPU completion.</summary>
     /// <returns>A lifetime token containing no pipeline or shader state.</returns>
-    public IDisposable RetainResources() => _resources.Retain();
+    public IDisposable RetainResources() => _resources.Retain(_allowReturnedResources);
 
     /// <summary>Rejects resources whose runtime generation is no longer usable.</summary>
     public void ValidateResources() => _resources.Validate();
@@ -49,7 +53,7 @@ public sealed class RenderPreparationContext2D
             throw new ArgumentException("The argument plan belongs to another device.", nameof(argumentPlan));
         }
 
-        return new(Device, Target, _resources, argumentPlan);
+        return new(Device, Target, _resources, argumentPlan, _allowReturnedResources) { SourceBinding = SourceBinding };
     }
 
     internal void CleanupAfterFailure(IDisposable resource, Exception preparationFailure) => _resources.CleanupAfterFailure(resource, preparationFailure);

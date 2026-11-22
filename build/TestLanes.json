@@ -524,5 +524,48 @@
     "Lanes": [
       "Integration"
     ]
+  },
+  {
+    "Project": "tests/Core/Lumyte.Pipelines.Tests/Lumyte.Pipelines.Tests.csproj",
+    "Default": "Cpu",
+    "IntegrationClasses": [],
+    "Lanes": [
+      "Cpu"
+    ]
+  },
+  {
+    "Project": "tests/Graphics/Lumyte.Graphics.Drawing2D.Tests/GenericGpu/GenericGpu.NativeTests.csproj",
+    "Default": "Cpu",
+    "IntegrationClasses": [],
+    "Lanes": [
+      "Cpu",
+      "Gpu"
+    ]
+  },
+  {
+    "Project": "tests/Graphics/Lumyte.Graphics.Drawing2D.Tests/GenericGraphNative/GenericGraph.NativeTests.csproj",
+    "Default": "Cpu",
+    "IntegrationClasses": [],
+    "Lanes": [
+      "Gpu"
+    ]
+  },
+  {
+    "Project": "tests/Graphics/Lumyte.Graphics.Pipelines.RenderGraph.Tests/Lumyte.Graphics.Pipelines.RenderGraph.Tests.csproj",
+    "Default": "Cpu",
+    "IntegrationClasses": [],
+    "Lanes": [
+      "Cpu",
+      "Gpu"
+    ]
+  },
+  {
+    "Project": "tests/Graphics/Lumyte.Graphics.Pipelines.Tests/Lumyte.Graphics.Pipelines.Tests.csproj",
+    "Default": "Cpu",
+    "IntegrationClasses": [],
+    "Lanes": [
+      "Cpu",
+      "Gpu"
+    ]
   }
 ]

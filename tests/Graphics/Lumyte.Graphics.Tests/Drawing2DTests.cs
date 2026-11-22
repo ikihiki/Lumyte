@@ -166,7 +166,7 @@ public sealed partial class Drawing2DTests
         await CheckStandaloneAsync(device);
     }
 
-    internal static async Task CheckStandaloneAsync(IGraphicDevice device, Renderer2D? managedRenderer = null, ResourceManager? manager = null)
+    internal static async Task CheckStandaloneAsync(IGraphicDevice device, IRenderer2D? managedRenderer = null, ResourceManager? manager = null)
     {
         var canvas = new Canvas2D();
         canvas.Begin();
@@ -176,14 +176,14 @@ public sealed partial class Drawing2DTests
         using IGraphicsTexture target = device.CreateTexture(new() { Width = 4, Height = 2, Format = TextureFormat.Rgba8Srgb, Usage = TextureUsage.RenderAttachment | TextureUsage.CopySource });
         using IGraphicsTextureView view = target.CreateView();
         using ExternalDrawingResources? resources = managedRenderer is null ? new(device) : null;
-        using Renderer2D renderer = managedRenderer ?? new Renderer2D(device, DrawingCommandRenderers2D.CreateDefault(), resources!.Resources, resourceOwner: resources);
+        using IRenderer2D renderer = managedRenderer ?? new Renderer2D(device, DrawingCommandRenderers2D.CreateDefault(), resources!.Resources, resourceOwner: resources);
         PreparedDraw2D prepared = await renderer.PrepareAsync(list, new() { View = view, LoadOp = AttachmentLoadOp.Clear, ClearColor = new(0, 0, 1, 0.25f) });
 
         // Prepared work retains the original owner after the renderer is returned.
         renderer.Dispose();
-        if (managedRenderer is not null)
+        if (manager is not null)
         {
-            await manager!.TrimAsync();
+            await manager.TrimAsync();
         }
 
         uint pitch = Math.Max(16, device.GetTextureCopyLayout(TextureFormat.Rgba8Srgb).BytesPerRowAlignment);
@@ -635,11 +635,11 @@ public sealed partial class Drawing2DTests
         AssertPixel(backdrop, 5, 4, 0, new(0, 0, 1, 1));
     }
 
-    private static async Task<Vector4[]> RenderAsync(IGraphicDevice device, int width, int height, Action<RenderGraphCanvas2D> draw, IGraphicsTexture[]? inputs = null, float pixelScale = 1, bool useDefaultResources = false, bool individualPaths = false, Func<IGraphicsCommandBuffer, IGraphicsCommandBuffer>? observe = null)
+    private static async Task<Vector4[]> RenderAsync(IGraphicDevice device, int width, int height, Action<RenderGraphCanvas2D> draw, IGraphicsTexture[]? inputs = null, float pixelScale = 1, bool useDefaultResources = false, bool individualPaths = false, Func<IGraphicsCommandBuffer, IGraphicsCommandBuffer>? observe = null, bool composed = false, IFillRectRenderer2D? rectangleBackend = null)
     {
         useDefaultResources |= _fixedRecordEffects.Value;
-        DrawingResourceState2D? shared = _serialResources.Value?.Get(device, useDefaultResources);
-        using ExternalDrawingResources? resources = useDefaultResources || shared is not null ? null : new(device);
+        DrawingResourceState2D? shared = composed ? null : _serialResources.Value?.Get(device, useDefaultResources);
+        using ExternalDrawingResources? resources = (useDefaultResources && !composed) || shared is not null ? null : new(device, builtinIdentity: useDefaultResources);
         var canvas = new RenderGraphCanvas2D();
         canvas.Begin();
         draw(canvas);
@@ -663,10 +663,18 @@ public sealed partial class Drawing2DTests
         DrawingCommandRenderers2D strategies = individualPaths
             ? new(defaults.FillRect, defaults.FillRoundedRect, defaults.FillCircle, defaults.DrawLine, new IndividualPathRenderer(), defaults.StrokePath, defaults.DrawImage, defaults.DrawCoverageMask, defaults.DrawDistanceField, defaults.DrawMesh, defaults.DrawPaintGraph)
             : defaults;
-        var targetBinding = new RenderTargetBinding2D { Texture = target, Description = description, LoadOp = AttachmentLoadOp.Clear, PixelScale = pixelScale };
-        using RenderGraphRenderer2D renderer = shared is null
-            ? new RenderGraphRenderer2D(strategies, list, targetBinding, bindings, resources?.Resources, resourceOwner: resources)
-            : new RenderGraphRenderer2D(strategies, list, targetBinding, bindings, shared);
+        if (rectangleBackend is not null)
+        {
+            strategies = new(rectangleBackend, strategies.FillRoundedRect, strategies.FillCircle, strategies.DrawLine, strategies.FillPath, strategies.StrokePath, strategies.DrawImage, strategies.DrawCoverageMask, strategies.DrawDistanceField, strategies.DrawMesh, strategies.DrawPaintGraph);
+        }
+
+        using IRenderer2D? configured = composed ? ComposeDefinition(strategies).BuildRenderer(device, resources!.Resources, resources, null) : null;
+        var binding = new RenderTargetBinding2D { Texture = target, Description = description, LoadOp = AttachmentLoadOp.Clear, PixelScale = pixelScale };
+        using RenderGraphRenderer2D renderer = configured is not null
+            ? new RenderGraphRenderer2D(configured, list, binding, bindings)
+            : shared is not null ? new RenderGraphRenderer2D(strategies, list, binding, bindings, shared)
+            : new RenderGraphRenderer2D(strategies, list, binding, bindings, resources?.Resources, resourceOwner: resources);
+        configured?.Dispose();
         PreparedDrawingPasses2D drawing = await graph.Append2D(renderer);
         renderer.Dispose();
         TextureCopyLayout layout = device.GetTextureCopyLayout(description.Format);

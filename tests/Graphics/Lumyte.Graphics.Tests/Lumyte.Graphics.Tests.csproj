@@ -7,6 +7,8 @@
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
   <ItemGroup>
+    <ProjectReference Include="../../../src/Core/Lumyte.Composition.Generators/Lumyte.Composition.Generators.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
+    <Compile Include="../Lumyte.Resources.Graphics.AotSmoke/CustomCompose.cs" Link="Composition/CustomCompose.cs" />
     <ProjectReference Include="../../../benchmarks/Graphics/Shared/CpuGraphics/Lumyte.Graphics.BenchmarkDevice.csproj" />
     <ProjectReference Include="../../../src/Graphics/Lumyte.Graphics.Validation/Lumyte.Graphics.Validation.csproj" />
     <ProjectReference Include="../../../src/Graphics/Lumyte.Graphics.Generators/Lumyte.Graphics.Generators.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />

@@ -2,7 +2,7 @@ using Lumyte.Graphics.Abstractions;
 
 namespace Lumyte.Graphics.Browser;
 
-internal sealed partial class BrowserGraphicsPipeline : IGraphicsPipeline
+internal sealed partial class BrowserGraphicsPipeline : IGraphicsPipeline, IGraphicsNativeOrigin
 {
     private readonly BrowserDevice _owner;
     private readonly BrowserShader _vertex;
@@ -34,6 +34,10 @@ internal sealed partial class BrowserGraphicsPipeline : IGraphicsPipeline
         Initialize();
     }
 
+    IGraphicDevice IGraphicsNativeOrigin.Device => Owner;
+
+    object IGraphicsNativeOrigin.AllocationIdentity => this;
+
     public GraphicsPipelineDesc Desc { get; }
 
     internal BrowserDevice Owner => _owner;
@@ -43,6 +47,17 @@ internal sealed partial class BrowserGraphicsPipeline : IGraphicsPipeline
     internal ShaderTargetData VertexData { get; }
 
     internal ShaderTargetData? FragmentData { get; }
+
+    void IGraphicsNativeOrigin.ValidateOrigin()
+    {
+        ObjectDisposedException.ThrowIf(Owner.Status == GraphicsDeviceStatus.Disposed, Owner);
+        if (Owner.Status == GraphicsDeviceStatus.Lost)
+        {
+            throw new GraphicsDeviceLostException(Owner.Loss!);
+        }
+
+        ValidateAlive();
+    }
 
     public void Dispose()
     {

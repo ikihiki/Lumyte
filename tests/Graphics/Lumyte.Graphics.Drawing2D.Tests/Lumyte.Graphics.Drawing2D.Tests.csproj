@@ -6,6 +6,7 @@
     <IsTestProject>true</IsTestProject>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Remove="GenericGpu/GenericGpuNative*.cs;GenericGpu/**/obj/**/*.cs;GenericGpu/**/bin/**/*.cs;GenericGraphNative/**/*.cs" />
     <ProjectReference Include="../../../src/Graphics/Lumyte.Graphics.Svg/Lumyte.Graphics.Svg.csproj" />
     <ProjectReference Include="../../../src/UI/Lumyte.UI/Lumyte.UI.csproj" />
     <ProjectReference Include="../../../src/UI/Lumyte.UI.Media/Lumyte.UI.Media.csproj" />

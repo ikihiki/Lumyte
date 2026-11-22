@@ -9,8 +9,11 @@ internal sealed class DrawingResourceState2D : IDisposable
     private readonly IGraphicDevice? _device;
     private readonly Action? _validate;
     private readonly long _numericPoolBudget;
+    private readonly bool _pipelineMode;
     private DrawingResources2D? _resources;
     private IDisposable? _owner;
+    private IDisposable? _compositionOwner;
+
     private SolidRectangleResources2D? _rectangles;
     private DrawRecordResources2D? _records;
     private int _users = 1;
@@ -18,20 +21,21 @@ internal sealed class DrawingResourceState2D : IDisposable
     private bool _closing;
     private bool _retryingCleanup;
 
-    internal DrawingResourceState2D(IGraphicDevice? device, DrawingResources2D? resources = null, IDisposable? owner = null, Action? validate = null, long numericPoolBudget = 8 * 1024 * 1024)
+    internal DrawingResourceState2D(IGraphicDevice? device, DrawingResources2D? resources = null, IDisposable? owner = null, Action? validate = null, long numericPoolBudget = 8 * 1024 * 1024, bool pipelineMode = false)
     {
         if (resources is not null && !ReferenceEquals(device, resources.Device))
         {
             throw new ArgumentException("Drawing resources belong to a different physical device.", nameof(resources));
         }
 
-        if (resources is null && (owner is not null || validate is not null))
+        if (!pipelineMode && resources is null && (owner is not null || validate is not null))
         {
             throw new ArgumentException("An external owner or validator requires explicit drawing resources.", nameof(resources));
         }
 
         (_device, _resources, _owner, _validate) = (device, resources, owner, validate);
         _numericPoolBudget = numericPoolBudget;
+        _pipelineMode = pipelineMode;
     }
 
     internal DrawingResources2D Resources
@@ -81,12 +85,37 @@ internal sealed class DrawingResourceState2D : IDisposable
         }
     }
 
-    internal IDisposable Retain()
+    internal void AttachCompositionOwner(IDisposable owner) => _compositionOwner = owner;
+
+    internal void ReturnBorrow(IDisposable use)
     {
         lock (_gate)
         {
-            ObjectDisposedException.ThrowIf(_returned || _closing, this);
-            EnsureResources();
+            // Failed preparation owners may themselves retain this state. Drain them
+            // before returning the host borrow so their retry owner remains reachable.
+            RetryCleanup();
+            use.Dispose();
+        }
+    }
+
+    internal IDisposable? RetainComposition(bool allowReturned = false)
+    {
+        lock (_gate)
+        {
+            return _compositionOwner is null ? null : Retain(allowReturned, ensureResources: false);
+        }
+    }
+
+    internal IDisposable Retain(bool allowReturned = false, bool ensureResources = true)
+    {
+        lock (_gate)
+        {
+            ObjectDisposedException.ThrowIf((_returned && !allowReturned) || _closing || _users == 0, this);
+            if (ensureResources && !_pipelineMode)
+            {
+                EnsureResources();
+            }
+
             Validate();
             var use = new Use(this);
             _users++;
@@ -191,12 +220,17 @@ internal sealed class DrawingResourceState2D : IDisposable
 
     private void EnsureResources()
     {
+        if (_pipelineMode && _resources is null)
+        {
+            throw new InvalidOperationException("A generic pipeline binding does not implicitly construct legacy drawing shaders.");
+        }
+
         if (_resources is not null)
         {
             return;
         }
 
-        ObjectDisposedException.ThrowIf(_returned || _closing, this);
+        ObjectDisposedException.ThrowIf(_users == 0 || _closing, this);
         IGraphicDevice device = _device ?? throw new InvalidOperationException("Drawing requires a physical device.");
 
         // A failed earlier cleanup must finish before a new set of default resources is constructed.
@@ -235,6 +269,8 @@ internal sealed class DrawingResourceState2D : IDisposable
             _records = null;
             _rectangles?.Dispose();
             _rectangles = null;
+            _compositionOwner?.Dispose();
+            _compositionOwner = null;
             _owner?.Dispose();
             _owner = null;
         }
