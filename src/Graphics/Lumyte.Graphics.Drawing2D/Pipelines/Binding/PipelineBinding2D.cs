@@ -86,6 +86,7 @@ internal sealed partial class PipelineBinding2D
         try
         {
             owners.Add(context.RetainResources());
+            owners.Add(ImageResourceRegistry2D.Retain([new DrawList2D(commands)]));
             IDisposable? targetUse = source.AcquireTargetUse();
             if (targetUse is not null)
             {

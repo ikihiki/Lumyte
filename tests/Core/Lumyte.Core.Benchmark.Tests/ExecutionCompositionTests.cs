@@ -6,6 +6,7 @@ namespace Lumyte.Core.Benchmark.Tests;
 public sealed class ExecutionCompositionTests
 {
     /// <summary>Runs deterministic runtime and compile-time oracles.</summary>
+    [Trait("Execution", "Integration")]
     [Fact]
     public void VerifyConsumers()
     {
@@ -33,6 +34,7 @@ public sealed class ExecutionCompositionTests
 
     /// <summary>Both producers must run independently of the caller's serial task scheduler.</summary>
     /// <returns>The producer completion assertion.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task DedicatedProducersDrainAllCommandsOnSerialSchedulerAsync()
     {

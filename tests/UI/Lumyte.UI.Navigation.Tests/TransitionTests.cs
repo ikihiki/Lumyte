@@ -9,6 +9,7 @@ public sealed class TransitionTests
 {
     /// <summary>Checks loading keeps the current publication, Busy is immediate and cancellation cleans the candidate.</summary>
     /// <returns>The verification.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task CanceledPreparationKeepsTheOldPageAndCleansItsOwnedLeaseAsync()
     {
@@ -41,6 +42,7 @@ public sealed class TransitionTests
     /// <summary>Checks guard rejection and failure preserve history; recursive navigation never runs another factory.</summary>
     /// <param name="throwing">Whether the guard fails instead of rejecting.</param>
     /// <returns>The verification.</returns>
+    [Trait("Execution", "Integration")]
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
@@ -73,6 +75,7 @@ public sealed class TransitionTests
 
     /// <summary>Checks a committed result remains stable while failed retirement retains the old surface for retry.</summary>
     /// <returns>The verification.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task RetirementFailureBlocksNewNavigationUntilTheSameLeaseIsRetriedAsync()
     {
@@ -105,6 +108,7 @@ public sealed class TransitionTests
 
     /// <summary>Checks stopping an initial pending prepare does not wait on surface release to settle initialization.</summary>
     /// <returns>The verification.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task StopDuringInitialPreparationDoesNotCreateAnInitializationCycleAsync()
     {
@@ -126,6 +130,7 @@ public sealed class TransitionTests
 
     /// <summary>Checks a settled callback can queue another transition after retirement without running its factory recursively.</summary>
     /// <returns>The verification.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task CompletionCallbackCanQueueTheNextPageAfterCleanupAsync()
     {

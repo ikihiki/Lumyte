@@ -12,6 +12,7 @@ public sealed class ResourceConcurrencyTests
 {
     /// <summary>A new acquisition cannot join a completed load while its detached cleanup is still running.</summary>
     /// <returns>Completion of the overlapping load, trim and cleanup operations.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task AcquireAfterTrimDoesNotJoinPublishedLoadWithPendingCleanupAsync()
     {
@@ -75,6 +76,7 @@ public sealed class ResourceConcurrencyTests
 
     /// <summary>Cycle checks still use a live parent's provenance after its build-only child is trimmed.</summary>
     /// <returns>Completion of trimming and the rejected reverse dependency.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task CachedMetadataDetectsCycleThroughTrimmedBuildDependencyAsync()
     {
@@ -109,6 +111,7 @@ public sealed class ResourceConcurrencyTests
 
     /// <summary>Reload replaces every forced node's old outgoing edges before checking the replacement graph.</summary>
     /// <returns>Completion of a valid dependency reversal.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task ReloadAllowsAcyclicDependencyDirectionToReverseAsync()
     {
@@ -148,6 +151,7 @@ public sealed class ResourceConcurrencyTests
 
     /// <summary>Advancing an available runtime without invalidation leaves retained older revisions usable.</summary>
     /// <returns>Completion of the runtime update and explicit rebuild.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task RuntimeAdvanceWithoutInvalidationPreservesOlderLeasesAsync()
     {
@@ -174,6 +178,7 @@ public sealed class ResourceConcurrencyTests
 
     /// <summary>Replacing a dependency edge drops obsolete provenance while old output leases remain usable.</summary>
     /// <returns>Completion of rebuilding and loading the retired input at a newer revision.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task ReplacingMetadataEdgePreservesOldLeaseAndPrunesRetiredInputAsync()
     {
@@ -208,6 +213,7 @@ public sealed class ResourceConcurrencyTests
 
     /// <summary>A failed load that temporarily roots old provenance schedules pruning again when it finally leaves.</summary>
     /// <returns>Completion of overlapping failed construction, reclamation and a later revision load.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task FailedLoadRemovalRetriesMetadataPruningAfterConcurrentTrimAsync()
     {
@@ -275,6 +281,7 @@ public sealed class ResourceConcurrencyTests
     /// <param name="registered">Whether a runtime provider is registered.</param>
     /// <param name="tracked">Whether the resource depends on the runtime.</param>
     /// <returns>Completion of resource construction and read checks.</returns>
+    [Trait("Execution", "Integration")]
     [Theory]
     [InlineData(false, false)]
     [InlineData(true, false)]
@@ -301,6 +308,7 @@ public sealed class ResourceConcurrencyTests
 
     /// <summary>Resident paths preserve older runtime versions, and build-only edges stop invalidation propagation.</summary>
     /// <returns>Completion of the shared dependency graph and runtime invalidation.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task ResidentPathsPreserveDistinctVersionsAndBuildBoundariesAsync()
     {
@@ -352,6 +360,7 @@ public sealed class ResourceConcurrencyTests
     /// <summary>An already invalid runtime snapshot cannot be used while its change notification is still being delivered.</summary>
     /// <param name="access">The first resource access performed by the earlier change subscriber.</param>
     /// <returns>Completion of the ordered change notification and all availability checks.</returns>
+    [Trait("Execution", "Integration")]
     [Theory]
     [InlineData("lease")]
     [InlineData("value")]
@@ -416,6 +425,7 @@ public sealed class ResourceConcurrencyTests
     /// <param name="available">The malformed availability.</param>
     /// <param name="invalidated">The malformed invalidation watermark.</param>
     /// <returns>Completion of event delivery and manager rejection.</returns>
+    [Trait("Execution", "Integration")]
     [Theory]
     [InlineData(0UL, false, 0UL)]
     [InlineData(1UL, false, 0UL)]
@@ -436,6 +446,7 @@ public sealed class ResourceConcurrencyTests
     /// <summary>Additional owners preserve the same generation until the last owner leaves.</summary>
     /// <param name="operation">The additional ownership kind.</param>
     /// <returns>Completion of ownership acquisition and reclamation.</returns>
+    [Trait("Execution", "Integration")]
     [Theory]
     [InlineData("lease")]
     [InlineData("reference")]
@@ -486,6 +497,7 @@ public sealed class ResourceConcurrencyTests
 
     /// <summary>Unavailable resources reject polling and report their invalidated version on value access.</summary>
     /// <returns>Completion of runtime invalidation and availability checks.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task UnavailableLeaseAndViewChecksRejectInvalidatedGenerationAsync()
     {

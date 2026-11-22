@@ -11,58 +11,72 @@ public sealed partial class GenericGpuNativeTests
 {
     /// <summary>Checks Rectangle using independent analytic RGBA and separated/fused native output.</summary>
     [GenericGpuNativeFact]
+    [Trait("Execution", "Gpu")]
     public void CorpusRectangle() => AssertCorpus(2, new(1f, 0f, 0f, 1f));
 
     /// <summary>Checks RoundedRectangle using independent analytic RGBA and separated/fused native output.</summary>
     [GenericGpuNativeFact]
+    [Trait("Execution", "Gpu")]
     public void CorpusRoundedRectangle() => AssertCorpus(3, new(1f, 0f, 0f, 1f));
 
     /// <summary>Checks Circle using independent analytic RGBA and separated/fused native output.</summary>
     [GenericGpuNativeFact]
+    [Trait("Execution", "Gpu")]
     public void CorpusCircle() => AssertCorpus(4, new(1f, 0f, 0f, 1f));
 
     /// <summary>Checks Line using independent analytic RGBA and separated/fused native output.</summary>
     [GenericGpuNativeFact]
+    [Trait("Execution", "Gpu")]
     public void CorpusLine() => AssertCorpus(5, new(1f, 0f, 0f, 1f));
 
     /// <summary>Checks FillPath using independent analytic RGBA and separated/fused native output.</summary>
     [GenericGpuNativeFact]
+    [Trait("Execution", "Gpu")]
     public void CorpusFillPath() => AssertCorpus(6, new(1f, 0f, 0f, 1f));
 
     /// <summary>Checks StrokePath using independent analytic RGBA and separated/fused native output.</summary>
     [GenericGpuNativeFact]
+    [Trait("Execution", "Gpu")]
     public void CorpusStrokePath() => AssertCorpus(7, new(1f, 0f, 0f, 1f));
 
     /// <summary>Checks Image using independent analytic RGBA and separated/fused native output.</summary>
     [GenericGpuNativeFact]
+    [Trait("Execution", "Gpu")]
     public void CorpusImage() => AssertCorpus(8, new(0.5019607843137255f, 0f, 0f, 0.5019607843137255f));
 
     /// <summary>Checks CoverageMask using independent analytic RGBA and separated/fused native output.</summary>
     [GenericGpuNativeFact]
+    [Trait("Execution", "Gpu")]
     public void CorpusCoverageMask() => AssertCorpus(9, new(0.5019607843137255f, 0f, 0f, 0.5019607843137255f));
 
     /// <summary>Checks Sdf using independent analytic RGBA and separated/fused native output.</summary>
     [GenericGpuNativeFact]
+    [Trait("Execution", "Gpu")]
     public void CorpusSdf() => AssertCorpus(10, new(0.5019607843137255f, 0f, 0f, 0.5019607843137255f));
 
     /// <summary>Checks MeshCommand using independent analytic RGBA and separated/fused native output.</summary>
     [GenericGpuNativeFact]
+    [Trait("Execution", "Gpu")]
     public void CorpusMeshCommand() => AssertCorpus(11, new(0.4375f, 0f, 0f, 0.4375f));
 
     /// <summary>Checks PaintGraphComposite using independent analytic RGBA and separated/fused native output.</summary>
     [GenericGpuNativeFact]
+    [Trait("Execution", "Gpu")]
     public void CorpusPaintGraphComposite() => AssertCorpus(12, new(0.5f, 0f, 0.5f, 1f));
 
     /// <summary>Checks LinearGradient using independent analytic RGBA and separated/fused native output.</summary>
     [GenericGpuNativeFact]
+    [Trait("Execution", "Gpu")]
     public void CorpusLinearGradient() => AssertCorpus(13, new(0.5f, 0f, 0.5f, 1f));
 
     /// <summary>Checks ImagePattern using independent analytic RGBA and separated/fused native output.</summary>
     [GenericGpuNativeFact]
+    [Trait("Execution", "Gpu")]
     public void CorpusImagePattern() => AssertCorpus(16, new(0.5019607843137255f, 0f, 0f, 0.5019607843137255f));
 
     /// <summary>Checks DistanceFieldPaint using independent analytic RGBA and separated/fused native output.</summary>
     [GenericGpuNativeFact]
+    [Trait("Execution", "Gpu")]
     public void CorpusDistanceFieldPaint()
     {
         // DistanceField normalizes to transparent extension and linear filtering.
@@ -84,18 +98,22 @@ public sealed partial class GenericGpuNativeTests
 
     /// <summary>Checks TransformClipLayersOpacity using independent analytic RGBA and separated/fused native output.</summary>
     [GenericGpuNativeFact]
+    [Trait("Execution", "Gpu")]
     public void CorpusTransformClipLayersOpacity() => AssertCorpus(18, new(0.25f, 0f, 0.5f, 0.75f));
 
     /// <summary>Checks Msdf using independent analytic RGBA and separated/fused native output.</summary>
     [GenericGpuNativeFact]
+    [Trait("Execution", "Gpu")]
     public void CorpusMsdf() => AssertCorpus(19, new(1f, 0f, 0f, 1f));
 
     /// <summary>Checks Mtsdf using independent analytic RGBA and separated/fused native output.</summary>
     [GenericGpuNativeFact]
+    [Trait("Execution", "Gpu")]
     public void CorpusMtsdf() => AssertCorpus(20, new(1f, 0f, 0f, 1f));
 
     /// <summary>Checks nonlinear radial and sweep gradients against independently averaged sample coordinates.</summary>
     [GenericGpuNativeFact]
+    [Trait("Execution", "Gpu")]
     public void CorpusRadialAndSweepGradients()
     {
         float radial = 0;
@@ -116,6 +134,7 @@ public sealed partial class GenericGpuNativeTests
 
     /// <summary>Requires actual mesh endpoint pixels; unsupported native capability fails explicitly rather than passing.</summary>
     [GenericGpuNativeMeshFact]
+    [Trait("Execution", "Gpu")]
     public void MeshEndpointExecutesActualPixels()
     {
         IGraphicDevice device = CreateDevice();
@@ -130,6 +149,7 @@ public sealed partial class GenericGpuNativeTests
 
     /// <summary>Exercises every corpus program on actual mesh dispatch rather than only shader creation.</summary>
     [GenericGpuNativeMeshFact]
+    [Trait("Execution", "Gpu")]
     public void MeshEndpointExecutesCompleteCorpus()
     {
         for (int scenario = 0; scenario <= 22; scenario++)
@@ -140,6 +160,7 @@ public sealed partial class GenericGpuNativeTests
 
     /// <summary>Retains correlated transformed clip coverage and singular paint invisibility.</summary>
     [GenericGpuNativeFact]
+    [Trait("Execution", "Gpu")]
     public void CorpusTransformedClipAndSingularPaint()
     {
         AssertCorpus(21, new(.5f, 0, 0, .5f));
@@ -149,6 +170,7 @@ public sealed partial class GenericGpuNativeTests
     /// <summary>Integer outer scissor clips the second pixel for both decomposed and fused raster endpoints.</summary>
     /// <param name="fused">Whether to use the concrete fused raster endpoint.</param>
     [GenericGpuNativeTheory]
+    [Trait("Execution", "Gpu")]
     [InlineData(false)]
     [InlineData(true)]
     public void IntegerOuterScissorClipsRasterSecondPixel(bool fused)
@@ -160,6 +182,7 @@ public sealed partial class GenericGpuNativeTests
 
     /// <summary>Native mesh uses the same integer outer scissor as the independent clip stage.</summary>
     [GenericGpuNativeMeshFact]
+    [Trait("Execution", "Gpu")]
     public void IntegerOuterScissorClipsMeshSecondPixel()
     {
         byte[] pixels = Render(true, 23, mesh: true);

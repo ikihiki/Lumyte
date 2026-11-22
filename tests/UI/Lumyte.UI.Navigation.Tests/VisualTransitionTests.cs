@@ -10,6 +10,7 @@ public sealed class VisualTransitionTests
 {
     /// <summary>Checks headless capability fallback still commits and retires the old page normally.</summary>
     /// <returns>The asynchronous verification.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task HeadlessFallbackKeepsCommitAndVisualResultsSeparateAsync()
     {
@@ -34,6 +35,7 @@ public sealed class VisualTransitionTests
 
     /// <summary>Checks disabled motion avoids capture and completes only the visual result as skipped.</summary>
     /// <returns>The asynchronous verification.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task DisabledMotionDoesNotCancelNavigationAsync()
     {
@@ -48,6 +50,7 @@ public sealed class VisualTransitionTests
 
     /// <summary>Checks a skip requested while business preparation is pending does not cancel that preparation.</summary>
     /// <returns>The asynchronous verification.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task SkipBeforePreparationCompletesLeavesBusinessCommitIntactAsync()
     {

@@ -13,6 +13,11 @@ public static partial class Compose
         {
             private string? _testId;
 
+            /// <summary>Gets optional passive direct-child label metadata for explicit accessibility adapters.</summary>
+            /// <remarks>This metadata does not add an OS bridge, a wire field or an input capability.</remarks>
+            [ComposeParameter]
+            public UiLabelAssociation? LabelAssociation { get; init; }
+
             /// <summary>Gets or sets an optional explicit identity; non-null values must contain non-whitespace characters.</summary>
             [ComposeParameter]
             public string? TestId

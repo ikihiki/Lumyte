@@ -66,7 +66,9 @@ export function createCaptureTraceReporter({ emit = value => console.log(JSON.st
             }
         } catch { status = "snapshot-query-failed"; }
         // The only stdout path. Already-received buffers survive a hung/closed Browser.
-        safelyEmit({ check: "browser-capture-failure", ...context, status, received, invalid, dropped, records: [...records], gpu: [...gpu], captures: [...captures], recent: [...recent], ...(snapshot === undefined ? {} : { snapshot }) });
+        const report = { check: "browser-capture-failure", ...context, status, received, invalid, dropped, records: [...records], gpu: [...gpu], captures: [...captures], recent: [...recent], ...(snapshot === undefined ? {} : { snapshot }) };
+        safelyEmit(report);
+        return report;
     }
     return { observe, observeGpu, capture, failure, get received() { return received; }, get invalid() { return invalid; }, get dropped() { return dropped; } };
 }

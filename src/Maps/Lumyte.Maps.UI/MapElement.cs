@@ -9,6 +9,8 @@ public sealed class MapElement : UiElement<MapView>
 {
     private MapSession? _attached;
     private ulong _revision;
+    private long? _dragPointer;
+    private Vector2 _lastPosition;
 
     internal MapElement(MapView widget)
         : base(widget)
@@ -17,6 +19,57 @@ public sealed class MapElement : UiElement<MapView>
 
     /// <inheritdoc/>
     protected override bool CacheRetainedDrawing => true;
+
+    /// <inheritdoc/>
+    protected override bool PreservePointerGesture => true;
+
+    /// <inheritdoc/>
+    protected override UiInputResult OnInput(in UiInputContext context)
+    {
+        if (context.Input is UiWheelInput wheel && context.PointerPosition is { } position && wheel.Delta.Y != 0)
+        {
+            Widget.Session.ZoomAt(position, -wheel.Delta.Y / 160.0);
+            return UiInputResult.Handled;
+        }
+
+        if (context.Input is not UiPointerInput pointer)
+        {
+            return UiInputResult.Unhandled;
+        }
+
+        if (pointer.Phase == UiPointerPhase.Down && _dragPointer is null && context.IsInside && context.CapturePointer())
+        {
+            _dragPointer = pointer.PointerId;
+            _lastPosition = pointer.Position;
+            return UiInputResult.Handled;
+        }
+
+        if (_dragPointer == pointer.PointerId && context.IsCaptured)
+        {
+            if (pointer.Phase == UiPointerPhase.Move)
+            {
+                Widget.Session.Pan(pointer.Position - _lastPosition);
+                _lastPosition = pointer.Position;
+            }
+            else
+            {
+                _dragPointer = null;
+            }
+
+            return UiInputResult.Handled;
+        }
+
+        return UiInputResult.Unhandled;
+    }
+
+    /// <inheritdoc/>
+    protected override void OnPointerCaptureChanged(UiPointerCaptureState state)
+    {
+        if (!state.IsCaptured && _dragPointer == state.PointerId)
+        {
+            _dragPointer = null;
+        }
+    }
 
     /// <inheritdoc/>
     protected override Action? PrepareUpdate(MapView next, UiElementUpdateContext context)
@@ -47,6 +100,7 @@ public sealed class MapElement : UiElement<MapView>
     /// <inheritdoc/>
     protected override void OnUnmounted()
     {
+        _dragPointer = null;
         if (_attached is { } session)
         {
             session.Changed -= OnChanged;

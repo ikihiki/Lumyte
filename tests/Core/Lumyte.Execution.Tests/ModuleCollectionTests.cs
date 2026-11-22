@@ -47,6 +47,7 @@ public sealed class ModuleCollectionTests
 
     /// <summary>Stopping cannot strand cleanup after an uncancelable external startup operation finishes.</summary>
     /// <returns>The test completion.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task QuiescingStartupContextCanFinishCleanupAsync()
     {

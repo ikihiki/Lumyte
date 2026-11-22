@@ -36,7 +36,7 @@ internal sealed class LoopbackHandler : HttpMessageHandler
 
     internal bool CorruptCatalog { get; set; }
 
-    internal int SchemaVersion { get; set; } = 7;
+    internal int SchemaVersion { get; set; } = 9;
 
     internal ConcurrentQueue<string> ActionBodies { get; } = new();
 

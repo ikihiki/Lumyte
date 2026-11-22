@@ -11,6 +11,7 @@ public sealed partial class NativeUploadTests
 {
     /// <summary>Uploads through the generic graph and records an actual native copy exactly once.</summary>
     [NativeFact]
+    [Trait("Execution", "Gpu")]
     public void VulkanUploadRecordsActualCanonicalBytes()
     {
         using var device = VulkanDevice.Create();
@@ -56,6 +57,7 @@ public sealed partial class NativeUploadTests
 
     /// <summary>Executes real upload/readback, CPU continuation, second upload/readback and final host result.</summary>
     [NativeFact]
+    [Trait("Execution", "Gpu")]
     public void VulkanSegmentedExecutionResumesActualHostBytes()
     {
         using var device = VulkanDevice.Create();

@@ -1,3 +1,4 @@
+import { connectDiagnosticBrowser, diagnosticBrowserArguments } from './browser-startup.mjs';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { randomBytes, randomUUID } from 'node:crypto';
@@ -60,12 +61,22 @@ try {
     // Start the published server outside the source tree to verify published assets.
     launch('server', dotnet, [serverDll], profile);
     await waitFor(async () => { try { return (await fetch(origin + '/')).ok; } catch { return false; } }, 'published server');
-    launch('browser', chrome, ['--headless', '--no-sandbox', '--disable-dev-shm-usage', '--remote-debugging-port=0', `--user-data-dir=${resolve(profile, 'chrome')}`, 'about:blank'], profile, process.env);
-    let debuggerPort;
-    await waitFor(() => { debuggerPort = /DevTools listening on ws:\/\/127\.0\.0\.1:(\d+)/.exec(logs.get('browser'))?.[1]; return debuggerPort; }, 'Chromium');
-    const pages = await (await fetch(`http://127.0.0.1:${debuggerPort}/json/list`)).json();
-    socket = new WebSocket(pages.find(page => page.type === 'page').webSocketDebuggerUrl);
-    await new Promise((resolve, reject) => { socket.addEventListener('open', resolve, { once: true }); socket.addEventListener('error', reject, { once: true }); });
+    const browserProfile = resolve(profile, 'chrome');
+    const browser = launch('browser', chrome, diagnosticBrowserArguments(browserProfile), profile, process.env);
+    const startup = [];
+    logs.set('browser-startup', '');
+    const recordStartup = message => {
+        // Keep first milestones and the latest one; bound both rows and line size.
+        if (startup.length === 64) startup.pop();
+        startup.push(message.slice(0, 600));
+        logs.set('browser-startup', startup.join('\n') + '\n');
+    };
+    const browserStarted = performance.now();
+    const stderrReceipt = data => recordStartup(`+${Math.round(performance.now() - browserStarted)}ms stderr received (${data.length} bytes)`);
+    browser.stderr.on('data', stderrReceipt);
+    try {
+        socket = await connectDiagnosticBrowser(browser, browserProfile, { record: recordStartup });
+    } finally { browser.stderr.removeListener('data', stderrReceipt); }
     let nextId = 0;
     let navigationCount = 0;
     let signalRConnection = false;

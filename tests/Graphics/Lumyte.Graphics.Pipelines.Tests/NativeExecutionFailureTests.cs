@@ -12,6 +12,7 @@ public sealed partial class NativeUploadTests
 {
     /// <summary>A genuinely accepted submission with lost receipt remains quarantined until trusted native retirement.</summary>
     [NativeFact]
+    [Trait("Execution", "Gpu")]
     public void UnknownNativeAcceptanceRequiresMatchingTrustedProof()
     {
         using var session = new Session<Device<Words>>(graph => graph.Stage(new Producer(), graph.Input).Then(Transfers.Upload<Words>()), trusted: true);
@@ -44,6 +45,7 @@ public sealed partial class NativeUploadTests
 
     /// <summary>An arbitrary wrapper returning the genuine generation is not the issuing authority.</summary>
     [NativeFact]
+    [Trait("Execution", "Gpu")]
     public void WrappedAuthorityRejectedBeforeHostAcceptance()
     {
         using var session = new Session<Device<Words>>(graph => graph.Stage(new Producer(), graph.Input).Then(Transfers.Upload<Words>()), trusted: true);
@@ -54,6 +56,7 @@ public sealed partial class NativeUploadTests
 
     /// <summary>A mapping-dispatch failure stops the CPU consumer while known native work still drains.</summary>
     [NativeFact]
+    [Trait("Execution", "Gpu")]
     public void MapFailureStopsCpuContinuationAndDrainsNativeWork()
     {
         var probe = new ProbeWords();
@@ -71,6 +74,7 @@ public sealed partial class NativeUploadTests
 
     /// <summary>A cleanup failure cannot leave a later readback waiting forever or permit another submission.</summary>
     [NativeFact]
+    [Trait("Execution", "Gpu")]
     public void CleanupFailureLatchesStopBeforeFutureReadback()
     {
         var probe = new ProbeWords();
@@ -94,6 +98,7 @@ public sealed partial class NativeUploadTests
 
     /// <summary>A CPU-only result cannot pretend to be a GPU record or execution plan.</summary>
     [NativeFact]
+    [Trait("Execution", "Gpu")]
     public void CpuOnlyResultHasNoGpuReadiness()
     {
         using var session = new Session<int>(graph => graph.Input);
@@ -107,6 +112,7 @@ public sealed partial class NativeUploadTests
 
     /// <summary>No CPU consumer may resume before every mapping and epoch retirement has succeeded.</summary>
     [NativeFact]
+    [Trait("Execution", "Gpu")]
     public void ParallelDownloadsPublishOnlyAfterWholeEpochSucceeds()
     {
         var probe = new ProbeWords();
@@ -158,6 +164,7 @@ public sealed partial class NativeUploadTests
 
     /// <summary>A retained source validator runs again before each later native recording interval.</summary>
     [NativeFact]
+    [Trait("Execution", "Gpu")]
     public void SourceValidationRejectsLaterEpochBeforeSubmission()
     {
         var probe = new ProbeWords();
@@ -190,6 +197,7 @@ public sealed partial class NativeUploadTests
     /// <summary>Execute-only cancellation during mapping or delayed publication never releases CPU consumers.</summary>
     /// <param name="dispatch">Whether cancellation occurs when the publication dispatcher begins.</param>
     [NativeTheory]
+    [Trait("Execution", "Gpu")]
     [InlineData(false)]
     [InlineData(true)]
     public void ExecuteCancellationBeforePublicationStopsCpuConsumers(bool dispatch)
@@ -221,6 +229,7 @@ public sealed partial class NativeUploadTests
     /// <summary>An acquired but unsubmitted segmented result can abort its waiting downloads without native submission.</summary>
     /// <param name="resultFirst">Whether the caller returns the outer result before the unaccepted execution.</param>
     [NativeTheory]
+    [Trait("Execution", "Gpu")]
     [InlineData(false)]
     [InlineData(true)]
     public void UnsubmittedExecutionDisposalAbortsPendingPreparation(bool resultFirst)
@@ -251,6 +260,7 @@ public sealed partial class NativeUploadTests
 
     /// <summary>Returning the sole unclaimed result starts abort and retains cleanup until the runtime drains CPU work.</summary>
     [NativeFact]
+    [Trait("Execution", "Gpu")]
     public void UnclaimedSegmentedResultCanBeReturnedAfterAbortPump()
     {
         using var session = new Session<Host<Words>>(graph => graph.Stage(new Producer(), graph.Input).Then(Transfers.Upload<Words>()).Then(Transfers.Download<Words>()));

@@ -18,6 +18,7 @@ public sealed class SurfaceSourceTests
     }
 
     /// <summary>Checks target collection validation on an independently created device.</summary>
+    [Trait("Execution", "Gpu")]
     [GpuFact]
     public void WgpuRejectsInvalidTargets()
     {
@@ -31,6 +32,7 @@ public sealed class SurfaceSourceTests
     }
 
     /// <summary>Checks surface callbacks are never called without enabled presentation support.</summary>
+    [Trait("Execution", "Gpu")]
     [GpuFact]
     public void VulkanSurfaceCreationRequiresExplicitExtensions()
     {

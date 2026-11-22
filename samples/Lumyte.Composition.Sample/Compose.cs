@@ -89,8 +89,14 @@ public static partial class Compose
             /// <summary>Gets the background children owned by this button.</summary>
             public IReadOnlyList<Widget> BackgroundChildren { get; private set; } = [];
 
+            /// <summary>Gets the unevaluated template used by the sample host.</summary>
+            public CompositionTemplate<float, Widget>? ThumbTemplate { get; private set; }
+
             [ComposeSlot]
             private static void Background(Button target, IReadOnlyList<Widget> children) => target.BackgroundChildren = children;
+
+            [ComposeSlot]
+            private static void Thumb(Button target, CompositionTemplate<float, Widget> template) => target.ThumbTemplate = template;
         }
 
         /// <summary>An image widget with a required path.</summary>
@@ -116,8 +122,14 @@ public static partial class Compose
             [ComposeContent]
             public IReadOnlyList<T> Items { get; set; } = [];
 
+            /// <summary>Gets the template evaluated with an item and the receiving list declaration.</summary>
+            public CompositionTemplate<T, ListView<T>, Widget>? ItemTemplate { get; private set; }
+
             [ComposeAction]
             private static void Select(ListView<T> target, T value) => target.Selected = value;
+
+            [ComposeSlot]
+            private static void Item(ListView<T> target, CompositionTemplate<T, ListView<T>, Widget> template) => target.ItemTemplate = template;
         }
 
         /// <summary>A text widget receiving initial settings and style operations.</summary>

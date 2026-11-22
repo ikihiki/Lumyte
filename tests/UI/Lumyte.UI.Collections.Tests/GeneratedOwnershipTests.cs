@@ -10,6 +10,19 @@ namespace Lumyte.UI.Collections.Tests;
 /// <summary>Checks ownership after actual component preparation, not just declaration slots.</summary>
 public sealed class GeneratedOwnershipTests
 {
+    /// <summary>Tree rows validate generated descendants through the same ownership scope.</summary>
+    [Fact]
+    public void TreeFunctionsCannotShareGeneratedDescendants()
+    {
+        Widget shared = SizedBox();
+        Assert.Throws<InvalidOperationException>(() => new UiSurface(TreeView<string>(
+            roots: new[] { "a", "b" },
+            keySelector: key => key,
+            childrenSelector: _ => Array.Empty<string>(),
+            hasChildren: _ => false,
+            itemTemplate: _ => Generated(() => shared))));
+    }
+
     /// <summary>Fresh function declarations cannot hide a shared generated result.</summary>
     [Fact]
     public void FreshFunctionsCannotReturnTheSameDescendant()
@@ -36,14 +49,17 @@ public sealed class GeneratedOwnershipTests
     }
 
     /// <summary>A later signal-only function update cannot share another item's mounted result.</summary>
-    [Fact]
-    public void SignalUpdateRejectsDuplicateAndKeepsLiveTree()
+    /// <param name="virtualized">Whether ownership is attached to a virtual item range.</param>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void SignalUpdateRejectsDuplicateAndKeepsLiveTree(bool virtualized)
     {
         var change = Signal.Create(false);
         Widget first = SizedBox(height: 20);
         Widget second = SizedBox(height: 20);
         int builds = 0;
-        using var surface = new UiSurface(ListBox<string>(items: new[] { "a", "b" }, keySelector: x => x, selectedKey: "a", itemTemplate: x => Generated(() =>
+        using var surface = new UiSurface(ListBox<string>(items: new[] { "a", "b" }, keySelector: x => x, selectedKey: "a", virtualization: virtualized ? new UiItemVirtualization(20, 0) : null, itemTemplate: x => Generated(() =>
         {
             builds++;
             return x == "a" ? first : change.Value ? first : second;
@@ -61,7 +77,7 @@ public sealed class GeneratedOwnershipTests
         int callbacks = 0;
         scroll.Controller.OnChanged = _ => callbacks++;
         change.Value = true;
-        UiStateUpdateException error = Assert.Throws<UiStateUpdateException>(surface.UpdateTree);
+        UiStateUpdateException error = Assert.Throws<UiStateUpdateException>(virtualized ? surface.UpdateLayout : surface.UpdateTree);
         Assert.IsType<InvalidOperationException>(error.InnerException);
         Assert.Same(oldRoot, surface.RootElement);
         Assert.Same(option, surface.FocusedElement);

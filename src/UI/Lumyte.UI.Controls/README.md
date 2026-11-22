@@ -33,3 +33,102 @@ ScrollBarは既存のValueで現在位置を上限に対する0〜1の比率と�
 有限なMin/Max/Stepと受動的なValueを指定する。受理値はSliderElement.ValueまたはRangeSliderElement.Valueにあり、新しい宣言の採用だけが静かに置き換える。RangeSliderの値はSliderRangeで原子的に通知する。Spaceで操作するつまみを切り替え、矢印・PageUp/PageDown・Home/Endを使用する。取消は最後の受理値を維持し、正常なpointer/key終端だけOnCommittedを通知する。
 
 SetValueAsync/SetRangeAsyncは通常入力leaseと現在のprobeを使う。NumericBoxは本packageではなくTextEditingの実editorである。[詳細な判断](../../../docs/adr/ui/UI-0031-numeric-input-and-accepted-values.md)と`samples/Lumyte.UI.Numeric.Sample`を参照する。
+
+## 保持タブと折り畳み
+
+TabViewの通常内容は非空・ordinal一意の継承Keyを持つ直属TabItemだけを受け付けます。
+HeaderとContentは既存の生成named slotで各0〜1個です。通常内容は空にします。
+
+```csharp
+using Lumyte.UI.Controls;
+using static Lumyte.UI.Compose;
+using static Lumyte.UI.Controls.Compose;
+
+var tabs = TabView(selectedKey: "a")[
+    TabItem(key: "a")[
+        TabItem.Header()[Rectangle(width: 120, height: 24)],
+        TabItem.Content()[Expander(isExpanded: true)[
+            Expander.Header()[Rectangle(width: 120, height: 24)],
+            Expander.Content()[Rectangle(width: 160, height: 80)]
+        ]]
+    ]
+];
+```
+
+TabViewは左の縦見出し列と右の選択内容を一回ずつ配置します。HeaderWidthは既定120、HeaderHeightは既定24です。
+非選択・折り畳み内容のWidget、Element、文書と購読は維持し、layout・描画・hit・focus・IMEから除外します。
+受理したSelectedKeyとIsExpandedはsurfaceごとに独立し、ユーザー変更を先に確定して最新callbackを一回呼びます。
+新しい宣言の値は通知なしに採用し、Signalへ暗黙に書き戻しません。未知の選択keyはnullになります。
+矢印・Home・Endは有効見出しへfocusと選択を移し、明示focusだけでは選択しません。
+見出し内のButton等は自身の操作を所有し、親の操作を重複実行しません。
+
+AutomationはTabViewのSelectOptionAsync、TabItemのClick、ExpanderのExpandAsync／CollapseAsyncを使えます。
+後者は受理値を検査する冪等な通常入力であり、CheckBoxの偽装ではありません。
+[公開Headlessサンプル](../../../samples/Lumyte.UI.Tabs.Sample/README.md)は明示fontと実際の編集接続を使います。
+
+## Menu・MenuItem・Tooltip
+
+Menuは、非空・ordinal一意の継承Keyを持つ直属MenuItemと既存Separatorを縦に並べます。
+MenuItemの通常内容は0〜1個の表示ラベルです。内部Buttonを追加せず、MenuItem自身がClickとfocusを持ちます。
+上下・Home・Endで有効な項目へ移動し、Rightでsubmenuを開き、Enter・Spaceで一回だけ操作します。
+IsCheckableを指定した項目だけがboolのIsCheckedとCheck操作を公開します。受理値とsubmenu状態はsurfaceごとに独立します。
+
+```csharp
+using static Lumyte.UI.Compose;
+using static Lumyte.UI.Controls.Compose;
+
+var menu = Menu(popupHost: host)[
+    MenuItem(key: "save", onInvoke: Save)[Rectangle(width: 160, height: 24)],
+    Separator(),
+    MenuItem(key: "check", isCheckable: true, onChanged: SaveChecked)[Rectangle(width: 160, height: 24)],
+    MenuItem(key: "more", createSubmenu: CreateFreshMenu)[Rectangle(width: 160, height: 24)]
+];
+```
+
+hostは任意packageのMenuPopupHostを借用します。ルート表示は既存Windowing.Compose.Popupの内容にMenuを置き、OnDismissでアプリの表示モデルを更新します。
+commandのOnInvokeとCreateSubmenu、またはチェックとsubmenuの併用は拒否します。新しい宣言の値は通知なしに採用し、入力がWidgetやSignalを暗黙に変更することはありません。
+
+Tooltipは0〜1個の通常アンカーと、開くたびに新しいツリーを返すCreatePopupを持ちます。
+IsOpenは明示的な表示モデルで、hover／focusから値を作るtriggerやtimerは含みません。
+Passive popupの表示・終了はeditor focus、preedit、pointer、wheelを奪わず、子の入力対象とautomation IDを保ちます。
+新しい宣言の採用・取り外し・実効非表示で古い要求を取消します。factoryの失敗でも既存menuは維持します。
+
+[公開Headlessサンプル](../../../samples/Lumyte.UI.Menus.Sample/README.md)は明示font、通常popup入力と実編集接続を使います。
+判断は[UI-0035](../../../docs/adr/ui/UI-0035-menu-and-passive-tooltip.md)を参照してください。
+
+## DialogContent・Toast・通知と組み合わせ
+
+DialogContent と Toast は Header / Content / Actions の各 0〜1 root を通常の合成で所有します。DialogContent.Close は接続先 Dialog への閉鎖要求、Toast.Dismiss は通常 Button の表示 slot です。Toast.OnDismissRequested は最新 callback を一回呼び、モデルや queue を暗黙に変更しません。
+
+ToastController は借用した IMonotonicClock と一つの ToastHost を使う有界 FIFO です。所有者 thread で生成し、標準 Application の既存 frame 更新で期限を進めます。任意 thread の命令には明示 IUiDispatcher を渡してください。表示前の待機中には内容 factory を呼びません。
+
+UiRecipes は IconButton / Card / FormRow / ValidationMessage / Toolbar / StatusBar / EmptyState / PropertyField の八種類です。FormRow の UiLabelAssociation は明示した直接子の読み取り用 metadata であり、共有 editor の AutomationName を書き換えません。OS bridge と wire snapshot への自動公開は含みません。
+
+[公開 Headless 例](../../../samples/Lumyte.UI.Dialogs.Sample/README.md)と[契約 UI-0036](../../../docs/adr/ui/UI-0036-dialog-toast-and-recipes.md)を参照してください。
+
+## Stateful visual slots
+
+`Slider()[Slider.Thumb()[thumb => Media.Text(value: thumb.Value.ToString(), layoutProvider: textProvider)]]`
+uses the accepted per-element value, not the declaration's initial value.
+Slider.Track() and Slider.Thumb() accept CompositionTemplate<SliderThumbContext, Widget>
+or a fixed Widget. RangeSlider.Track(), Thumb(), LowerThumb(), and UpperThumb()
+accept CompositionTemplate<RangeSliderThumbContext, Widget> or a fixed Widget;
+IsUpper identifies the thumb (Track receives the lower value and false).
+A specific LowerThumb/UpperThumb overrides the shared Thumb template for that part.
+
+Templates run at mount, configuration adoption, and queued idle updates after
+accepted state changes, not during drawing or input delivery. Multiple pending
+changes may coalesce. A template exception propagates; its previous visual tree
+stays published and the refresh remains retryable.
+
+The original track and fixed 10-unit thumb rectangles are retained. Missing parts
+use built-in drawing. Decoration descendants cannot receive input, focus, or
+automation exposure; the control remains the gesture/capture/automation owner.
+Templates must return parentless roots with disjoint descendants. A fixed Widget
+may remain on its original mounted part, but cannot be shared across parts,
+surfaces, or mounted lifetimes. Use factories for independently mounted controls.
+
+Switch/selection-indicator templates remain deferred: those controls must preserve
+their ordinary content and background slots, unlike the numeric controls' owned
+visual-only subtree. ScrollBar templates are deferred pending controller-driven
+refresh integration rather than polling or executing templates while drawing.

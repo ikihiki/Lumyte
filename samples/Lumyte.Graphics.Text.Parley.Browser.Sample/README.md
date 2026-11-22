@@ -19,7 +19,7 @@ Rustのhost用build処理にはOSのnative linkerが必要です。
 自動検証を実行する場合はNode.jsとChromiumを用意し、次のコマンドを使います。
 
 ```sh
-dotnet run --project build -c Release -- --target TestWasm
+dotnet run --project build -c Release -- --target Test --suite wasm
 ```
 
 Chromiumの別の実行ファイルは`CHROME`環境変数で指定できます。

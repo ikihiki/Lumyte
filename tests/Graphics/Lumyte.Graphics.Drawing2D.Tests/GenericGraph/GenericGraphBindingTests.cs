@@ -15,6 +15,65 @@ namespace Lumyte.Graphics.Drawing2D.Tests;
 /// <summary>Exercises the real generic build and drawing graph binding without shaders or submission.</summary>
 public sealed class GenericGraphBindingTests
 {
+    /// <summary>Generic direct and retained owners preserve live-image admission after preparation.</summary>
+    /// <param name="retained">Whether the immutable source is a retained snapshot.</param>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void GenericPreparedOwnerPinsLiveImage(bool retained)
+    {
+        using var fixture = new Fixture();
+        using var texture = new OriginTexture(fixture.Device);
+        using IGraphicsTextureView view = texture.CreateView();
+        Image2D image = new(view, new DispatchSampler());
+        ImageResourceRegistry2D.Resource resource = ImageResourceRegistry2D.Register(image);
+        var canvas = new Canvas2D();
+        canvas.Begin();
+        canvas.DrawImage(image, new(0, 0, 1, 1), new(0, 0, 1, 1));
+        DrawList2D list = canvas.End();
+        var target = new RenderTarget2D { View = view };
+        if (retained)
+        {
+            using var snapshot = new DrawingSnapshot2D(1, [new(default, list, System.Numerics.Matrix3x2.Identity, [], 1, 1)]);
+            using PreparedDrawingFrame2D prepared = fixture.Complete(fixture.Renderer.PrepareAsync(snapshot, target).AsTask());
+            snapshot.Dispose();
+            Assert.True(resource.IsReferenced);
+            Assert.Null(resource.TryAcquireWrite());
+            using var commands = new OriginCommands(fixture.Device);
+            prepared.Record(commands);
+            commands.Dispose();
+            prepared.AbortUnsubmitted();
+        }
+        else
+        {
+            using PreparedDraw2D prepared = fixture.Complete(fixture.Renderer.PrepareAsync(list, target).AsTask());
+            Assert.True(resource.IsReferenced);
+            Assert.Null(resource.TryAcquireWrite());
+        }
+
+        Assert.False(resource.IsReferenced);
+        using ImageResourceRegistry2D.Resource.WriteLease writer = resource.TryAcquireWrite()!;
+        Assert.NotNull(writer);
+    }
+
+    /// <summary>Generic preparation rejects an active live-image writer before invoking the pipeline.</summary>
+    [Fact]
+    public void GenericPreparationRejectsLiveImageWriter()
+    {
+        using var fixture = new Fixture();
+        using var texture = new OriginTexture(fixture.Device);
+        using IGraphicsTextureView view = texture.CreateView();
+        Image2D image = new(view, new DispatchSampler());
+        ImageResourceRegistry2D.Resource resource = ImageResourceRegistry2D.Register(image);
+        var canvas = new Canvas2D();
+        canvas.Begin();
+        canvas.DrawImage(image, new(0, 0, 1, 1), new(0, 0, 1, 1));
+        using ImageResourceRegistry2D.Resource.WriteLease writer = resource.TryAcquireWrite()!;
+        Assert.Throws<InvalidOperationException>(() => fixture.Complete(fixture.Renderer.PrepareAsync(canvas.End(), new() { View = view }).AsTask()));
+        Assert.Empty(fixture.Requests);
+        Assert.False(resource.IsReferenced);
+    }
+
     /// <summary>A mixed contiguous sequence is prepared once with its actual graph target.</summary>
     [Fact]
     public void MixedCommandsUseOnePipelinePreparationAndRecordThePreparedTarget()

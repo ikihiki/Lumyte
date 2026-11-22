@@ -18,6 +18,7 @@ public sealed class GenericGraphNativeTests
     /// <summary>Checks every pixel twice with the same pipeline and immutable layered recording.</summary>
     /// <param name="scenario">Flat, finite layer, nested group opacity, or repeated identity backdrop.</param>
     [GenericGpuNativeTheory]
+    [Trait("Execution", "Gpu")]
     [InlineData(0)]
     [InlineData(1)]
     [InlineData(2)]
@@ -79,6 +80,7 @@ public sealed class GenericGraphNativeTests
     /// <summary>Executes direct renderer download/resume/upload through the shared generic host without hidden preparation submission.</summary>
     /// <returns>The asynchronous execution qualification.</returns>
     [GenericGpuNativeFact]
+    [Trait("Execution", "Gpu")]
     public async Task DirectRendererUsesExplicitSegmentedReadbackHostAsync()
     {
         Type type = System.Reflection.Assembly.Load("Lumyte.Graphics.Vulkan").GetType("Lumyte.Graphics.Vulkan.VulkanDevice", true)!;

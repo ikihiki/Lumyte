@@ -45,16 +45,19 @@ public sealed class MeshGpuTests
 
     /// <summary>Runs only when the selected Vulkan device really enables mesh shaders.</summary>
     /// <returns>The native rendering verification.</returns>
+    [Trait("Execution", "Gpu")]
     [MeshGpuFact]
     public async Task VulkanMeshRenderAndSwitchAsync() => await CheckAsync();
 
     /// <summary>Checks stencil rejection only when the selected driver supports the portable depth/stencil format.</summary>
     /// <returns>The native stencil pixel verification.</returns>
+    [Trait("Execution", "Gpu")]
     [MeshStencilGpuFact]
     public async Task VulkanMeshStencilAsync() => await CheckAsync(stencilOnly: true);
 
     /// <summary>Checks real Task payload production and resource barriers independently of optional Task availability.</summary>
     /// <returns>The native Task-to-Mesh pixel verification.</returns>
+    [Trait("Execution", "Gpu")]
     [MeshTaskGpuFact]
     public async Task VulkanTaskPayloadAndBarrierAsync() => await CheckAsync(taskRequired: true);
 

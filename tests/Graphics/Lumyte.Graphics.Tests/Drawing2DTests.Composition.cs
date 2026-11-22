@@ -16,6 +16,7 @@ public sealed partial class Drawing2DTests
 {
     /// <summary>Checks builtin coalescing and selected custom callback output on Vulkan hardware.</summary>
     /// <returns>The asynchronous pixel checks.</returns>
+    [Trait("Execution", "Gpu")]
     [GpuFact]
     public async Task VulkanComposedKindsMatchLegacyAsync()
     {
@@ -25,6 +26,7 @@ public sealed partial class Drawing2DTests
 
     /// <summary>Checks the same compiled graph and custom callback on the native WGSL backend.</summary>
     /// <returns>The asynchronous pixel checks.</returns>
+    [Trait("Execution", "Gpu")]
     [GpuFact]
     public async Task WgpuComposedKindsMatchLegacyAsync()
     {

@@ -1,0 +1,14 @@
+<Project>
+  <Import Project="ParleyBuild.targets" />
+  <PropertyGroup>
+    <_LumyteCefSupervisorSource>$(_LumyteParleyRepositoryRoot)src/UI/Lumyte.UI.WebView.Cef.Supervisor</_LumyteCefSupervisorSource>
+    <_LumyteCefSupervisorPath>$(_LumyteParleyRepositoryRoot)artifacts/cef-supervisor/native/lumyte-cef-supervisor</_LumyteCefSupervisorPath>
+  </PropertyGroup>
+  <ItemGroup Condition="$([MSBuild]::IsOSPlatform('Linux')) and '$(DesignTimeBuild)' != 'true'">
+    <_LumyteCefSupervisorInput Include="$(_LumyteCefSupervisorSource)/Cargo.toml;$(_LumyteCefSupervisorSource)/Cargo.lock;$(_LumyteCefSupervisorSource)/src/**/*.rs;$(MSBuildThisFileDirectory)../Build.CefSupervisor.cs" />
+    <None Include="$(_LumyteCefSupervisorPath)" Link="lumyte-cef-supervisor" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+  <Target Name="BuildLumyteCefSupervisor" BeforeTargets="BeforeBuild;GetCopyToOutputDirectoryItems" DependsOnTargets="_PrepareLumyteBuildInvocation" Condition="$([MSBuild]::IsOSPlatform('Linux')) and '$(DesignTimeBuild)' != 'true'" Inputs="@(_LumyteCefSupervisorInput)" Outputs="$(_LumyteCefSupervisorPath)">
+    <Exec Command="$(_LumyteParleyBuildCommand) --target Native --native-backend cef-supervisor --root &quot;$(_LumyteParleyInvocationRoot).&quot; --repository-root &quot;$(_LumyteParleyRepositoryRoot).&quot;" WorkingDirectory="$(_LumyteParleyRepositoryRoot)" />
+  </Target>
+</Project>

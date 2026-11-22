@@ -54,6 +54,16 @@ public sealed class RenderGraphRenderer2D : IDisposable
     {
     }
 
+    // Fixture-only sharing leaves arguments, targets and commands graph-local.
+    internal RenderGraphRenderer2D(DrawingCommandRenderers2D renderers, RenderGraphDrawList2D list, RenderTargetBinding2D target, DrawingGraphBindings2D bindings, DrawingResourceState2D sharedResources)
+        : this(renderers, list, target, bindings)
+    {
+        sharedResources.ValidateDevice(bindings.Graph.Device!);
+        _resourceUse = sharedResources.Retain();
+        _resources.Dispose();
+        _resources = sharedResources;
+    }
+
     private RenderGraphRenderer2D(IGraphRendererSource2D source, RenderGraphDrawList2D list, RenderTargetBinding2D target, DrawingGraphBindings2D bindings)
     {
         _renderers = source.CommandRenderers;
@@ -92,6 +102,7 @@ public sealed class RenderGraphRenderer2D : IDisposable
         ObjectDisposedException.ThrowIf(_disposed, this);
         ArgumentNullException.ThrowIfNull(graph);
         DrawList2D list = _list;
+        using IDisposable preparationImages = ImageResourceRegistry2D.Retain([list]);
         RenderTargetBinding2D target = _target;
         DrawingGraphBindings2D bindings = _bindings;
         if (graph.Device is null)
@@ -152,6 +163,7 @@ public sealed class RenderGraphRenderer2D : IDisposable
         try
         {
             owner.HoldComposition(_resources.RetainComposition(allowReturned: _resourceUse is not null));
+            owner.Own(ImageResourceRegistry2D.Retain([list]));
             graph.AddPass("drawing2d.begin", _ => owner.BeginRecord()).KeepAlive();
             AppendClear(graph, target);
             await AppendCommandsAsync(graph, list, 0, list.Commands.Count, target with { LoadOp = AttachmentLoadOp.Load }, snapshot, owner, argumentPlan, cancellationToken).ConfigureAwait(false);

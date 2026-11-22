@@ -18,9 +18,12 @@
     <InternalsVisibleTo Include="Lumyte.Graphics.Drawing2D.Tests" />
     <InternalsVisibleTo Include="Lumyte.Graphics.Drawing2D.GenericGpu.NativeTests" />
     <InternalsVisibleTo Include="Lumyte.Graphics.Drawing2D.GenericGraph.NativeTests" />
+    <InternalsVisibleTo Include="Lumyte.Graphics.Tests" />
     <InternalsVisibleTo Include="Lumyte.UI.IntegrationTests" />
     <InternalsVisibleTo Include="Lumyte.UI.Application.Tests" />
     <InternalsVisibleTo Include="Lumyte.UI.Application" />
+    <InternalsVisibleTo Include="Lumyte.UI.Application.WebView.Cef" />
+    <InternalsVisibleTo Include="Lumyte.UI.WebView.Tests" />
     <InternalsVisibleTo Include="Lumyte.UI.TextEditing.Tests" />
     <InternalsVisibleTo Include="Lumyte.Graphics.Drawing2D.RenderGraph" />
     <None Update="README.md" Pack="true" PackagePath="/" />

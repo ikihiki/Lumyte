@@ -142,7 +142,7 @@ public sealed partial class UiApplication
         }
     }
 
-    internal sealed class PopupSite(UiApplication application, Guid id, UiSurface surface, UiApplicationAutomationHost host, TextSite? text) : IAsyncDisposable
+    internal sealed class PopupSite(UiApplication application, Guid id, UiSurface surface, UiApplicationAutomationHost host, TextSite? text, IDisposable? guard = null) : IAsyncDisposable
     {
         private bool _stopping;
 
@@ -155,6 +155,7 @@ public sealed partial class UiApplication
             if (!_stopping)
             {
                 _stopping = true;
+                guard?.Dispose();
                 host.BeginStop();
                 text?.BeginStop();
             }
@@ -171,6 +172,7 @@ public sealed partial class UiApplication
 
             host.Dispose();
             application._popupHosts.Remove(id);
+            application._dialogHosts.Remove(id);
         }
 
         internal IUiAutomationHost GetAutomation(bool allowInspection) => text?.CreateAutomation(allowInspection) ?? host;

@@ -228,6 +228,7 @@ public sealed class ShaderCopyHotPathTests
 
     /// <summary>Real Wgpu transfers cover exact counts, failure invalidation and active-span callbacks.</summary>
     /// <returns>The native test completion.</returns>
+    [Trait("Execution", "Gpu")]
     [GpuFact]
     public async Task WgpuNativeCopyContractAsync()
     {
@@ -244,6 +245,7 @@ public sealed class ShaderCopyHotPathTests
 
     /// <summary>Real Vulkan transfers cover exact counts, failure invalidation and active-span callbacks.</summary>
     /// <returns>The native test completion.</returns>
+    [Trait("Execution", "Gpu")]
     [GpuFact]
     public async Task VulkanNativeCopyContractAsync()
     {

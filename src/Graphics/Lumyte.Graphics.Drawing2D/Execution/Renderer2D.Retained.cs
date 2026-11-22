@@ -99,8 +99,10 @@ public sealed partial class Renderer2D
             }
 
             RetainedDrawingCache2D.FrameLease? frame = null;
+            IDisposable? imageResources = null;
             try
             {
+                imageResources = ImageResourceRegistry2D.Retain(source.Entries.Select(entry => entry.Content));
                 _retained.BindStorageOwner(_resources);
                 frame = _retained.AcquireFrame();
                 RetainedDrawingCache2D.AssetList assets = frame.Assets;
@@ -213,7 +215,9 @@ public sealed partial class Renderer2D
                 RetainedDrawingCache2D cache = _retained;
                 RetainedDrawingCache2D.FrameLease ownedFrame = frame;
                 profile?.Success();
-                return new(_device, target, assets, completed => cache.ReleaseFrame(ownedFrame, completed), profile?.Context, cache);
+                var prepared = new PreparedDrawingFrame2D(_device, target, assets, completed => cache.ReleaseFrame(ownedFrame, completed), profile?.Context, cache, imageResources);
+                imageResources = null;
+                return prepared;
             }
             catch (Exception preparationFailure)
             {
@@ -233,6 +237,7 @@ public sealed partial class Renderer2D
             }
             finally
             {
+                imageResources?.Dispose();
                 Volatile.Write(ref _preparing, 0);
             }
         }

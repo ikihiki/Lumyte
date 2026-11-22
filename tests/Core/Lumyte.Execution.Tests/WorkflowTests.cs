@@ -101,6 +101,7 @@ public sealed class WorkflowTests
     }
 
     /// <summary>A suspended operation leaves the only CPU worker available for independent work.</summary>
+    [Trait("Execution", "Integration")]
     [Fact]
     public void WaitingWorkflowDoesNotHoldCpuSlot()
     {
@@ -130,32 +131,15 @@ public sealed class WorkflowTests
     }
 
     /// <summary>Nested workflows and owner commands can be awaited even with one CPU worker.</summary>
-    /// <param name="mode">The CPU execution mode.</param>
-    /// <param name="placement">The owner placement.</param>
-    [Theory]
-    [InlineData(CpuExecutionMode.Cooperative, OwnerPlacement.Host)]
-    [InlineData(CpuExecutionMode.ThreadPool, OwnerPlacement.Dedicated)]
-    public void NestedWorkflowAndOwnerCommandsDoNotDeadlock(CpuExecutionMode mode, OwnerPlacement placement)
-    {
-        using var fixture = new WorkflowFixture(mode, placement);
-        fixture.Module.Handler = async (value, _) =>
-        {
-            if (value == 1)
-            {
-                return await fixture.Module.Port.ExecuteAsync(2);
-            }
+    [Fact]
+    public void NestedWorkflowAndOwnerCommandsDoNotDeadlockCooperative()
+        => NestedWorkflowAndOwnerCommandsDoNotDeadlock(CpuExecutionMode.Cooperative, OwnerPlacement.Host);
 
-            int cpu = await fixture.Module.Cpu.ExecuteAsync(value);
-            return await fixture.Module.Owner.ExecuteAsync(cpu);
-        };
-
-        Assert.Equal(8, fixture.Wait(fixture.Module.Port.ExecuteAsync(1)));
-        Assert.Equal(2, fixture.Module.Commands);
-        if (placement == OwnerPlacement.Dedicated)
-        {
-            Assert.NotEqual(Environment.CurrentManagedThreadId, fixture.Module.OwnerThread);
-        }
-    }
+    /// <summary>Checks the same contract using actual worker execution.</summary>
+    [Trait("Execution", "Integration")]
+    [Fact]
+    public void NestedWorkflowAndOwnerCommandsDoNotDeadlockThreadPool()
+        => NestedWorkflowAndOwnerCommandsDoNotDeadlock(CpuExecutionMode.ThreadPool, OwnerPlacement.Dedicated);
 
     /// <summary>Shutdown preserves started operations and their subsequent owner commands.</summary>
     [Fact]
@@ -367,6 +351,7 @@ public sealed class WorkflowTests
     /// <summary>Previously accepted foreign results resume on the waiting workflow scheduler, including faults.</summary>
     /// <param name="workflow">Whether the foreign operation is a workflow.</param>
     /// <param name="fault">Whether the foreign operation fails.</param>
+    [Trait("Execution", "Integration")]
     [Theory]
     [InlineData(false, false)]
     [InlineData(false, true)]
@@ -417,6 +402,28 @@ public sealed class WorkflowTests
         }
 
         Assert.Equal(1, resumed);
+    }
+
+    private static void NestedWorkflowAndOwnerCommandsDoNotDeadlock(CpuExecutionMode mode, OwnerPlacement placement)
+    {
+        using var fixture = new WorkflowFixture(mode, placement);
+        fixture.Module.Handler = async (value, _) =>
+        {
+            if (value == 1)
+            {
+                return await fixture.Module.Port.ExecuteAsync(2);
+            }
+
+            int cpu = await fixture.Module.Cpu.ExecuteAsync(value);
+            return await fixture.Module.Owner.ExecuteAsync(cpu);
+        };
+
+        Assert.Equal(8, fixture.Wait(fixture.Module.Port.ExecuteAsync(1)));
+        Assert.Equal(2, fixture.Module.Commands);
+        if (placement == OwnerPlacement.Dedicated)
+        {
+            Assert.NotEqual(Environment.CurrentManagedThreadId, fixture.Module.OwnerThread);
+        }
     }
 
     private sealed class SingleResultSource : IValueTaskSource<int>

@@ -10,6 +10,7 @@ public sealed class NativeAdapterTests
 {
     /// <summary>The graph retains an independent native plan use after all original owners return.</summary>
     [NativeFact]
+    [Trait("Execution", "Gpu")]
     public void NativeCopyUsesExactImportedRangesAndCoarseLifetime()
     {
         using var fixture = new NativeCopyFixture();
@@ -30,6 +31,7 @@ public sealed class NativeAdapterTests
 
     /// <summary>Missing entries reject before claim or graph mutation and leave the plan reusable.</summary>
     [NativeFact]
+    [Trait("Execution", "Gpu")]
     public void MissingBindingsLeaveOriginalPlanReusable()
     {
         using var fixture = new NativeCopyFixture();
@@ -45,6 +47,7 @@ public sealed class NativeAdapterTests
 
     /// <summary>A duplicate opaque key cannot stand in for another required slot.</summary>
     [NativeFact]
+    [Trait("Execution", "Gpu")]
     public void DuplicateSlotsRejectBeforeClaim()
     {
         using var fixture = new NativeCopyFixture();
@@ -61,6 +64,7 @@ public sealed class NativeAdapterTests
 
     /// <summary>Each fallible append boundary rolls graph state and the exclusive recording claim back.</summary>
     [NativeFact]
+    [Trait("Execution", "Gpu")]
     public void AppendFailureRollsBackAllThreeBoundaries()
     {
         foreach (int boundary in new[] { 0, 1, 2 })
@@ -86,6 +90,7 @@ public sealed class NativeAdapterTests
 
     /// <summary>Graph ownership excludes a second graph registration and direct recording.</summary>
     [NativeFact]
+    [Trait("Execution", "Gpu")]
     public void CommittedClaimExcludesOtherRecorders()
     {
         using var fixture = new NativeCopyFixture();
@@ -103,6 +108,7 @@ public sealed class NativeAdapterTests
 
     /// <summary>Caller mutation cannot add a binding after the immutable holder is constructed.</summary>
     [NativeFact]
+    [Trait("Execution", "Gpu")]
     public void BindingListsAreCaptured()
     {
         using var fixture = new NativeCopyFixture();

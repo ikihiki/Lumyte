@@ -10,6 +10,7 @@ public sealed class WgpuMeshUnsupportedGpuTests
 {
     /// <summary>Existing native device creation remains usable, while Mesh modules and programs are explicitly rejected.</summary>
     /// <returns>The capability and rejection verification.</returns>
+    [Trait("Execution", "Gpu")]
     [GpuFact]
     public async Task WgpuExplicitlyRejectsMeshAsync()
     {

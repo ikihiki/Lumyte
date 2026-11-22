@@ -523,6 +523,7 @@ public sealed class KeyboardTests : UiElementTestBase
 
     /// <summary>Checks focus and keys remain surface-local and permit sequential worker delivery.</summary>
     /// <returns>The sequential cross-thread verification.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task FocusAndKeysAreSurfaceLocalWithoutThreadAffinityAsync()
     {

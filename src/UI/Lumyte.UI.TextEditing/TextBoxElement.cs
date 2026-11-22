@@ -68,7 +68,13 @@ public class TextBoxElement : UiElement<Compose.Definitions.TextBox>, ITextDocum
     protected override bool PreservePointerGesture => true;
 
     /// <inheritdoc/>
+    protected override bool PreserveRealization => InputHandler?.HasPendingSession(this) == true;
+
+    /// <inheritdoc/>
     protected override bool CacheRetainedDrawing => GetType() == typeof(TextBoxElement);
+
+    /// <inheritdoc/>
+    protected override bool UsesDefaultRecordingOrder => GetType() == typeof(TextBoxElement) && GetChildren(Widget.BackgroundChildren).Count == 0;
 
     /// <inheritdoc/>
     protected override UiAutomationActions AutomationActions => UiAutomationActions.Focus | UiAutomationActions.Edit;
@@ -209,55 +215,11 @@ public class TextBoxElement : UiElement<Compose.Definitions.TextBox>, ITextDocum
     /// <returns>The operation result.</returns>
     protected override Vector2 LayoutOverride(UiBoxConstraints constraints)
     {
-        SynchronizeText();
-        if (Document is null || Widget.LayoutProvider is null)
+        Vector2 size = LayoutEditor(constraints);
+        foreach (UiElement child in GetChildren(Widget.BackgroundChildren))
         {
-            if (_layout is not null)
-            {
-                _layout = null;
-                InvalidateDrawing();
-            }
-
-            _layoutProvider = Widget.LayoutProvider;
-            _layoutRevision = Document?.CaptureSnapshot().Revision ?? 0;
-            return constraints.Constrain(Vector2.Zero);
-        }
-
-        TextDocumentSnapshot snapshot = Document.CaptureSnapshot();
-        float width = constraints.MaxWidth;
-        if (_layout is null || _layoutRevision != snapshot.Revision || _layoutWidth != width || !ReferenceEquals(Document, _layoutDocument) || !ReferenceEquals(Widget.LayoutProvider, _layoutProvider))
-        {
-            // A single-line editor shapes without wrapping; its viewport clips the overflow.
-            _layout = Widget.LayoutProvider.CreateLayout(snapshot, float.PositiveInfinity);
-            if (_layout.DocumentRevision != snapshot.Revision)
-            {
-                throw new InvalidOperationException("The text layout does not match the document revision.");
-            }
-
-            _layoutDocument = Document;
-            _layoutProvider = Widget.LayoutProvider;
-            _layoutRevision = snapshot.Revision;
-            _layoutWidth = width;
-            InvalidateDrawing();
-        }
-
-        float previousOffset = _offset;
-        Vector2 size = constraints.Constrain(_layout.Size);
-        Rect2D caret = _layout.GetCaretBounds(new(snapshot.Selection.Active, snapshot.Selection.ActiveAffinity));
-        float right = caret.X + caret.Width;
-        _offset = Math.Clamp(_offset, 0, MathF.Max(0, _layout.Size.X - size.X + 1));
-        if (right - _offset > size.X)
-        {
-            _offset = MathF.Max(0, right - size.X);
-        }
-        else if (caret.X < _offset)
-        {
-            _offset = caret.X;
-        }
-
-        if (_offset != previousOffset)
-        {
-            InvalidateDrawing();
+            LayoutChild(child, UiBoxConstraints.Tight(size));
+            SetChildOffset(child, Vector2.Zero);
         }
 
         return size;
@@ -302,6 +264,32 @@ public class TextBoxElement : UiElement<Compose.Definitions.TextBox>, ITextDocum
     /// <summary>On Pointer Capture Changed.</summary>
     /// <param name = "state">The state.</param>
     protected override void OnPointerCaptureChanged(UiPointerCaptureState state) => InputHandler?.OnPointerCaptureChanged(this, state);
+
+    /// <inheritdoc/>
+    protected override IEnumerable<UiElement> GetInputChildren() => Array.Empty<UiElement>();
+
+    /// <inheritdoc/>
+    protected override IEnumerable<UiElement> GetAutomationChildren() => Array.Empty<UiElement>();
+
+    /// <inheritdoc/>
+    protected override void RecordOverride(DrawingCanvas2D canvas)
+    {
+        canvas.Save();
+        try
+        {
+            canvas.ClipRect(new(0, 0, ContentSize.X, ContentSize.Y));
+            foreach (UiElement child in GetChildren(Widget.BackgroundChildren))
+            {
+                RecordChild(child, canvas);
+            }
+        }
+        finally
+        {
+            canvas.Restore();
+        }
+
+        RecordSelf(canvas);
+    }
 
     /// <summary>On Record.</summary>
     /// <param name = "canvas">The canvas.</param>
@@ -371,5 +359,61 @@ public class TextBoxElement : UiElement<Compose.Definitions.TextBox>, ITextDocum
         {
             canvas.FillRect(_layout.GetCaretBounds(new(snapshot.Selection.Active, snapshot.Selection.ActiveAffinity)), new SRgba<float>(0, 0, 0, 1));
         }
+    }
+
+    private Vector2 LayoutEditor(UiBoxConstraints constraints)
+    {
+        SynchronizeText();
+        if (Document is null || Widget.LayoutProvider is null)
+        {
+            if (_layout is not null)
+            {
+                _layout = null;
+                InvalidateDrawing();
+            }
+
+            _layoutProvider = Widget.LayoutProvider;
+            _layoutRevision = Document?.CaptureSnapshot().Revision ?? 0;
+            return constraints.Constrain(Vector2.Zero);
+        }
+
+        TextDocumentSnapshot snapshot = Document.CaptureSnapshot();
+        float width = constraints.MaxWidth;
+        if (_layout is null || _layoutRevision != snapshot.Revision || _layoutWidth != width || !ReferenceEquals(Document, _layoutDocument) || !ReferenceEquals(Widget.LayoutProvider, _layoutProvider))
+        {
+            // A single-line editor shapes without wrapping; its viewport clips the overflow.
+            _layout = Widget.LayoutProvider.CreateLayout(snapshot, float.PositiveInfinity);
+            if (_layout.DocumentRevision != snapshot.Revision)
+            {
+                throw new InvalidOperationException("The text layout does not match the document revision.");
+            }
+
+            _layoutDocument = Document;
+            _layoutProvider = Widget.LayoutProvider;
+            _layoutRevision = snapshot.Revision;
+            _layoutWidth = width;
+            InvalidateDrawing();
+        }
+
+        float previousOffset = _offset;
+        Vector2 size = constraints.Constrain(_layout.Size);
+        Rect2D caret = _layout.GetCaretBounds(new(snapshot.Selection.Active, snapshot.Selection.ActiveAffinity));
+        float right = caret.X + caret.Width;
+        _offset = Math.Clamp(_offset, 0, MathF.Max(0, _layout.Size.X - size.X + 1));
+        if (right - _offset > size.X)
+        {
+            _offset = MathF.Max(0, right - size.X);
+        }
+        else if (caret.X < _offset)
+        {
+            _offset = caret.X;
+        }
+
+        if (_offset != previousOffset)
+        {
+            InvalidateDrawing();
+        }
+
+        return size;
     }
 }

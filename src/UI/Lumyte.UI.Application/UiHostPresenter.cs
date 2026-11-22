@@ -133,6 +133,7 @@ internal sealed partial class UiHostPresenter : IDisposable
             bool targetMeasured = false;
             try
             {
+                frame.ImageResources = scene.RetainResources();
                 UiApplicationProfiling.Scope? prepareProfile = activeProfile = UiApplicationProfiling.Begin(9);
                 UiIntermediateTexturePool.Entry intermediate = _intermediates.Rent(swapchain.Configuration.Width, swapchain.Configuration.Height, _intermediate ?? TextureFormat.Rgba8Srgb);
                 frame.Intermediate = intermediate;
@@ -580,6 +581,8 @@ internal sealed partial class UiHostPresenter : IDisposable
 
         internal IGraphicsSubmission? Submission { get; set; }
 
+        internal IDisposable? ImageResources { get; set; }
+
         internal PreparedDrawingFrame2D? Retained { get; set; }
 
         internal bool RetainedRecorded { get; set; }
@@ -628,6 +631,8 @@ internal sealed partial class UiHostPresenter : IDisposable
                         Retained = null;
                     }
 
+                    ImageResources?.Dispose();
+                    ImageResources = null;
                     Submission?.Dispose();
                     Submission = null;
                     SubmissionAttempted = false;

@@ -12,6 +12,7 @@ public class RuntimeWorkloadTests
     /// <summary>Every new stream cursor must restart, consume all elements and close before cleanup.</summary>
     /// <param name="length">The finite stream length.</param>
     /// <returns>The asynchronous verification.</returns>
+    [Trait("Execution", "Integration")]
     [Theory]
     [InlineData(0)]
     [InlineData(4096)]

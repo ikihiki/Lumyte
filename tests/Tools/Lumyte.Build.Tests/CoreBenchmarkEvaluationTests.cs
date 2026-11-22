@@ -156,10 +156,11 @@ public sealed class CoreBenchmarkEvaluationTests
     /// <summary>The real Fallout entry point rejects unsupported selection before starting builds.</summary>
     /// <returns>The asynchronous assertion.</returns>
     [Fact]
+    [Trait("Execution", "Integration")]
     public async Task ActualRunnerRejectsInvalidPurposeBeforeBuildAsync()
     {
         using var fixture = new BuildFixture();
-        BuildFixture.ProcessResult result = await fixture.RunAsync("BenchmarkCoreEvaluate", "--benchmark-mode", "screen", "--benchmark-category", "Geometry");
+        BuildFixture.ProcessResult result = await fixture.RunAsync("Benchmark", "--benchmark-area", "core", "--benchmark-evaluate", "--benchmark-mode", "screen", "--benchmark-category", "Geometry");
         Assert.NotEqual(0, result.ExitCode);
         Assert.Contains("category must be Screening, Comparison, or Diagnostic", result.Output + result.Error, StringComparison.Ordinal);
         Assert.False(Directory.Exists(fixture.Log));
@@ -168,10 +169,11 @@ public sealed class CoreBenchmarkEvaluationTests
     /// <summary>The real entry point requires an explicit measurement mode.</summary>
     /// <returns>The asynchronous assertion.</returns>
     [Fact]
+    [Trait("Execution", "Integration")]
     public async Task ActualRunnerRejectsMissingModeAsync()
     {
         using var fixture = new BuildFixture();
-        BuildFixture.ProcessResult result = await fixture.RunAsync("BenchmarkCoreEvaluate");
+        BuildFixture.ProcessResult result = await fixture.RunAsync("Benchmark", "--benchmark-area", "core", "--benchmark-evaluate");
         Assert.NotEqual(0, result.ExitCode);
         Assert.Contains("Explicit benchmark mode", result.Output + result.Error, StringComparison.Ordinal);
     }

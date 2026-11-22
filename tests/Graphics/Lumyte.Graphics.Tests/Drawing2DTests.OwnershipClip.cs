@@ -11,6 +11,7 @@ public sealed partial class Drawing2DTests
 {
     /// <summary>Adjacent translucent buffered shapes own every device pixel once, at fractional DPR too.</summary>
     /// <returns>The asynchronous hardware readback checks.</returns>
+    [Trait("Execution", "Gpu")]
     [GpuFact]
     public async Task VulkanOwnershipClipPixelsAsync()
     {

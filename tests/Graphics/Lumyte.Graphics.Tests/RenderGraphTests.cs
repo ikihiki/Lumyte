@@ -10,6 +10,7 @@ public sealed class RenderGraphTests
 {
     /// <summary>Verifies wgpu graph execution with exact readback of buffer ranges and texture layers.</summary>
     /// <returns>The asynchronous verification.</returns>
+    [Trait("Execution", "Gpu")]
     [GpuFact]
     public async Task WgpuRenderGraphReadbackAsync()
     {
@@ -19,6 +20,7 @@ public sealed class RenderGraphTests
 
     /// <summary>Verifies Vulkan graph execution with exact readback of buffer ranges and texture layers.</summary>
     /// <returns>The asynchronous verification.</returns>
+    [Trait("Execution", "Gpu")]
     [GpuFact]
     public async Task VulkanRenderGraphReadbackAsync()
     {

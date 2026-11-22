@@ -7,6 +7,8 @@
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="BenchmarkDotNet" Version="0.15.8" />
+    <ProjectReference Include="../../../src/Maps/Lumyte.Maps.Mvt/Lumyte.Maps.Mvt.csproj" />
+    <ProjectReference Include="../../../src/Maps/Lumyte.Maps.UI/Lumyte.Maps.UI.csproj" />
     <ProjectReference Include="../../../src/Graphics/Lumyte.Graphics.Drawing2D/Lumyte.Graphics.Drawing2D.csproj" />
     <ProjectReference Include="../Shared/CpuGraphics/Lumyte.Graphics.BenchmarkDevice.csproj" />
     <Compile Include="../../Core/Shared/BenchmarkEntry.cs" Link="Shared/BenchmarkEntry.cs" />

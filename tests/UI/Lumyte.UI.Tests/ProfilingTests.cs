@@ -214,6 +214,7 @@ public sealed class ProfilingTests
 
     /// <summary>Checks signal counters count queued jobs and sequential threads inherit no synchronous parent.</summary>
     /// <returns>The asynchronous verification.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task SignalsAndSequentialThreadsDoNotRetainParentsAsync()
     {

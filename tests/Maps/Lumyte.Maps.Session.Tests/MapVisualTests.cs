@@ -15,6 +15,7 @@ public sealed class MapVisualTests
 {
     /// <summary>Executes both host DPI scales against independent known interior and seam colors.</summary>
     /// <returns>The actual GPU readback checks.</returns>
+    [Trait("Execution", "Gpu")]
     [MapGpuFact]
     public async Task AdjacentExtentsTransparencyDpiParentClipAndOverlayAsync()
     {
@@ -78,6 +79,7 @@ public sealed class MapVisualTests
 
     /// <summary>A fractional source-tile scale must not double-own the pixel centered on a shared edge.</summary>
     /// <returns>The independent analytic seam oracle.</returns>
+    [Trait("Execution", "Gpu")]
     [MapGpuFact]
     public async Task FractionalZoomSharedEdgeOwnsEachPixelOnceAsync()
     {
@@ -102,6 +104,125 @@ public sealed class MapVisualTests
         for (int x = 254; x <= 258; x++)
         {
             Pixel(pixels, 1, x, 32, 0, 0, 188);
+        }
+    }
+
+    /// <summary>A deterministic public camera path preserves alpha ownership and direct/retained output.</summary>
+    /// <returns>The hardware movement oracle.</returns>
+    [Trait("Execution", "Gpu")]
+    [MapGpuFact]
+    public async Task DeterministicPanZoomPathMatchesRetainedAnalyticWaterAsync()
+    {
+        using var device = VulkanDevice.Create();
+        await using var memory = new MemoryManager();
+        await using var manager = new ResourceManager("movement", new Source(), [new Stage()], memory, new Runtime());
+        var style = new MapStyle("visual", "v1", new(0, 0, 0, 1), [new("water", new(0, 0, 1, 0.5f))]);
+        await using var map = new MapSession(manager, new Tiles(), style, new() { SelectVisibleTiles = true }, [new(1, 0, 0), new(1, 1, 0)]);
+        map.SetCamera(new(0, 66.51326044311186, 1));
+        using var surface = new UiSurface(new MapView { Session = map });
+        surface.SetViewport(new(512, 128));
+        surface.UpdateLayout();
+        using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        while (map.PublishedTiles != 2)
+        {
+            map.Advance();
+            await Task.Delay(1, deadline.Token);
+        }
+
+        using UiDrawingScene2D scene = surface.CreateDrawingScene();
+        foreach (int step in Enumerable.Range(0, 4))
+        {
+            if (step == 1)
+            {
+                surface.Dispatch(new UiPointerInput(1, UiPointerPhase.Down, new(100, 50)));
+                surface.Dispatch(new UiPointerInput(1, UiPointerPhase.Move, new(100.5f, 50)));
+                surface.Dispatch(new UiPointerInput(1, UiPointerPhase.Up, new(100.5f, 50)));
+            }
+            else if (step == 2)
+            {
+                surface.Dispatch(new UiWheelInput(new(300, 32), new(0, -64)));
+            }
+            else if (step == 3)
+            {
+                map.Pan(new(-20, 3));
+            }
+
+            var canvas = new Canvas2D();
+            canvas.Begin();
+            surface.Record(canvas);
+            byte[] direct = await RenderAsync(device, canvas.End(), null, 1);
+            scene.Update();
+            using DrawingSceneReadLease2D borrow = scene.Borrow();
+            Assert.Equal(direct, await RenderAsync(device, null, borrow, 1));
+            for (int x = 16; x < 496; x++)
+            {
+                Pixel(direct, 1, x, 32, 0, 0, 188);
+            }
+        }
+    }
+
+    /// <summary>Loaded children replace only their owned cells; translucent parent fallback never draws beneath them.</summary>
+    /// <returns>The actual hardware fallback oracle.</returns>
+    [Trait("Execution", "Gpu")]
+    [MapGpuFact]
+    public async Task SpatialParentFallbackPartitionsChildAlphaWithoutOverlapAsync()
+    {
+        using var device = VulkanDevice.Create();
+        await using var memory = new MemoryManager();
+        var stage = new FallbackStage();
+        await using var manager = new ResourceManager("fallback", new Source(), [stage], memory, new Runtime());
+        var style = new MapStyle("visual", "v1", new(0, 0, 0, 1), [new("water", new(0, 0, 1, 0.5f))]);
+        await using var map = new MapSession(manager, new FallbackTiles(), style, new() { PrefetchRadius = 0, MaxPrefetchTiles = 0, MaxFallbackDepth = 1 });
+        using var completeOnExit = new FallbackCompletion(stage);
+        map.SetViewport(new(512, 128));
+        map.SetCamera(new(-90, 66.51326044311186, 1));
+        using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        while (map.PublishedTiles != 1)
+        {
+            map.Advance();
+            await Task.Delay(1, deadline.Token);
+        }
+
+        using var surface = new UiSurface(new MapView { Session = map });
+        surface.SetViewport(new(512, 128));
+        surface.UpdateLayout();
+        using UiDrawingScene2D scene = surface.CreateDrawingScene();
+        map.SetCamera(new(-90, 66.51326044311186, 2));
+        map.Advance();
+        await CheckAsync();
+        stage.Child.TrySetResult(stage.Content);
+        while (map.PublishedTiles != 2)
+        {
+            map.Advance();
+            await Task.Delay(1, deadline.Token);
+        }
+
+        await CheckAsync();
+        stage.All.TrySetResult(stage.Content);
+        while (map.InFlightTiles != 0 || map.PublishedTiles < 5)
+        {
+            map.Advance();
+            await Task.Delay(1, deadline.Token);
+        }
+
+        await CheckAsync();
+
+        async Task CheckAsync()
+        {
+            var canvas = new Canvas2D();
+            canvas.Begin();
+            surface.Record(canvas);
+            byte[] pixels = await RenderAsync(device, canvas.End(), null, 1);
+            scene.Update();
+            using DrawingSceneReadLease2D borrow = scene.Borrow();
+            Assert.Equal(pixels, await RenderAsync(device, null, borrow, 1));
+            foreach (int x in new[] { 100, 255, 256, 257, 400 })
+            {
+                foreach (int y in new[] { 32, 63, 64, 65, 100 })
+                {
+                    Pixel(pixels, 1, x, y, 0, 0, 188);
+                }
+            }
         }
     }
 
@@ -175,6 +296,44 @@ public sealed class MapVisualTests
         protected override System.Numerics.Vector2 LayoutOverride(UiBoxConstraints constraints) => default;
 
         protected override void OnRecord(DrawingCanvas2D canvas) => canvas.FillRect(new(0, 112, 512, 8), new SRgba<float>(1, 1, 0, 1));
+    }
+
+    private sealed class FallbackTiles() : MapTileSet("fallback", "v1", "visual", 1, 2, "handmade", new("fallback"))
+    {
+        public override ResourceKey<MapTileContent> GetKey(MapTileId id) => new($"fallback/{id.Zoom}/{id.X}/{id.Y}");
+    }
+
+    private sealed class FallbackStage : IResourceSourceStage<MapTileContent>
+    {
+        internal TaskCompletionSource<MapTileContent> Child { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        internal TaskCompletionSource<MapTileContent> All { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        internal MapTileContent Content { get; } = CreateContent();
+
+        public ValueTask<MapTileContent> BuildAsync(ResourceBuildContext context, CancellationToken cancellationToken)
+        {
+            string id = context.Address.Id.Value!;
+            return id.StartsWith("fallback/1/", StringComparison.Ordinal)
+                ? ValueTask.FromResult(Content) : new(id == "fallback/2/0/0" ? Child.Task : All.Task);
+        }
+
+        public ValueTask ReleaseAsync(MapTileContent resource) => ValueTask.CompletedTask;
+
+        private static MapTileContent CreateContent()
+        {
+            var feature = new MapTileFeature(1, MapGeometryType.Polygon, [new([new(-1024, -1024), new(2048, -1024), new(2048, 2048), new(-1024, 2048)], false)], []);
+            return new([new("water", 1024, [feature])], "v1", 2048, 4096);
+        }
+    }
+
+    private sealed class FallbackCompletion(FallbackStage stage) : IDisposable
+    {
+        public void Dispose()
+        {
+            stage.Child.TrySetResult(stage.Content);
+            stage.All.TrySetResult(stage.Content);
+        }
     }
 
     private sealed class Tiles() : MapTileSet("visual", "v1", "visual", 1, 2, "handmade", new("visual"))

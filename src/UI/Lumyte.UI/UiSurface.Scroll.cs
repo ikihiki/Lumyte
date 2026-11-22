@@ -10,6 +10,7 @@ public sealed partial class UiSurface
     private UiElement? _revealFocus;
     private UiElement? _restoreItemFocus;
     private long _restoreItemFocusRequest;
+    private bool _restoreItemFocusReveal = true;
 
     internal long FocusRequest => _focusRequest;
 
@@ -85,13 +86,37 @@ public sealed partial class UiSurface
         return changed;
     }
 
-    internal void QueueItemFocus(UiElement target, long request)
+    internal void SupersedePendingItemReveal(UiElement owner)
+    {
+        for (UiElement? target = _revealFocus; target is not null; target = target.Parent)
+        {
+            if (ReferenceEquals(target, owner))
+            {
+                _revealFocus = null;
+                break;
+            }
+        }
+
+        for (UiElement? target = _restoreItemFocus; target is not null; target = target.Parent)
+        {
+            if (ReferenceEquals(target, owner))
+            {
+                _restoreItemFocusReveal = false;
+                break;
+            }
+        }
+    }
+
+    internal long ReserveItemFocusRequest() => ++_focusRequest;
+
+    internal void QueueItemFocus(UiElement target, long request, bool reveal = true)
     {
         // Rebuild invalidation is not a request. Preserve only the intent captured in preparation.
-        if (_focusRequest == request)
+        if (_focusRequest == request && ReferenceEquals(target.Surface, this) && AcceptsCurrentInput(target) && target.PermitsFocus)
         {
             _restoreItemFocus = target;
             _restoreItemFocusRequest = request;
+            _restoreItemFocusReveal = reveal;
         }
     }
 
@@ -101,7 +126,12 @@ public sealed partial class UiSurface
         _restoreItemFocus = null;
         if (restore is not null && !_isDisposed && _focusRequest == _restoreItemFocusRequest && ReferenceEquals(restore.Surface, this))
         {
+            long request = _focusRequest;
             TryFocus(restore);
+            if (!_restoreItemFocusReveal && _focusRequest == request + 1 && ReferenceEquals(_focusedElement, restore))
+            {
+                _revealFocus = null;
+            }
         }
 
         UiElement? target = _revealFocus;
@@ -113,7 +143,8 @@ public sealed partial class UiSurface
             {
                 if (parent is ScrollViewElement)
                 {
-                    BringIntoView(target, target.ContentBounds);
+                    Rect2D region = target.SemanticActionRegion;
+                    BringIntoView(target, new(target.ContentBounds.X + region.X, target.ContentBounds.Y + region.Y, region.Width, region.Height));
                     break;
                 }
             }

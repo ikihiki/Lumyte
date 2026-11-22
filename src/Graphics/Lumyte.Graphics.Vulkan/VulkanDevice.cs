@@ -371,11 +371,6 @@ public sealed unsafe partial class VulkanDevice : IGraphicDevice, IDisposable
     public ValueTask WaitForRetirementAsync(CancellationToken cancellationToken = default)
     {
         ObjectDisposedException.ThrowIf(Status == GraphicsDeviceStatus.Disposed, this);
-        if (Status != GraphicsDeviceStatus.Lost)
-        {
-            throw new InvalidOperationException("Retirement requires confirmed native device loss.");
-        }
-
         cancellationToken.ThrowIfCancellationRequested();
         Result result = _api.DeviceWaitIdle(_device);
 

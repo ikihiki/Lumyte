@@ -96,6 +96,7 @@ public sealed partial class Renderer2D(IGraphicDevice device, DrawingCommandRend
 
             var batches = new List<IPreparedCommandBatch2D>();
             IDisposable? compositionUse = null;
+            IDisposable? imageResources = null;
             IDisposable? pipelinePreparation = null;
             try
             {
@@ -105,6 +106,7 @@ public sealed partial class Renderer2D(IGraphicDevice device, DrawingCommandRend
                 }
 
                 compositionUse = _resources.RetainComposition();
+                imageResources = ImageResourceRegistry2D.Retain([list]);
                 _retained.BindStorageOwner(_resources);
                 _retained.RetryCleanup();
                 var plan = new DrawingArgumentPlan2D(_device) { ArgumentTableMode = ArgumentTableMode };
@@ -164,14 +166,16 @@ public sealed partial class Renderer2D(IGraphicDevice device, DrawingCommandRend
                 // Finish fallible cleanup before moving the composition lease into a published owner.
                 planOwner.Dispose();
                 profile?.Success();
-                var prepared = new PreparedDraw2D(target, batches, profile?.Context, compositionUse);
+                var prepared = new PreparedDraw2D(target, batches, profile?.Context, compositionUse, imageResources);
                 compositionUse = null;
+                imageResources = null;
                 return prepared;
             }
             catch (Exception preparationFailure)
             {
-                _retained.QueueCleanup(new RetainedBatchRun2D(batches, false, compositionUse));
+                _retained.QueueCleanup(new RetainedBatchRun2D(batches, false, compositionUse, imageResources));
                 compositionUse = null;
+                imageResources = null;
                 try
                 {
                     _retained.RetryCleanup();
@@ -186,6 +190,7 @@ public sealed partial class Renderer2D(IGraphicDevice device, DrawingCommandRend
             finally
             {
                 pipelinePreparation?.Dispose();
+                imageResources?.Dispose();
                 Volatile.Write(ref _preparing, 0);
             }
         }

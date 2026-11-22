@@ -23,6 +23,7 @@ public sealed class TrustedRetirementTests
     /// <summary>A ready native device neither confirms retirement nor issues a proof.</summary>
     /// <returns>Completion of the retirement check.</returns>
     [NativeFact]
+    [Trait("Execution", "Gpu")]
     public async Task ReadyDeviceFailsClosedAsync()
     {
         using var device = VulkanDevice.Create();
@@ -31,7 +32,8 @@ public sealed class TrustedRetirementTests
         Assert.Same(device, authority.Device);
         Assert.Same(authority.Generation, device.RetirementAuthority.Generation);
         await Assert.ThrowsAsync<InvalidOperationException>(() => authority.WaitForRetirementAsync().AsTask());
-        await Assert.ThrowsAsync<InvalidOperationException>(() => device.WaitForRetirementAsync().AsTask());
+        await device.WaitForRetirementAsync();
+        await Assert.ThrowsAsync<InvalidOperationException>(() => authority.WaitForRetirementAsync().AsTask());
         Assert.Equal(GraphicsDeviceStatus.Ready, device.Status);
         device.Dispose();
         await Assert.ThrowsAsync<InvalidOperationException>(() => authority.WaitForRetirementAsync().AsTask());
@@ -39,6 +41,7 @@ public sealed class TrustedRetirementTests
 
     /// <summary>Friend-visible factories still reject arbitrary issuer objects and borrowed authority wrappers.</summary>
     [NativeFact]
+    [Trait("Execution", "Gpu")]
     public void FakeAuthorityAndLocalGenerationCannotMint()
     {
         using var device = VulkanDevice.Create();
@@ -59,6 +62,7 @@ public sealed class TrustedRetirementTests
     /// <summary>Loss notification plus actual Vulkan idle confirmation allows proof; no automatic device disposal occurs.</summary>
     /// <returns>Completion of native retirement confirmation.</returns>
     [NativeFact]
+    [Trait("Execution", "Gpu")]
     public async Task NativeLossLifecycleConfirmsRetirementAsync()
     {
         using var device = VulkanDevice.Create();

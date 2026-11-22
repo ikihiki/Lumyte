@@ -19,7 +19,11 @@ public static partial class Compose
                 Focusable = true;
                 Role = UiRole.TextBox;
                 ClipToBounds = true;
+                BackgroundChildren = CreateChildren(1);
             }
+
+            /// <summary>Gets optional chrome behind the text; omitted and empty slots are transparent.</summary>
+            public WidgetChildren BackgroundChildren { get; }
 
             /// <summary>Gets or sets the controlled committed text.</summary>
             [ComposeParameter]
@@ -43,6 +47,9 @@ public static partial class Compose
 
             /// <inheritdoc/>
             protected override UiElement CreateElement() => new TextBoxElement(this);
+
+            [ComposeSlot]
+            private static void Background(TextBox target, Lumyte.UI.Compose.Definitions.Widget[] children) => target.BackgroundChildren.Initialize(children);
         }
     }
 }

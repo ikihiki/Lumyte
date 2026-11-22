@@ -1,0 +1,61 @@
+name: Cache native Cargo compilation
+description: Restore standard Cargo intermediates before Compile; checkpoint only after successful verified Compile.
+inputs:
+  mode:
+    description: restore before Compile, save after Compile succeeds.
+    default: restore
+runs:
+  using: composite
+  steps:
+    - name: Validate cache mode and host
+      shell: bash
+      env:
+        CACHE_MODE: ${{ inputs.mode }}
+        CACHE_OS: ${{ runner.os }}
+      run: |
+        case "$CACHE_MODE" in restore|save) ;; *) echo "Unknown native cache mode" >&2; exit 1 ;; esac
+        case "$CACHE_OS" in Linux|Windows) ;; *) echo "Unsupported native cache host" >&2; exit 1 ;; esac
+    - name: Prepare pinned Rust and fingerprint Linux compilation
+      if: inputs.mode == 'restore' && runner.os == 'Linux'
+      shell: bash
+      run: |
+        source tools/setup/activate.sh
+        dotnet run --project build -c Release --no-build --no-restore -- --target Setup --setup-tool parley
+        python3 native/cargo_cache.py --github-output "$GITHUB_OUTPUT" > artifacts/native-cache-identity.json
+      id: linux
+    - name: Prepare pinned Rust and fingerprint Windows compilation
+      if: inputs.mode == 'restore' && runner.os == 'Windows'
+      shell: powershell
+      run: |
+        . ./tools/setup/activate.ps1 -RequireCompiler
+        Invoke-LumyteCommand dotnet @('run', '--project', 'build', '-c', 'Release', '--no-build', '--no-restore', '--', '--target', 'Setup', '--setup-tool', 'parley')
+        Invoke-LumyteCommand dotnet @('run', '--project', 'build', '-c', 'Release', '--no-build', '--no-restore', '--', '--target', 'Setup', '--setup-tool', 'wasm-python', '--python-path-file', 'artifacts/native-cache-python.txt')
+        $python = (Get-Content artifacts/native-cache-python.txt -Raw).Trim()
+        Invoke-LumyteCommand $python @('native/cargo_cache.py', '--github-output', $env:GITHUB_OUTPUT) | Set-Content artifacts/native-cache-identity.json
+      id: windows
+    - name: Remember exact key for post-Compile checkpoint
+      if: inputs.mode == 'restore'
+      shell: bash
+      env:
+        NATIVE_CACHE_KEY: ${{ steps.linux.outputs.key || steps.windows.outputs.key }}
+      run: |
+        test -n "$NATIVE_CACHE_KEY"
+        echo "LUMYTE_NATIVE_CACHE_KEY=$NATIVE_CACHE_KEY" >> "$GITHUB_ENV"
+    - name: Restore Cargo target directories only
+      if: inputs.mode == 'restore'
+      uses: actions/cache/restore@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
+      with:
+        path: |
+          artifacts/wgpu-native/target
+          artifacts/text-parley/native/cargo
+          artifacts/svg-usvg/native/cargo
+        key: ${{ env.LUMYTE_NATIVE_CACHE_KEY }}
+    - name: Save Cargo target directories after successful Compile
+      if: inputs.mode == 'save' && success() && env.LUMYTE_NATIVE_CACHE_KEY != ''
+      uses: actions/cache/save@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
+      with:
+        path: |
+          artifacts/wgpu-native/target
+          artifacts/text-parley/native/cargo
+          artifacts/svg-usvg/native/cargo
+        key: ${{ env.LUMYTE_NATIVE_CACHE_KEY }}

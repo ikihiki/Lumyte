@@ -32,9 +32,11 @@ public sealed partial class Renderer2D
         IPreparedCommandBatch2D? unpublished = null;
         IDisposable? composition = null;
         IDisposable? serial = null;
+        IDisposable? imageResources = null;
         try
         {
             serial = await binding.AcquirePreparationAsync(token).ConfigureAwait(false);
+            imageResources = ImageResourceRegistry2D.Retain(source.Entries.Select(entry => entry.Content));
             _retained.BindStorageOwner(_resources);
             frame = _retained.AcquireFrame();
             var commands = new List<DrawingCommand2D>();
@@ -77,7 +79,9 @@ public sealed partial class Renderer2D
             _ = source.Revision;
             _retained.AdmitFrame(frame);
             RetainedDrawingCache2D.FrameLease accepted = frame;
-            return new PreparedDrawingFrame2D(_device, target, frame.Assets, completed => _retained.ReleaseFrame(accepted, completed), cache: _retained);
+            var prepared = new PreparedDrawingFrame2D(_device, target, frame.Assets, completed => _retained.ReleaseFrame(accepted, completed), cache: _retained, imageResources: imageResources);
+            imageResources = null;
+            return prepared;
         }
         catch (Exception primary)
         {
@@ -104,6 +108,7 @@ public sealed partial class Renderer2D
         finally
         {
             composition?.Dispose();
+            imageResources?.Dispose();
             serial?.Dispose();
             Volatile.Write(ref _preparing, 0);
         }

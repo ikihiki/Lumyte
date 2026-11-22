@@ -77,6 +77,14 @@ internal sealed class DrawingResourceState2D : IDisposable
         }
     }
 
+    internal void ValidateDevice(IGraphicDevice device)
+    {
+        if (!ReferenceEquals(_device, device))
+        {
+            throw new ArgumentException("Drawing resources belong to a different physical device.", nameof(device));
+        }
+    }
+
     internal void AttachCompositionOwner(IDisposable owner) => _compositionOwner = owner;
 
     internal void ReturnBorrow(IDisposable use)

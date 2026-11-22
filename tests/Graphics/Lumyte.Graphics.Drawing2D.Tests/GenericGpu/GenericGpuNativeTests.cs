@@ -14,6 +14,7 @@ public sealed partial class GenericGpuNativeTests
 {
     /// <summary>Preserves each fractional rectangle sample in command-major native storage.</summary>
     [GenericGpuNativeFact]
+    [Trait("Execution", "Gpu")]
     public void CoverageDispatchPreservesSixteenCorrelatedSamples()
     {
         var state = new DrawingState2D(Matrix3x2.Identity, ClipStack2D.Empty);
@@ -29,6 +30,7 @@ public sealed partial class GenericGpuNativeTests
 
     /// <summary>Broadcasts inverse-pixel-center nonbinary mesh coverage rather than reinterpolating samples.</summary>
     [GenericGpuNativeFact]
+    [Trait("Execution", "Gpu")]
     public void MeshCenterCoverageIsBroadcastBeforePaintAndClip()
     {
         var state = new DrawingState2D(Matrix3x2.Identity, ClipStack2D.Empty);
@@ -40,6 +42,7 @@ public sealed partial class GenericGpuNativeTests
 
     /// <summary>Expands CPU-normalized analytic clip sample bounds without GPU geometric predicates.</summary>
     [GenericGpuNativeFact]
+    [Trait("Execution", "Gpu")]
     public void ClipDispatchUsesCpuNormalizedSampleMask()
     {
         var path = new PathBuilder2D();
@@ -64,6 +67,7 @@ public sealed partial class GenericGpuNativeTests
 
     /// <summary>Executes independent and fused stages and checks command-average SrcOver against an analytic pixel.</summary>
     [GenericGpuNativeFact]
+    [Trait("Execution", "Gpu")]
     public void SeparatedAndFusedPixelsPreserveCommandAveragePainterOrder()
     {
         byte[] separated = Render(false, 0);
@@ -81,6 +85,7 @@ public sealed partial class GenericGpuNativeTests
 
     /// <summary>Preserves mixed command ordering and nonlinear shape evaluation across decomposed and fused shaders.</summary>
     [GenericGpuNativeFact]
+    [Trait("Execution", "Gpu")]
     public void SeparatedAndFusedMixedShapePixelsAgree()
     {
         byte[] separated = Render(false, 1);

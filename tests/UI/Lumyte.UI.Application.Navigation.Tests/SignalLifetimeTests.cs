@@ -10,6 +10,7 @@ public sealed class SignalLifetimeTests
 {
     /// <summary>Checks Own admission, nested observer ownership and reverse cleanup on real page retirement.</summary>
     /// <returns>The verification.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task BusinessObserversAreReleasedBeforeThePageScopeAsync()
     {
@@ -41,6 +42,7 @@ public sealed class SignalLifetimeTests
 
     /// <summary>Checks page scopes revoke asynchronous work before its late completion can reach UI.</summary>
     /// <returns>The asynchronous verification.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task PageRetirementCancelsOwnedAsynchronousSignalsAsync()
     {

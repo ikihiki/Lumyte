@@ -12,6 +12,7 @@ public sealed class ShaderTransferGpuTests
     /// <summary>Checks mapped batch writes and partial overwrites against literal D3D12 reference bytes.</summary>
     /// <param name="count">The number of values in the batch.</param>
     /// <returns>The completed byte-exact GPU copy check.</returns>
+    [Trait("Execution", "Gpu")]
     [AgilityTheory]
     [InlineData(1)]
     [InlineData(64)]
@@ -70,6 +71,7 @@ public sealed class ShaderTransferGpuTests
     /// <summary>Checks explicit numeric and reference transfer boundaries against the shared Vulkan exercise.</summary>
     /// <param name="validation">Whether to enable the managed validation layer.</param>
     /// <returns>The completed GPU readback checks.</returns>
+    [Trait("Execution", "Gpu")]
     [AgilityTheory]
     [InlineData(false)]
     [InlineData(true)]
