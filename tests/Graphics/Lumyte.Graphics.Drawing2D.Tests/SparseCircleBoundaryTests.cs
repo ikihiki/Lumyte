@@ -70,7 +70,7 @@ public sealed class SparseCircleBoundaryTests
                     double u = ((8 * x) + (2 * (bit % 4)) + 1 - (8 * transform.M31)) / transform.M11;
                     double v = ((8 * y) + (2 * (bit / 4)) + 1 - (8 * transform.M32)) / transform.M22;
                     double squared = ((u - 5) * (u - 5)) + ((v - 5) * (v - 5));
-                    bool inside = rounded ? squared <= 16 && u >= 1 && u < 9 && v >= 1 && v < 9 : squared < 16;
+                    bool inside = rounded ? squared <= 16 && u >= 1 && u <= 9 && v >= 1 && v <= 9 : squared < 16;
                     if (inside)
                     {
                         expected |= (ushort)(1 << bit);

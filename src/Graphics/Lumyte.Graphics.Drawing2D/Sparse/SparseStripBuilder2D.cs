@@ -530,7 +530,10 @@ internal static class SparseStripBuilder2D
             double localX = Math.FusedMultiplyAdd(dx, _transform.M22, -(dy * _transform.M21)) / _determinant;
             double localY = Math.FusedMultiplyAdd(dy, _transform.M11, -(dx * _transform.M12)) / _determinant;
             double right = LocalRight, bottom = LocalBottom;
-            if (localX < LocalLeft || localX >= right || localY < LocalTop || localY >= bottom)
+
+            // Rounded rectangles include their straight edges as well as corner arcs,
+            // including radius zero. Circles still use the strict radius test below.
+            if (localX < LocalLeft || localX > right || localY < LocalTop || localY > bottom)
             {
                 return false;
             }
