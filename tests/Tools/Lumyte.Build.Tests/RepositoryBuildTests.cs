@@ -7,13 +7,49 @@ namespace Lumyte.Build.Tests;
 /// <summary>Checks the repository targets through real Fallout execution and controlled dotnet processes.</summary>
 public sealed class RepositoryBuildTests
 {
+    /// <summary>The tabs gate runs retained controls, actual editor connections and the public sample.</summary>
+    /// <returns>The asynchronous assertion.</returns>
+    [Fact]
+    [Trait("Execution", "Integration")]
+    public async Task TabsGateUsesActualEditorAndPublicSampleAsync()
+    {
+        using var fixture = new BuildFixture();
+        BuildFixture.ProcessResult result = await fixture.RunAsync("Test", "--suite", "ui", "--feature", "tabs", "--dotnet-path", fixture.DotnetTool, "--no-build");
+        AssertSuccess(result);
+        JsonElement[] records = fixture.Records("dotnet");
+        Assert.Equal(["test", "test", "run"], Commands(records));
+        Assert.Contains("tests/UI/Lumyte.UI.Controls.Tests", Arguments(records[0]));
+        Assert.Contains("tests/UI/Lumyte.UI.TextEditing.Tests", Arguments(records[1]));
+        Assert.Contains("samples/Lumyte.UI.Tabs.Sample", Arguments(records[2]));
+    }
+
+    /// <summary>The tabs native gate retains both strict warning switches and serialized publication.</summary>
+    /// <returns>The asynchronous assertion.</returns>
+    [Fact]
+    [Trait("Execution", "Integration")]
+    public async Task TabsAotGateUsesStrictPublishAsync()
+    {
+        using var fixture = new BuildFixture();
+        fixture.Environment["LUMYTE_TEST_DOTNET_FAIL_COMMAND"] = "publish";
+        fixture.Environment["LUMYTE_TEST_DOTNET_EXIT"] = "23";
+        BuildFixture.ProcessResult result = await fixture.RunAsync("Test", "--suite", "ui", "--feature", "tabs", "--aot", "--dotnet-path", fixture.DotnetTool);
+        Assert.NotEqual(0, result.ExitCode);
+        JsonElement publish = Assert.Single(fixture.Records("dotnet"));
+        Assert.Contains("samples/Lumyte.UI.Tabs.Sample", Arguments(publish));
+        Assert.Contains("-p:PublishAot=true", Arguments(publish));
+        Assert.Contains("-p:ILLinkTreatWarningsAsErrors=true", Arguments(publish));
+        Assert.Contains("-p:IlcTreatWarningsAsErrors=true", Arguments(publish));
+        Assert.Contains("-m:1", Arguments(publish));
+    }
+
     /// <summary>The layout gate invokes the built core suite and the font-free public sample.</summary>
     /// <returns>The asynchronous process assertion.</returns>
     [Fact]
+    [Trait("Execution", "Integration")]
     public async Task LayoutGateUsesCoreTestsAndPublicSampleAsync()
     {
         using var fixture = new BuildFixture();
-        BuildFixture.ProcessResult result = await fixture.RunAsync("TestUiLayout", "--dotnet-path", fixture.DotnetTool, "--no-build");
+        BuildFixture.ProcessResult result = await fixture.RunAsync("Test", "--suite", "ui", "--feature", "layout", "--dotnet-path", fixture.DotnetTool, "--no-build");
         AssertSuccess(result);
         JsonElement[] records = fixture.Records("dotnet");
         Assert.Equal(["test", "run"], Commands(records));
@@ -26,10 +62,11 @@ public sealed class RepositoryBuildTests
     /// <summary>The scroll gate invokes both suites and the public sample.</summary>
     /// <returns>The asynchronous assertion.</returns>
     [Fact]
+    [Trait("Execution", "Integration")]
     public async Task ScrollGateUsesCoreControlsAndPublicSampleAsync()
     {
         using var fixture = new BuildFixture();
-        BuildFixture.ProcessResult result = await fixture.RunAsync("TestUiScroll", "--dotnet-path", fixture.DotnetTool, "--no-build");
+        BuildFixture.ProcessResult result = await fixture.RunAsync("Test", "--suite", "ui", "--feature", "scroll", "--dotnet-path", fixture.DotnetTool, "--no-build");
         AssertSuccess(result);
         JsonElement[] records = fixture.Records("dotnet");
         Assert.Equal(["test", "test", "run"], Commands(records));
@@ -41,12 +78,13 @@ public sealed class RepositoryBuildTests
     /// <summary>The scroll native gate publishes with both strict warning switches.</summary>
     /// <returns>The asynchronous assertion.</returns>
     [Fact]
+    [Trait("Execution", "Integration")]
     public async Task ScrollAotGateUsesStrictPublishAsync()
     {
         using var fixture = new BuildFixture();
         fixture.Environment["LUMYTE_TEST_DOTNET_FAIL_COMMAND"] = "publish";
         fixture.Environment["LUMYTE_TEST_DOTNET_EXIT"] = "23";
-        BuildFixture.ProcessResult result = await fixture.RunAsync("TestUiScrollAot", "--dotnet-path", fixture.DotnetTool);
+        BuildFixture.ProcessResult result = await fixture.RunAsync("Test", "--suite", "ui", "--feature", "scroll", "--aot", "--dotnet-path", fixture.DotnetTool);
         Assert.NotEqual(0, result.ExitCode);
         JsonElement publish = Assert.Single(fixture.Records("dotnet"));
         Assert.Contains("samples/Lumyte.UI.Scroll.Sample", Arguments(publish));
@@ -58,10 +96,11 @@ public sealed class RepositoryBuildTests
     /// <summary>The numeric gate runs actual control, editor and automation suites plus the public sample.</summary>
     /// <returns>The asynchronous assertion.</returns>
     [Fact]
+    [Trait("Execution", "Integration")]
     public async Task NumericGateUsesActualEditorAndPublicSampleAsync()
     {
         using var fixture = new BuildFixture();
-        BuildFixture.ProcessResult result = await fixture.RunAsync("TestUiNumeric", "--dotnet-path", fixture.DotnetTool, "--no-build");
+        BuildFixture.ProcessResult result = await fixture.RunAsync("Test", "--suite", "ui", "--feature", "numeric", "--dotnet-path", fixture.DotnetTool, "--no-build");
         AssertSuccess(result);
         JsonElement[] records = fixture.Records("dotnet");
         Assert.Equal(["test", "test", "test", "run"], Commands(records));
@@ -74,12 +113,13 @@ public sealed class RepositoryBuildTests
     /// <summary>The numeric native gate enforces both trimming and compiler warnings.</summary>
     /// <returns>The asynchronous assertion.</returns>
     [Fact]
+    [Trait("Execution", "Integration")]
     public async Task NumericAotGateUsesStrictPublishAsync()
     {
         using var fixture = new BuildFixture();
         fixture.Environment["LUMYTE_TEST_DOTNET_FAIL_COMMAND"] = "publish";
         fixture.Environment["LUMYTE_TEST_DOTNET_EXIT"] = "23";
-        BuildFixture.ProcessResult result = await fixture.RunAsync("TestUiNumericAot", "--dotnet-path", fixture.DotnetTool);
+        BuildFixture.ProcessResult result = await fixture.RunAsync("Test", "--suite", "ui", "--feature", "numeric", "--aot", "--dotnet-path", fixture.DotnetTool);
         Assert.NotEqual(0, result.ExitCode);
         JsonElement publish = Assert.Single(fixture.Records("dotnet"));
         Assert.Contains("samples/Lumyte.UI.Numeric.Sample", Arguments(publish));
@@ -91,12 +131,13 @@ public sealed class RepositoryBuildTests
     /// <summary>The collection native gate enforces trimming and compiler warnings.</summary>
     /// <returns>The asynchronous assertion.</returns>
     [Fact]
+    [Trait("Execution", "Integration")]
     public async Task CollectionsAotGateUsesStrictPublishAsync()
     {
         using var fixture = new BuildFixture();
         fixture.Environment["LUMYTE_TEST_DOTNET_FAIL_COMMAND"] = "publish";
         fixture.Environment["LUMYTE_TEST_DOTNET_EXIT"] = "23";
-        BuildFixture.ProcessResult result = await fixture.RunAsync("TestUiCollectionsAot", "--dotnet-path", fixture.DotnetTool);
+        BuildFixture.ProcessResult result = await fixture.RunAsync("Test", "--suite", "ui", "--feature", "collections", "--aot", "--dotnet-path", fixture.DotnetTool);
         Assert.NotEqual(0, result.ExitCode);
         JsonElement publish = Assert.Single(fixture.Records("dotnet"));
         Assert.Contains("samples/Lumyte.UI.Collections.Sample", Arguments(publish));
@@ -108,6 +149,7 @@ public sealed class RepositoryBuildTests
     /// <summary>Compilation restores once, preserves path boundaries and uses the requested application configuration.</summary>
     /// <returns>The asynchronous process assertion.</returns>
     [Fact]
+    [Trait("Execution", "Integration")]
     public async Task CompileRestoresThenBuildsTheRequestedProjectAsync()
     {
         using var fixture = new BuildFixture();
@@ -128,7 +170,7 @@ public sealed class RepositoryBuildTests
     /// <param name="target">The direct or grouped test entry point.</param>
     [Theory]
     [InlineData("Test")]
-    [InlineData("CiNative")]
+    [Trait("Execution", "Integration")]
     public async Task TestRunsOnlyAfterTheExplicitBuildAsync(string target)
     {
         using var fixture = new BuildFixture();
@@ -146,6 +188,7 @@ public sealed class RepositoryBuildTests
     /// <summary>A failed compile cannot continue into the test process.</summary>
     /// <returns>The asynchronous failure assertion.</returns>
     [Fact]
+    [Trait("Execution", "Integration")]
     public async Task BuildFailureStopsDependentTestsAsync()
     {
         using var fixture = new BuildFixture();
@@ -160,6 +203,7 @@ public sealed class RepositoryBuildTests
     /// <summary>No-build mode uses staged test outputs without restoring or compiling the project.</summary>
     /// <returns>The asynchronous reuse assertion.</returns>
     [Fact]
+    [Trait("Execution", "Integration")]
     public async Task NoBuildRunsOnlyTheTestProcessAsync()
     {
         using var fixture = new BuildFixture();
@@ -174,6 +218,7 @@ public sealed class RepositoryBuildTests
     /// <summary>No-restore mode still compiles while avoiding a redundant restore target.</summary>
     /// <returns>The asynchronous reuse assertion.</returns>
     [Fact]
+    [Trait("Execution", "Integration")]
     public async Task NoRestoreStillBuildsTheRequestedProjectAsync()
     {
         using var fixture = new BuildFixture();
@@ -187,6 +232,7 @@ public sealed class RepositoryBuildTests
     /// <summary>Publish keeps the selected project, runtime and Unicode output as separate arguments.</summary>
     /// <returns>The asynchronous publication assertion.</returns>
     [Fact]
+    [Trait("Execution", "Integration")]
     public async Task PublishForwardsRuntimeAndOutputAsync()
     {
         using var fixture = new BuildFixture();
@@ -203,10 +249,11 @@ public sealed class RepositoryBuildTests
     /// <summary>Pack selects the requested project and reuses the explicit compile target's output.</summary>
     /// <returns>The asynchronous package assertion.</returns>
     [Fact]
+    [Trait("Execution", "Integration")]
     public async Task PackUsesTheRequestedProjectWithoutImplicitBuildAsync()
     {
         using var fixture = new BuildFixture();
-        BuildFixture.ProcessResult result = await fixture.RunAsync("Pack", "--dotnet-path", fixture.DotnetTool, "--project", fixture.Project);
+        BuildFixture.ProcessResult result = await fixture.RunAsync("Distribution", "--distribution-output", "packages", "--dotnet-path", fixture.DotnetTool, "--project", fixture.Project);
         AssertSuccess(result);
         JsonElement pack = Assert.Single(fixture.Records("dotnet"), record => Arguments(record)[0] == "pack");
         string[] arguments = Arguments(pack);
@@ -219,6 +266,7 @@ public sealed class RepositoryBuildTests
     /// <summary>Default packaging evaluates source project packability in one MSBuild process, excluding intermediate projects.</summary>
     /// <returns>The asynchronous project-discovery assertion.</returns>
     [Fact]
+    [Trait("Execution", "Integration")]
     public async Task PackDiscoversOnlyPackableSourceProjectsAsync()
     {
         using var fixture = new BuildFixture();
@@ -229,7 +277,7 @@ public sealed class RepositoryBuildTests
         File.WriteAllText(Path.Combine(source, "Unpackable.csproj"), "<Project><PropertyGroup><IsPackable>false</IsPackable></PropertyGroup></Project>");
         File.WriteAllText(Path.Combine(source, "Lumyte.Graphics.Text.Parley.csproj"), File.ReadAllText(fixture.Project));
         File.WriteAllText(Path.Combine(source, "obj", "Intermediate.csproj"), File.ReadAllText(fixture.Project));
-        BuildFixture.ProcessResult result = await fixture.RunAsync("Pack", "--dotnet-path", fixture.DotnetTool, "--no-build", "--skip-parley-package");
+        BuildFixture.ProcessResult result = await fixture.RunAsync("Distribution", "--distribution-output", "packages", "--dotnet-path", fixture.DotnetTool, "--no-build", "--skip-parley-package");
         AssertSuccess(result);
         JsonElement[] records = fixture.Records("dotnet");
         JsonElement pack = Assert.Single(records);
@@ -246,12 +294,13 @@ public sealed class RepositoryBuildTests
     /// <summary>Explicit package opt-out avoids invoking dotnet pack for the native Parley package.</summary>
     /// <returns>The asynchronous package-selection assertion.</returns>
     [Fact]
+    [Trait("Execution", "Integration")]
     public async Task SkipParleyPackageDoesNotInvokePackAsync()
     {
         using var fixture = new BuildFixture();
         string project = Path.Combine(fixture.Root, "Lumyte.Graphics.Text.Parley.csproj");
         File.WriteAllText(project, File.ReadAllText(fixture.Project));
-        BuildFixture.ProcessResult result = await fixture.RunAsync("Pack", "--dotnet-path", fixture.DotnetTool, "--project", project, "--no-build", "--skip-parley-package");
+        BuildFixture.ProcessResult result = await fixture.RunAsync("Distribution", "--distribution-output", "packages", "--dotnet-path", fixture.DotnetTool, "--project", project, "--no-build", "--skip-parley-package");
         AssertSuccess(result);
         Assert.False(Directory.Exists(fixture.Log));
     }
@@ -259,12 +308,13 @@ public sealed class RepositoryBuildTests
     /// <summary>Explicit Wgpu package deferral leaves the missing-RID release gate intact.</summary>
     /// <returns>The asynchronous package-selection assertion.</returns>
     [Fact]
+    [Trait("Execution", "Integration")]
     public async Task SkipWgpuPackageDoesNotInvokePackAsync()
     {
         using var fixture = new BuildFixture();
         string project = Path.Combine(fixture.Root, "Lumyte.Graphics.Wgpu.csproj");
         File.WriteAllText(project, File.ReadAllText(fixture.Project));
-        BuildFixture.ProcessResult result = await fixture.RunAsync("Pack", "--dotnet-path", fixture.DotnetTool, "--project", project, "--no-build", "--skip-wgpu-package");
+        BuildFixture.ProcessResult result = await fixture.RunAsync("Distribution", "--distribution-output", "packages", "--dotnet-path", fixture.DotnetTool, "--project", project, "--no-build", "--skip-wgpu-package");
         AssertSuccess(result);
         Assert.False(Directory.Exists(fixture.Log));
     }
@@ -272,6 +322,7 @@ public sealed class RepositoryBuildTests
     /// <summary>A failure in the packaging traversal fails the build runner.</summary>
     /// <returns>The asynchronous failure assertion.</returns>
     [Fact]
+    [Trait("Execution", "Integration")]
     public async Task BatchPackFailureIsPropagatedAsync()
     {
         using var fixture = new BuildFixture();
@@ -280,7 +331,7 @@ public sealed class RepositoryBuildTests
         File.Copy(fixture.Project, Path.Combine(source, "Packable.csproj"));
         fixture.Environment["LUMYTE_TEST_DOTNET_FAIL_COMMAND"] = "msbuild";
         fixture.Environment["LUMYTE_TEST_DOTNET_EXIT"] = "23";
-        BuildFixture.ProcessResult result = await fixture.RunAsync("Pack", "--dotnet-path", fixture.DotnetTool, "--no-build");
+        BuildFixture.ProcessResult result = await fixture.RunAsync("Distribution", "--distribution-output", "packages", "--dotnet-path", fixture.DotnetTool, "--no-build");
         Assert.NotEqual(0, result.ExitCode);
         Assert.Contains("23", result.Output + result.Error, StringComparison.Ordinal);
         Assert.Single(fixture.Records("dotnet"));
@@ -289,6 +340,7 @@ public sealed class RepositoryBuildTests
     /// <summary>Host selection keeps new shared projects and removes only foreign platform projects.</summary>
     /// <returns>The asynchronous solution-selection assertion.</returns>
     [Fact]
+    [Trait("Execution", "Integration")]
     public async Task HostSolutionPreservesSharedProjectsAndBuildMetadataAsync()
     {
         using var fixture = new BuildFixture();
@@ -304,10 +356,10 @@ public sealed class RepositoryBuildTests
             </Solution>
             """;
         File.WriteAllText(fixture.Solution, Solution);
-        BuildFixture.ProcessResult result = await fixture.RunAsync("CiNative", "--dotnet-path", fixture.DotnetTool, "--host-only");
+        BuildFixture.ProcessResult result = await fixture.RunAsync("Compile", "--dotnet-path", fixture.DotnetTool, "--host-only");
         AssertSuccess(result);
         JsonElement[] records = fixture.Records("dotnet");
-        Assert.Equal(["restore", "build", "test"], Commands(records));
+        Assert.Equal(["restore", "build"], Commands(records));
         string solution = Arguments(records[0])[1];
         Assert.All(records, record => Assert.Contains(solution, Arguments(record)));
         var document = XDocument.Load(solution);
@@ -323,6 +375,7 @@ public sealed class RepositoryBuildTests
     /// <summary>Default host packaging cannot select an unbuilt foreign platform project.</summary>
     /// <returns>The asynchronous package-selection assertion.</returns>
     [Fact]
+    [Trait("Execution", "Integration")]
     public async Task HostPackExcludesForeignPlatformProjectsAsync()
     {
         using var fixture = new BuildFixture();
@@ -333,7 +386,7 @@ public sealed class RepositoryBuildTests
             File.Copy(fixture.Project, Path.Combine(source, name + ".csproj"));
         }
 
-        BuildFixture.ProcessResult result = await fixture.RunAsync("Pack", "--dotnet-path", fixture.DotnetTool, "--host-only", "--no-build");
+        BuildFixture.ProcessResult result = await fixture.RunAsync("Distribution", "--distribution-output", "packages", "--dotnet-path", fixture.DotnetTool, "--host-only", "--no-build");
         AssertSuccess(result);
         JsonElement pack = Assert.Single(fixture.Records("dotnet"));
         var traversal = XDocument.Load(Arguments(pack)[1]);
@@ -349,10 +402,11 @@ public sealed class RepositoryBuildTests
     [Theory]
     [InlineData("Release")]
     [InlineData("Debug")]
+    [Trait("Execution", "Integration")]
     public async Task CheckFormatUsesTheSelectedConfigurationAsync(string configuration)
     {
         using var fixture = new BuildFixture();
-        BuildFixture.ProcessResult result = await fixture.RunAsync("CheckFormat", "--dotnet-path", fixture.DotnetTool, "--project", fixture.Project, "--configuration", configuration);
+        BuildFixture.ProcessResult result = await fixture.RunAsync("Quality", "--quality-scope", "managed", "--dotnet-path", fixture.DotnetTool, "--project", fixture.Project, "--configuration", configuration);
         AssertSuccess(result);
         JsonElement format = Assert.Single(fixture.Records("dotnet"));
         Assert.Equal("format", Arguments(format)[0]);

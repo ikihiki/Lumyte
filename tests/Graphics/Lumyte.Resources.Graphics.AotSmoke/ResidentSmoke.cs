@@ -8,7 +8,7 @@ using static Lumyte.Graphics.Drawing2D.Pipelines.DrawingCompose;
 
 namespace Lumyte.Resources.Graphics.AotSmoke;
 
-internal static class ResidentSmoke
+internal static partial class ResidentSmoke
 {
     internal static async Task RunAsync()
     {

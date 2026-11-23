@@ -20,6 +20,12 @@ internal static class Program
             return;
         }
 
+        if (args.Contains("--generic-resident-wgpu", StringComparer.Ordinal))
+        {
+            ResidentSmoke.RunGeneric();
+            return;
+        }
+
         if (args.Contains("--resident-wgpu", StringComparer.Ordinal))
         {
             ResidentSmoke.RunAsync().GetAwaiter().GetResult();

@@ -68,4 +68,37 @@ public enum UiRole
 
     /// <summary>A non-editable popup selector.</summary>
     ComboBox,
+
+    /// <summary>A keyed tab selection group.</summary>
+    TabView,
+
+    /// <summary>A selectable tab header and retained panel.</summary>
+    TabItem,
+
+    /// <summary>A collapsible content panel.</summary>
+    Expander,
+
+    /// <summary>A command menu.</summary>
+    Menu,
+
+    /// <summary>A command, checked command or submenu anchor.</summary>
+    MenuItem,
+
+    /// <summary>A passive contextual tooltip with its anchor.</summary>
+    Tooltip,
+
+    /// <summary>A hierarchical collection.</summary>
+    Tree,
+
+    /// <summary>A hierarchical item.</summary>
+    TreeItem,
+
+    /// <summary>A read-only tabular collection.</summary>
+    DataGrid,
+
+    /// <summary>A semantic table row.</summary>
+    GridRow,
+
+    /// <summary>A read-only semantic table cell.</summary>
+    GridCell,
 }

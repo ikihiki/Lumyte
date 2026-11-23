@@ -10,6 +10,8 @@
     <ProjectReference Include="../Lumyte.Graphics.Abstractions/Lumyte.Graphics.Abstractions.csproj" />
     <ProjectReference Include="../Lumyte.Graphics.Shared/Lumyte.Graphics.Shared.csproj" />
     <InternalsVisibleTo Include="Lumyte.Graphics.Drawing2D.RenderGraph" />
+    <InternalsVisibleTo Include="Lumyte.Graphics.Pipelines.RenderGraph" />
+    <InternalsVisibleTo Include="Lumyte.Graphics.RenderGraph.Tests" />
     <InternalsVisibleTo Include="Lumyte.Graphics.ImageEffects" />
     <InternalsVisibleTo Include="Lumyte.Graphics.Drawing2D.Tests" />
     <None Update="README.md" Pack="true" PackagePath="/" />

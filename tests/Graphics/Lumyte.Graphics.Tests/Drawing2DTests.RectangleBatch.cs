@@ -14,6 +14,7 @@ public sealed partial class Drawing2DTests
 {
     /// <summary>Checks ordering, coverage, clip and fallback boundaries on wgpu.</summary>
     /// <returns>The asynchronous pixel comparisons.</returns>
+    [Trait("Execution", "Gpu")]
     [GpuFact]
     public async Task WgpuRectangleBatchPixelsAsync()
     {
@@ -23,6 +24,7 @@ public sealed partial class Drawing2DTests
 
     /// <summary>Checks ordering, coverage, clip and fallback boundaries on Vulkan.</summary>
     /// <returns>The asynchronous pixel comparisons.</returns>
+    [Trait("Execution", "Gpu")]
     [GpuFact]
     public async Task VulkanRectangleBatchPixelsAsync()
     {

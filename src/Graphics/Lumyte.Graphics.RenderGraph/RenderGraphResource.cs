@@ -30,6 +30,8 @@ public abstract class RenderGraphResource
 
     internal object? Allocation { get; }
 
+    internal RenderGraph.PreparedTarget? PreparedTarget { get; set; }
+
     internal TextureState InitialState { get; }
 
     internal BarrierScope InitialScope { get; }

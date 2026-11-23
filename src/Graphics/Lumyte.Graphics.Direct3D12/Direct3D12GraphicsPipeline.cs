@@ -2,7 +2,7 @@ using Lumyte.Graphics.Abstractions;
 
 namespace Lumyte.Graphics.Direct3D12;
 
-internal sealed unsafe partial class Direct3D12GraphicsPipeline : IGraphicsPipeline
+internal sealed unsafe partial class Direct3D12GraphicsPipeline : IGraphicsPipeline, IGraphicsNativeOrigin
 {
     private readonly Direct3D12Device _owner;
     private readonly Direct3D12Shader _vertex;
@@ -37,6 +37,10 @@ internal sealed unsafe partial class Direct3D12GraphicsPipeline : IGraphicsPipel
         }
     }
 
+    IGraphicDevice IGraphicsNativeOrigin.Device => Owner;
+
+    object IGraphicsNativeOrigin.AllocationIdentity => this;
+
     public GraphicsPipelineDesc Desc { get; }
 
     internal Direct3D12Device Owner => _owner;
@@ -46,6 +50,17 @@ internal sealed unsafe partial class Direct3D12GraphicsPipeline : IGraphicsPipel
     internal ShaderTargetData VertexData { get; }
 
     internal ShaderTargetData? FragmentData { get; }
+
+    void IGraphicsNativeOrigin.ValidateOrigin()
+    {
+        ObjectDisposedException.ThrowIf(Owner.Status == GraphicsDeviceStatus.Disposed, Owner);
+        if (Owner.Status == GraphicsDeviceStatus.Lost)
+        {
+            throw new GraphicsDeviceLostException(Owner.Loss!);
+        }
+
+        ValidateAlive();
+    }
 
     public void Dispose()
     {

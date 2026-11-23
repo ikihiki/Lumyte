@@ -5,7 +5,7 @@ using A = Ahjo.Wgpu;
 namespace Lumyte.Graphics.Wgpu;
 
 /// <summary>Owns a native wgpu device and its immutable capability snapshot.</summary>
-public sealed class WgpuDevice : IGraphicDevice, IDisposable
+public sealed partial class WgpuDevice : IGraphicDevice, IDisposable
 {
     private readonly A.Instance _instance;
     private readonly A.Adapter _adapter;
@@ -21,6 +21,7 @@ public sealed class WgpuDevice : IGraphicDevice, IDisposable
     {
         _creation = creation;
         _lifetime = new(this);
+        RetirementAuthority = new RetirementAuthorityAdapter(this);
         creation.Attach(_lifetime);
         (_instance, _adapter, _device) = (instance, adapter, device);
         Queue = new WgpuQueue(this);
@@ -383,6 +384,12 @@ public sealed class WgpuDevice : IGraphicDevice, IDisposable
     /// <inheritdoc />
     public async ValueTask WaitForRetirementAsync(CancellationToken cancellationToken = default)
     {
+        ObjectDisposedException.ThrowIf(Status == GraphicsDeviceStatus.Disposed, this);
+        if (Status != GraphicsDeviceStatus.Lost)
+        {
+            throw new InvalidOperationException("Retirement requires confirmed native device loss.");
+        }
+
         cancellationToken.ThrowIfCancellationRequested();
 
         // Native loss ends GPU use, but request callbacks still own their status slots.

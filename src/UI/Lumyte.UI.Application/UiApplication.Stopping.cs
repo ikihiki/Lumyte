@@ -226,6 +226,11 @@ public sealed partial class UiApplication
             entry.Detached = true;
         }
 
+        foreach (IUiApplicationParticipant participant in _participants)
+        {
+            await participant.RetireWindowResourcesAsync(entry.Context);
+        }
+
         if (!entry.Released)
         {
             entry.Released = true;

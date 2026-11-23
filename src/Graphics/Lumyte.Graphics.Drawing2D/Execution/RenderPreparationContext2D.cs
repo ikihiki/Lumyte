@@ -32,6 +32,8 @@ public sealed class RenderPreparationContext2D
         _allowReturnedResources = source._allowReturnedResources;
         ArgumentPlan = source.ArgumentPlan;
         Clips = source.Clips;
+        SourceBinding = source.SourceBinding;
+        RetainedTranslation = source.RetainedTranslation;
         EnforceWorkingBudget = source.EnforceWorkingBudget;
         MaxWorkingBytes = source.MaxWorkingBytes;
         _otherWorkingBytes = source._otherWorkingBytes;
@@ -87,6 +89,10 @@ public sealed class RenderPreparationContext2D
         }
     }
 
+    internal System.Numerics.Vector2 RetainedTranslation { get; init; }
+
+    internal Pipelines.RenderSourceBinding2D? SourceBinding { get; init; }
+
     /// <summary>Retains the renderer's existing resource owner for prepared work through GPU completion.</summary>
     /// <returns>A lifetime token containing no pipeline or shader state.</returns>
     public IDisposable RetainResources() => _resources.Retain(_allowReturnedResources);
@@ -105,13 +111,13 @@ public sealed class RenderPreparationContext2D
             throw new ArgumentException("The argument plan belongs to another device.", nameof(argumentPlan));
         }
 
-        return CopyWorkingBudget(new(Device, Target, _resources, argumentPlan, _allowReturnedResources) { EnforceWorkingBudget = EnforceWorkingBudget, MaxWorkingBytes = MaxWorkingBytes });
+        return CopyWorkingBudget(new(Device, Target, _resources, argumentPlan, _allowReturnedResources) { SourceBinding = SourceBinding, RetainedTranslation = RetainedTranslation, EnforceWorkingBudget = EnforceWorkingBudget, MaxWorkingBytes = MaxWorkingBytes });
     }
 
     internal RenderPreparationContext2D SnapshotWorkingBudget() => new(this);
 
     internal RenderPreparationContext2D WithWorkingLimit(long maximum)
-        => CopyWorkingBudget(new(Device, Target, _resources, ArgumentPlan, _allowReturnedResources) { EnforceWorkingBudget = true, MaxWorkingBytes = Math.Min(MaxWorkingBytes, maximum) });
+        => CopyWorkingBudget(new(Device, Target, _resources, ArgumentPlan, _allowReturnedResources) { SourceBinding = SourceBinding, RetainedTranslation = RetainedTranslation, EnforceWorkingBudget = true, MaxWorkingBytes = Math.Min(MaxWorkingBytes, maximum) });
 
     internal void SetWorkingBytesSource(Func<long> source)
     {

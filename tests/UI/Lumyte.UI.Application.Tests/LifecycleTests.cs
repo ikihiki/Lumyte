@@ -35,6 +35,7 @@ public sealed class LifecycleTests
 
     /// <summary>Checks callbacks and queued queries use one owner, always queue, and retain FIFO ordering.</summary>
     /// <returns>The asynchronous verification.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task DispatcherQueuesOnTheOwnerAndPreservesOrderAsync()
     {
@@ -72,6 +73,7 @@ public sealed class LifecycleTests
 
     /// <summary>Checks retirement failure retains the view and resumes cleanup without repeating successful stages.</summary>
     /// <returns>The asynchronous verification.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task RetirementFailureCanBeRetriedWithoutDoubleReleaseAsync()
     {
@@ -99,6 +101,7 @@ public sealed class LifecycleTests
 
     /// <summary>Checks cleanup can return from ConfigureAwait(false) to the same dispatcher after normal admission closes.</summary>
     /// <returns>The asynchronous verification.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task CleanupAdmissionAllowsOwnerWorkAfterStoppingAsync()
     {
@@ -116,6 +119,7 @@ public sealed class LifecycleTests
 
     /// <summary>Checks scope-style final release failures are terminal and are never retried.</summary>
     /// <returns>The asynchronous verification.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task FinalReleaseFailureIsTerminalAndNotRetriedAsync()
     {
@@ -136,6 +140,7 @@ public sealed class LifecycleTests
 
     /// <summary>Checks an initialization failure still releases its partial presentation and terminates.</summary>
     /// <returns>The verification.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task FailedRootInitializationTerminatesAfterCleanupAsync()
     {
@@ -148,6 +153,7 @@ public sealed class LifecycleTests
 
     /// <summary>Checks a throwing content callback cannot prevent accepted cleanup from progressing.</summary>
     /// <returns>The verification.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task FailingAdvanceStopsAndReleasesContentAsync()
     {

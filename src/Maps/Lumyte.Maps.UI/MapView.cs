@@ -2,7 +2,7 @@ using Lumyte.UI;
 
 namespace Lumyte.Maps.UI;
 
-/// <summary>A passive declaration borrowing an explicitly owned map session.</summary>
+/// <summary>A declaration borrowing an explicitly owned map session for UI input and recording.</summary>
 public sealed class MapView : Compose.Definitions.Widget
 {
     /// <summary>Gets or initializes the borrowed session. A mounted element cannot replace it.</summary>

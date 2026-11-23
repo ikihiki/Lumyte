@@ -1,3 +1,4 @@
+import { createBrowserFlightRecorder } from "../../tools/graphics/browser-flight-recorder.mjs";
 import { captureDiagnosticBinding, captureDiagnosticsEnabled, installCaptureDiagnosticsRequest, createCaptureTraceReporter } from "../../tools/graphics/browser-capture-trace.mjs";
 import { browserGpuArguments, requiresSoftwareWebGpu, installBrowserGpuAudit, verifySoftwareWebGpu } from "../../tools/graphics/browser-gpu.mjs";
 import assert from "node:assert/strict";
@@ -34,6 +35,7 @@ await new Promise((resolve, reject) => {
 
 const traceCapture = captureDiagnosticsEnabled();
 const captureTrace = createCaptureTraceReporter();
+const flightRecorder = createBrowserFlightRecorder({ sample: "navigation", mode: "default" });
 let browser;
 let socket;
 let command;
@@ -71,6 +73,7 @@ try {
     const progress = [];
     socket.addEventListener("message", event => {
         const message = JSON.parse(event.data);
+        flightRecorder.dispatch(message, { stage: "verification" });
         if (message.id) {
             const action = pending.get(message.id);
             pending.delete(message.id);
@@ -100,7 +103,7 @@ try {
     });
     command = (method, params = {}, timeoutMs) => {
         const id = ++nextId;
-        return new Promise((resolve, reject) => {
+        const send = () => new Promise((resolve, reject) => {
             const timeout = setTimeout(() => {
                 pending.delete(id);
                 reject(new Error(`CDP timeout: ${method}`));
@@ -111,6 +114,8 @@ try {
             });
             socket.send(JSON.stringify({ id, method, params }));
         });
+        return method === "Runtime.evaluate" && /CapturePngAsync\(/.test(params.expression ?? "")
+            ? flightRecorder.request(id, { stage: "verification" }, send) : send();
     };
     await command("Runtime.enable");
     if (traceCapture) await command("Runtime.addBinding", { name: captureDiagnosticBinding });
@@ -126,6 +131,7 @@ try {
         await command("Page.enable");
         await command("Page.addScriptToEvaluateOnNewDocument", { source: `(${installCaptureDiagnosticsRequest.toString()})();` });
     }
+    await flightRecorder.arm(command, browser.pid);
     await command("Page.navigate", { url: `http://127.0.0.1:${server.address().port}` });
     async function evaluate(expression) {
         const response = await command("Runtime.evaluate", { expression, returnByValue: true, awaitPromise: true });
@@ -212,9 +218,11 @@ try {
     }
     console.log("UI Navigation Browser WebGPU smoke passed: old/new GPU pixels, stable window, fresh surface, unchanged URL/history and orderly stop.");
 } catch (failure) {
+    await flightRecorder.finish(true);
     if (traceCapture) await captureTrace.failure(command, { sample: "navigation" });
     throw failure;
 } finally {
+    await flightRecorder.finish();
     socket?.close();
     if (browser?.pid && browser.exitCode === null && browser.signalCode === null) {
         const stopped = new Promise(resolve => browser.once("exit", resolve));

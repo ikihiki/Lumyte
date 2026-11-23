@@ -16,6 +16,12 @@ public sealed class RangeSliderElement(ControlWidget widget) : SliderElementBase
     public bool IsUpperThumbSelected => _upper;
 
     /// <inheritdoc/>
+    protected override bool HasTrackVisual => Widget.TrackTemplate is not null;
+
+    /// <inheritdoc/>
+    protected override bool HasThumbVisual => Widget.ThumbTemplate is not null || Widget.LowerThumbTemplate is not null || Widget.UpperThumbTemplate is not null;
+
+    /// <inheritdoc/>
     protected override UiAutomationActions AutomationActions => base.AutomationActions | UiAutomationActions.SetRange;
 
     /// <inheritdoc/>
@@ -49,6 +55,44 @@ public sealed class RangeSliderElement(ControlWidget widget) : SliderElementBase
     protected override IEnumerable<double> ThumbValues => [Value.Lower, Value.Upper];
 
     /// <inheritdoc/>
+    protected override bool HasThumbVisualAt(int index) => Widget.ThumbTemplate is not null || (index == 0 ? Widget.LowerThumbTemplate : Widget.UpperThumbTemplate) is not null;
+
+    /// <inheritdoc/>
+    protected override UiElementContent? BuildContent(Lumyte.UI.Compose.Definitions.Widget next, UiElementBuildContext context)
+    {
+        var proposed = (ControlWidget)next;
+        if (proposed.TrackTemplate is null && proposed.ThumbTemplate is null && proposed.LowerThumbTemplate is null && proposed.UpperThumbTemplate is null)
+        {
+            return null;
+        }
+
+        SliderScale.Validate(proposed.Min, proposed.Max, proposed.Step);
+        if (!double.IsFinite(proposed.Value.Lower) || !double.IsFinite(proposed.Value.Upper) || proposed.Value.Lower > proposed.Value.Upper || !Enum.IsDefined(proposed.Orientation))
+        {
+            throw new ArgumentOutOfRangeException(nameof(proposed.Value));
+        }
+
+        SliderRange value = ReferenceEquals(proposed, Widget) ? Value : Adopt(proposed);
+        var parts = new List<VisualPart>();
+        if (proposed.TrackTemplate is { } track)
+        {
+            parts.Add(new("track", track(new(value.Lower, false)), size => (size, System.Numerics.Vector2.Zero)));
+        }
+
+        if ((proposed.LowerThumbTemplate ?? proposed.ThumbTemplate) is { } lower)
+        {
+            parts.Add(ControlVisuals.ThumbPart("lower", lower(new(value.Lower, false)), value.Lower, proposed.Min, proposed.Max, proposed.Orientation, proposed.IsReversed));
+        }
+
+        if ((proposed.UpperThumbTemplate ?? proposed.ThumbTemplate) is { } upper)
+        {
+            parts.Add(ControlVisuals.ThumbPart("upper", upper(new(value.Upper, true)), value.Upper, proposed.Min, proposed.Max, proposed.Orientation, proposed.IsReversed));
+        }
+
+        return parts.Count == 0 ? null : new UiElementContent(new ControlVisuals(parts.ToArray()), ownsContent: true);
+    }
+
+    /// <inheritdoc/>
     protected override UiInputResult OnInput(in UiInputContext context)
     {
         if (context.Input is UiSetNumericInput input)
@@ -63,6 +107,7 @@ public sealed class RangeSliderElement(ControlWidget widget) : SliderElementBase
             if (accepted != Value)
             {
                 Value = accepted;
+                RefreshVisualContent();
                 InvalidateDrawing();
                 Widget.OnChanged?.Invoke(accepted);
             }
@@ -116,6 +161,7 @@ public sealed class RangeSliderElement(ControlWidget widget) : SliderElementBase
         }
 
         Value = accepted;
+        RefreshVisualContent();
         InvalidateDrawing();
         Widget.OnChanged?.Invoke(accepted);
     }
@@ -124,4 +170,13 @@ public sealed class RangeSliderElement(ControlWidget widget) : SliderElementBase
     protected override void Committed() => Widget.OnCommitted?.Invoke(Value);
 
     private static SliderRange Adopt(ControlWidget widget) => new(Math.Clamp(widget.Value.Lower, widget.Min, widget.Max), Math.Clamp(widget.Value.Upper, widget.Min, widget.Max));
+
+    private void RefreshVisualContent()
+    {
+        if (HasThumbVisual || HasTrackVisual)
+        {
+            InvalidateContent();
+            InvalidateLayout();
+        }
+    }
 }

@@ -10,6 +10,7 @@
     <ProjectReference Include="../Lumyte.Graphics.RenderGraph/Lumyte.Graphics.RenderGraph.csproj" />
     <ProjectReference Include="../Lumyte.Graphics.ImageEffects/Lumyte.Graphics.ImageEffects.csproj" />
     <InternalsVisibleTo Include="Lumyte.Graphics.Drawing2D.Tests" />
+    <InternalsVisibleTo Include="Lumyte.Graphics.Tests" />
     <None Update="README.md" Pack="true" PackagePath="/" />
   </ItemGroup>
 </Project>

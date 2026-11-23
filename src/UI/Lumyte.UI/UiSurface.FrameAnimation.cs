@@ -12,7 +12,7 @@ public sealed partial class UiSurface
 
     internal void RemoveFrameAnimation(UiElement element) => _frameAnimations.Remove(element);
 
-    internal void FreezeHiddenFrameAnimations() => FreezeFrameAnimations(hiddenOnly: true);
+    internal void FreezeHiddenFrameAnimations() => FreezeFrameAnimations(hiddenOnly: _animationUpdatesEnabled && _animationFailure is null);
 
     private void FreezeFrameAnimations(bool hiddenOnly = false)
     {

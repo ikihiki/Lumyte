@@ -10,6 +10,7 @@ namespace Lumyte.Execution.Tests;
 public sealed class DemoIntegrationTests
 {
     /// <summary>DI resolves modules, startup chooses the owner, and voice copies forward to that owner.</summary>
+    [Trait("Execution", "Integration")]
     [Fact]
     public void ParameterlessDiRegistrationDrivesGeneratedVoiceOnDedicatedOwner()
     {

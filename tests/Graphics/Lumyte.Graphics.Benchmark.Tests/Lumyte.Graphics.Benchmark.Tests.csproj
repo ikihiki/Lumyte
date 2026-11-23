@@ -10,6 +10,8 @@
     <PackageReference Include="xunit" Version="2.9.3" />
     <PackageReference Include="xunit.runner.visualstudio" Version="3.1.1" PrivateAssets="all" />
     <Compile Include="../../../benchmarks/Core/Shared/BenchmarkEntry.cs" Link="Shared/BenchmarkEntry.cs" />
+    <ProjectReference Include="../../../src/Maps/Lumyte.Maps.Mvt/Lumyte.Maps.Mvt.csproj" />
+    <ProjectReference Include="../../../src/Maps/Lumyte.Maps.UI/Lumyte.Maps.UI.csproj" />
     <ProjectReference Include="../../../benchmarks/Graphics/Lumyte.Graphics.Drawing2D.Benchmark/Lumyte.Graphics.Drawing2D.Benchmark.csproj" />
     <ProjectReference Include="../../../benchmarks/Graphics/Lumyte.Graphics.RenderGraph.Benchmark/Lumyte.Graphics.RenderGraph.Benchmark.csproj" />
     <ProjectReference Include="../../../benchmarks/Graphics/Lumyte.Graphics.ImageEffects.Benchmark/Lumyte.Graphics.ImageEffects.Benchmark.csproj" />

@@ -1,5 +1,7 @@
 # サンプル
 
+固定長の大量一覧は[仮想化サンプル](Lumyte.UI.Virtualization.Sample/README.md)を参照してください。
+
 入口は `Lumyte.Samples` です。リポジトリの [開発環境](../docs/development-environment.md) を有効化して実行してください。
 ランチャーは選んだプロジェクトだけをビルドします。GPU、OpenAL、Wasm の依存をすべて導入しなくても managed の例から始められます。
 
@@ -24,6 +26,7 @@ Graphics の native host は続いて exercise を選びます。すべて指定
 
 | 役割 | ID | 内容 / backend |
 | --- | --- | --- |
+| UI | `ui-tabs` | 保持タブ・折り畳み・実編集 / headless（明示font） |
 | 基礎 | `signals` | 値の購読と寿命 / managed |
 | 基礎 | `composition` | 宣言的な構築と生成 factory / managed |
 | 基礎 | `state-machines` | ガード・優先順位・型付き遷移 / managed |
@@ -99,3 +102,22 @@ RGB10A2 は RGB を厳密比較し、alpha 0.5 の量子化結果だけ隣接す
 ローカルの結果とログは `artifacts/sample-validation/results.json` にまとめています。
 OpenAL Soft は検証用ディレクトリに配置し、そのプロセスの PATH に追加しました。再実行時にも OpenAL DLL の探索パスが必要です。
 この結果は当該 Windows 環境での確認であり、他 OS・全ドライバー・全ブラウザー・Preview SDK の部分プログラム・スピーカーの聴感品質を保証するものではありません。
+
+## メニューと受動ツールチップ
+
+`ui-menus`の`headless` backendは[Menu・MenuItem・Tooltipの公開例](Lumyte.UI.Menus.Sample/README.md)です。
+明示font、submenu chainと受動表示中の実editor preeditを確認します。物理Window、Windows、Browserの提示検証ではありません。
+
+## ダイアログと通知
+
+`ui-dialogs` の `headless` backend は [宣言的 Dialog・通知 FIFO・recipes](Lumyte.UI.Dialogs.Sample/README.md)の公開例です。通常の Application と Diagnostics、明示 font、実際の編集接続、同じ input lease を使います。Native OS modal の activation は保証範囲に含みません。
+
+## 読み取り専用の表
+
+`ui-datagrid` は明示 font を借用する Headless／Parley の表です。現在の型付き Header／Cell Slot、1000行の固定長仮想化、ヘッダー通常入力の sort と resize、行と列のキー指定による reveal、選択、Signal 内容更新を確認します。通常の Surface 記録で、明示 font の文字アウトラインとセル背景の fill コマンドも検査します。
+
+```sh
+dotnet run --project samples/Lumyte.Samples -c Release -- --sample ui-datagrid --configuration Release -- tests/Graphics/Lumyte.Graphics.Text.Parley.Tests/Fonts/DejaVuSans.ttf
+dotnet run --project build -c Release -- --target Test --suite ui --feature datagrid
+dotnet run --project build -c Release -- --target Test --suite ui --feature datagrid --aot
+```

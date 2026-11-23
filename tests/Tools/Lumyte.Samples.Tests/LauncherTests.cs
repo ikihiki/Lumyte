@@ -1,3 +1,4 @@
+using System.Xml.Linq;
 using Lumyte.Samples.Framework;
 using Spectre.Console.Testing;
 using Xunit;
@@ -7,6 +8,85 @@ namespace Lumyte.Samples.Tests;
 /// <summary>Tests launcher selection, argument isolation, and catalog coverage.</summary>
 public sealed class LauncherTests
 {
+    /// <summary>The engine-free helper required by no-build tests is built by the solution.</summary>
+    [Fact]
+    public void BrowserHelperFixtureIsAnEngineFreeSolutionProject()
+    {
+        string root = SampleHost.FindRoot(AppContext.BaseDirectory);
+        const string Project = "samples/Lumyte.UI.WebView.Helper.Sample/Lumyte.UI.WebView.Helper.Sample.csproj";
+        var solution = XDocument.Load(Path.Combine(root, "Lumyte.slnx"));
+        Assert.Contains(solution.Descendants("Project"), element => (string?)element.Attribute("Path") == Project);
+        var fixture = XDocument.Load(Path.Combine(root, Project));
+        Assert.Empty(fixture.Descendants("PackageReference"));
+        Assert.Empty(fixture.Descendants("ProjectReference"));
+    }
+
+    /// <summary>DataGrid selects the standard headless consumer and keeps the explicit Release/font arguments.</summary>
+    [Fact]
+    public void DataGridSampleSelectsPublicHeadlessConsumer()
+    {
+        using var console = new TestConsole();
+        var options = SampleOptions.Parse(["--sample", "ui-datagrid", "--configuration", "Release", "--", "font.ttf"]);
+        (SampleDefinition sample, SampleBackend backend) = SampleSelector.Select(SampleCatalog.All, options, console);
+        Assert.Equal("ui-datagrid", sample.Id);
+        Assert.Equal("headless", backend.Id);
+        Assert.Equal("samples/Lumyte.UI.DataGrid.Sample", backend.Project);
+        Assert.Equal("Release", options.Configuration);
+        Assert.Equal(new[] { "font.ttf" }, options.Arguments);
+        Assert.Empty(console.Output);
+        string root = SampleHost.FindRoot(AppContext.BaseDirectory);
+        var solution = XDocument.Load(Path.Combine(root, "Lumyte.slnx"));
+        Assert.Contains(solution.Descendants("Project"), element => (string?)element.Attribute("Path") == backend.Project + "/Lumyte.UI.DataGrid.Sample.csproj");
+    }
+
+    /// <summary>TreeView selects the public headless hierarchy consumer.</summary>
+    [Fact]
+    public void TreeViewSampleSelectsHeadlessConsumer()
+    {
+        using var console = new TestConsole();
+        (SampleDefinition sample, SampleBackend backend) = SampleSelector.Select(SampleCatalog.All, SampleOptions.Parse(["--sample", "ui-treeview"]), console);
+        Assert.Equal("ui-treeview", sample.Id);
+        Assert.Equal("headless", backend.Id);
+        Assert.Equal("samples/Lumyte.UI.TreeView.Sample", backend.Project);
+        Assert.Empty(console.Output);
+    }
+
+    /// <summary>Dialogs and notifications use the standard headless application consumer.</summary>
+    [Fact]
+    public void DialogsSampleSelectsHeadlessConsumer()
+    {
+        using var console = new TestConsole();
+        (SampleDefinition sample, SampleBackend backend) = SampleSelector.Select(SampleCatalog.All, SampleOptions.Parse(["--sample", "ui-dialogs"]), console);
+        Assert.Equal("ui-dialogs", sample.Id);
+        Assert.Equal("headless", backend.Id);
+        Assert.Equal("samples/Lumyte.UI.Dialogs.Sample", backend.Project);
+        Assert.Empty(console.Output);
+    }
+
+    /// <summary>Menus and tooltips use the actual headless public consumer.</summary>
+    [Fact]
+    public void MenusSampleSelectsHeadlessConsumer()
+    {
+        using var console = new TestConsole();
+        (SampleDefinition sample, SampleBackend backend) = SampleSelector.Select(SampleCatalog.All, SampleOptions.Parse(["--sample", "ui-menus"]), console);
+        Assert.Equal("ui-menus", sample.Id);
+        Assert.Equal("headless", backend.Id);
+        Assert.Equal("samples/Lumyte.UI.Menus.Sample", backend.Project);
+        Assert.Empty(console.Output);
+    }
+
+    /// <summary>Retained tabs use the actual headless public consumer.</summary>
+    [Fact]
+    public void TabsSampleSelectsHeadlessConsumer()
+    {
+        using var console = new TestConsole();
+        (SampleDefinition sample, SampleBackend backend) = SampleSelector.Select(SampleCatalog.All, SampleOptions.Parse(["--sample", "ui-tabs"]), console);
+        Assert.Equal("ui-tabs", sample.Id);
+        Assert.Equal("headless", backend.Id);
+        Assert.Equal("samples/Lumyte.UI.Tabs.Sample", backend.Project);
+        Assert.Empty(console.Output);
+    }
+
     /// <summary>Collections use the actual headless public consumer.</summary>
     [Fact]
     public void CollectionsSampleSelectsHeadlessConsumer()

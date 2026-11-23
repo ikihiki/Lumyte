@@ -10,6 +10,7 @@ namespace Lumyte.Graphics.Tests;
 public sealed class ShaderDataLayoutCacheTests
 {
     /// <summary>Concurrent buffers and root bindings share their initialized layouts.</summary>
+    [Trait("Execution", "Integration")]
     [Fact]
     public void ConcurrentAccessSharesLayouts()
     {

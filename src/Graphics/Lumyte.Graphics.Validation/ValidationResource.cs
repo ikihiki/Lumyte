@@ -1,6 +1,8 @@
+using Lumyte.Graphics.Abstractions;
+
 namespace Lumyte.Graphics.Validation;
 
-internal abstract class ValidationResource<T> : IValidationObject, IDisposable
+internal abstract class ValidationResource<T> : IValidationObject, IDisposable, IGraphicsNativeOrigin
     where T : class, IDisposable
 {
     protected ValidationResource(ValidationDevice device, T raw, object parent, bool ownsNative = true)
@@ -13,6 +15,10 @@ internal abstract class ValidationResource<T> : IValidationObject, IDisposable
 
     public ValidationDevice Device { get; }
 
+    IGraphicDevice IGraphicsNativeOrigin.Device => Device;
+
+    object IGraphicsNativeOrigin.AllocationIdentity => NativeOrigin.AllocationIdentity;
+
     public object RawObject => Raw;
 
     public bool IsDisposed { get; private set; }
@@ -20,6 +26,9 @@ internal abstract class ValidationResource<T> : IValidationObject, IDisposable
     internal T Raw { get; }
 
     protected bool OwnsNative { get; }
+
+    private IGraphicsNativeOrigin NativeOrigin => Raw as IGraphicsNativeOrigin
+        ?? throw new NotSupportedException("The wrapped backend does not expose native resource provenance.");
 
     public virtual void ValidateAlive()
     {
@@ -39,6 +48,12 @@ internal abstract class ValidationResource<T> : IValidationObject, IDisposable
         Device.Tracker.Release(this);
         Device.Forget(Raw, this);
         IsDisposed = true;
+    }
+
+    void IGraphicsNativeOrigin.ValidateOrigin()
+    {
+        ValidateAlive();
+        NativeOrigin.ValidateOrigin();
     }
 
     protected virtual void DisposeNative()

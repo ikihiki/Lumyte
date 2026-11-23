@@ -59,4 +59,9 @@ public abstract class MapTileSet
     /// <param name="id">Normalized tile.</param>
     /// <returns>The profile and content-version specific key.</returns>
     public abstract ResourceKey<MapTileContent> GetKey(MapTileId id);
+
+    /// <summary>Gets an optional manifest-known source revision checked before adopting a completed tile.</summary>
+    /// <param name="id">Normalized tile identity.</param>
+    /// <returns>The immutable expected revision, or null when the manifest does not fix an input revision.</returns>
+    public virtual string? GetExpectedSourceRevision(MapTileId id) => null;
 }

@@ -7,6 +7,7 @@ namespace Lumyte.Execution.Tests;
 public sealed class DedicatedLoopTests
 {
     /// <summary>A completed control turn does not reserve the rest of the update period.</summary>
+    [Trait("Execution", "Integration")]
     [Fact]
     public void PendingControlsContinueBeforeTheNextPeriodicUpdate()
     {
@@ -43,6 +44,7 @@ public sealed class DedicatedLoopTests
     }
 
     /// <summary>Once a handler crosses an update deadline, queued controls yield to that update.</summary>
+    [Trait("Execution", "Integration")]
     [Fact]
     public void DueUpdatesRunWhileControlsRemainQueued()
     {
@@ -79,6 +81,7 @@ public sealed class DedicatedLoopTests
     }
 
     /// <summary>Gate notifications wake an owner whose commands and periodic update are both blocked.</summary>
+    [Trait("Execution", "Integration")]
     [Fact]
     public void OpeningAGateWakesAnIdleOwner()
     {
@@ -93,6 +96,7 @@ public sealed class DedicatedLoopTests
 
     /// <summary>Token cancellation wakes gate-blocked single commands and batches without another notification.</summary>
     /// <param name="batched">Whether cancellation applies to a submitted batch.</param>
+    [Trait("Execution", "Integration")]
     [Theory]
     [InlineData(false)]
     [InlineData(true)]

@@ -18,35 +18,41 @@ public sealed partial class UiLocator
         }
 
         return Page.ExecuteAsync(
-            run => run.WithInputAsync(async lease => await run.Host.RunOnUiThreadAsync(
-                surface =>
-                    {
-                        run.Check();
-                        UiAutomationSnapshot snapshot = surface.CaptureAutomationSnapshot();
-                        run.Remember(snapshot);
-                        UiAutomationNode? node = Single(run, snapshot);
-                        if (node is null || !Actionable(node, null, out Vector2 point))
-                        {
-                            throw run.Failure(UiAutomationFailureKind.TargetChanged, "The scroll target is not actionable.");
-                        }
-
-                        UiAutomationId? hit = run.Host is IUiAutomationRoutingHost routing
-                            ? routing.ProbeWheel(surface, point) : surface.ProbeWheel(point);
-                        UiAutomationNode? destination = snapshot.Nodes.FirstOrDefault(candidate => candidate.Id == hit);
-                        while (destination is not null && destination.Id != node.Id)
-                        {
-                            destination = snapshot.Nodes.FirstOrDefault(candidate => candidate.Id == destination.ParentId);
-                        }
-
-                        if (destination is null)
-                        {
-                            throw run.Failure(UiAutomationFailureKind.TargetChanged, "The scroll target is occluded or outside the input scope.");
-                        }
-
-                        return run.Send(lease, surface, new UiWheelInput(point, delta));
-                    },
-                run.Token)),
+            async run =>
+            {
+                await PrepareItemTargetAsync(run);
+                return await ScrollWithLeaseAsync(run, delta);
+            },
             options,
             cancellationToken);
     }
+
+    private ValueTask<bool> ScrollWithLeaseAsync(UiAutomationRun run, Vector2 delta) => run.WithInputAsync(async lease => await run.Host.RunOnUiThreadAsync(
+        surface =>
+        {
+            run.Check();
+            UiAutomationSnapshot snapshot = surface.CaptureAutomationSnapshot();
+            run.Remember(snapshot);
+            UiAutomationNode? node = Single(run, snapshot);
+            if (node is null || !Actionable(node, null, out Vector2 point))
+            {
+                throw run.Failure(UiAutomationFailureKind.TargetChanged, "The scroll target is not actionable.");
+            }
+
+            UiAutomationId? hit = run.Host is IUiAutomationRoutingHost routing
+                ? routing.ProbeWheel(surface, point) : surface.ProbeWheel(point);
+            UiAutomationNode? destination = snapshot.Nodes.FirstOrDefault(candidate => candidate.Id == hit);
+            while (destination is not null && destination.Id != node.Id)
+            {
+                destination = snapshot.Nodes.FirstOrDefault(candidate => candidate.Id == destination.ParentId);
+            }
+
+            if (destination is null)
+            {
+                throw run.Failure(UiAutomationFailureKind.TargetChanged, "The scroll target is occluded or outside the input scope.");
+            }
+
+            return run.Send(lease, surface, new UiWheelInput(point, delta));
+        },
+        run.Token));
 }

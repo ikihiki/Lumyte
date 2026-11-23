@@ -11,6 +11,7 @@ public sealed class ShaderTests
 {
     /// <summary>Checks embedded and freshly compiled WGSL modules on wgpu.</summary>
     /// <returns>The completion of the shader checks.</returns>
+    [Trait("Execution", "Gpu")]
     [GpuFact]
     public async Task WgpuLoadsAndCompilesShadersAsync()
     {
@@ -21,6 +22,7 @@ public sealed class ShaderTests
 
     /// <summary>Checks embedded and freshly compiled SPIR-V modules on Vulkan.</summary>
     /// <returns>The completion of the shader checks.</returns>
+    [Trait("Execution", "Gpu")]
     [GpuFact]
     public async Task VulkanLoadsAndCompilesShadersAsync()
     {

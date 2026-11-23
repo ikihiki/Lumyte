@@ -525,7 +525,7 @@ internal sealed class RetainedDrawingCache2D : IDisposable
         protected override void ClearItems() => throw new NotSupportedException();
     }
 
-    internal sealed class Asset(Key key, IPreparedCommandBatch2D batch) : IPreparedCommandBatch2D
+    internal sealed class Asset(Key key, IPreparedCommandBatch2D batch) : IPreparedCommandBatch2D, IPreparedImmutableUploads2D
     {
         private IGraphicsCommandBuffer? _initializedCommands;
 
@@ -550,6 +550,14 @@ internal sealed class RetainedDrawingCache2D : IDisposable
         internal bool? AccountedIdle { get; set; }
 
         public void DeclareResources(IDrawingResourceDeclarations2D resources) => Batch.DeclareResources(resources);
+
+        public void RetireImmutableUploads(IGraphicsSubmission submission)
+        {
+            if (Batch is IPreparedImmutableUploads2D immutable)
+            {
+                immutable.RetireImmutableUploads(submission);
+            }
+        }
 
         public void Record(IGraphicsCommandBuffer commands, IGraphicsTextureView target)
         {

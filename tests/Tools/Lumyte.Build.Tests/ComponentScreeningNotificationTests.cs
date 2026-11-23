@@ -128,6 +128,7 @@ public sealed class ComponentScreeningNotificationTests
     /// <summary>The Fallout entry point can reject unrelated events without a network call.</summary>
     /// <returns>The asynchronous real-target assertion.</returns>
     [Fact]
+    [Trait("Execution", "Integration")]
     public async Task FalloutTargetIgnoresOtherWorkflowAsync()
     {
         using var fixture = new BuildFixture();

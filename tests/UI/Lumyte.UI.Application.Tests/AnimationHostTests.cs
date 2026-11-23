@@ -12,6 +12,7 @@ public sealed class AnimationHostTests
 {
     /// <summary>Checks an injected clock drives automatic frames and completion on the application owner.</summary>
     /// <returns>The asynchronous verification.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task StandardHostOwnsTimeAndCompletionDeliveryAsync()
     {
@@ -68,6 +69,7 @@ public sealed class AnimationHostTests
 
     /// <summary>Checks a failed borrowed clock cannot prevent cleanup turns from completing.</summary>
     /// <returns>The asynchronous verification.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task ClockFailureStillDrainsShutdownAsync()
     {

@@ -112,6 +112,7 @@ public sealed class DecodeAndResourceTests
 
     /// <summary>Only one owner-registering fixture: real DI pipeline copies, publishes and releases clips.</summary>
     /// <returns>The completed owner pipeline check.</returns>
+    [Trait("Execution", "Integration")]
     [ResourcePipelineFact]
     public async Task DiClipPipelineHasBalancedColdAndWarmOwnershipAsync()
     {
@@ -146,6 +147,7 @@ public sealed class DecodeAndResourceTests
     }
 
     /// <summary>The CPU control rejects invalid shape, nonfinite input, premature device release and foreign owners.</summary>
+    [Trait("Execution", "Integration")]
     [Fact]
     public void CpuStorageControlEnforcesContract()
     {

@@ -2,7 +2,7 @@ using Lumyte.Graphics.Abstractions;
 
 namespace Lumyte.Graphics.Wgpu;
 
-internal sealed unsafe partial class WgpuComputePipeline : IGraphicsComputePipeline
+internal sealed unsafe partial class WgpuComputePipeline : IGraphicsComputePipeline, IGraphicsNativeOrigin
 {
     private readonly WgpuDevice _owner;
     private readonly WgpuShader _compute;
@@ -23,6 +23,10 @@ internal sealed unsafe partial class WgpuComputePipeline : IGraphicsComputePipel
         Initialize();
     }
 
+    IGraphicDevice IGraphicsNativeOrigin.Device => Owner;
+
+    object IGraphicsNativeOrigin.AllocationIdentity => this;
+
     public ComputePipelineDesc Desc { get; }
 
     internal WgpuDevice Owner => _owner;
@@ -30,6 +34,17 @@ internal sealed unsafe partial class WgpuComputePipeline : IGraphicsComputePipel
     internal bool RequiresArguments { get; }
 
     internal ShaderTargetData Data { get; }
+
+    void IGraphicsNativeOrigin.ValidateOrigin()
+    {
+        ObjectDisposedException.ThrowIf(Owner.Status == GraphicsDeviceStatus.Disposed, Owner);
+        if (Owner.Status == GraphicsDeviceStatus.Lost)
+        {
+            throw new GraphicsDeviceLostException(Owner.Loss!);
+        }
+
+        ValidateAlive();
+    }
 
     public void Dispose()
     {

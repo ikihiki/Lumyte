@@ -1,7 +1,6 @@
 using Lumyte.Graphics.Abstractions;
+using Lumyte.Graphics.Benchmarks.Testing;
 using Lumyte.Graphics.Drawing2D;
-using Lumyte.Graphics.Vulkan;
-using Lumyte.Graphics.Wgpu;
 using Lumyte.Mathematics.Colors;
 using Xunit;
 
@@ -10,22 +9,14 @@ namespace Lumyte.Graphics.Tests;
 /// <summary>Checks outstanding frames cannot borrow the same pooled rectangle storage.</summary>
 public sealed class RectanglePoolTests
 {
-    /// <summary>Checks bounded idle reuse and outstanding-frame isolation on wgpu.</summary>
+    /// <summary>Checks bounded idle reuse and outstanding-frame isolation without native execution.</summary>
     /// <returns>The asynchronous preparation checks.</returns>
-    [GpuFact]
-    public async Task WgpuReturnsOnlyCompletedUsesAsync()
+    [Fact]
+    public async Task ReturnsOnlyCompletedUsesAsync()
     {
-        using var device = WgpuDevice.Create();
+        using var device = new CpuGraphicsDevice();
         await CheckAsync(device);
-    }
-
-    /// <summary>Checks bounded idle reuse and outstanding-frame isolation on Vulkan.</summary>
-    /// <returns>The asynchronous preparation checks.</returns>
-    [GpuFact]
-    public async Task VulkanReturnsOnlyCompletedUsesAsync()
-    {
-        using var device = VulkanDevice.Create();
-        await CheckAsync(device);
+        Assert.Equal(0, device.Counters.Submissions);
     }
 
     private static async Task CheckAsync(IGraphicDevice native)

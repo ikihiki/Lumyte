@@ -33,6 +33,8 @@ public sealed class UiApplicationBuilder
 
     internal List<Action<IServiceCollection>> BuildValidators { get; } = [];
 
+    internal string? IntegrationDriverKind { get; set; }
+
     /// <summary>Sets validated application budgets.</summary>
     /// <param name="options">The immutable options.</param>
     /// <returns>This builder.</returns>

@@ -187,6 +187,7 @@ public sealed class ResourceStreamJobTests
     }
 
     /// <summary>Multiple streaming decoders share the configured ThreadPool CPU concurrency limit.</summary>
+    [Trait("Execution", "Integration")]
     [Fact]
     public void ThreadPoolDecodersShareCpuConcurrencyLimit()
     {

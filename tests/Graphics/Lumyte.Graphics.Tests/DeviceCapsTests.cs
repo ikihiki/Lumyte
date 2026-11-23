@@ -9,6 +9,7 @@ namespace Lumyte.Graphics.Tests;
 public sealed class DeviceCapsTests
 {
     /// <summary>Checks a native wgpu device through the common interface.</summary>
+    [Trait("Execution", "Gpu")]
     [GpuFact]
     public void WgpuReportsStableCapabilities()
     {
@@ -17,6 +18,7 @@ public sealed class DeviceCapsTests
     }
 
     /// <summary>Checks a Vulkan device through the common interface.</summary>
+    [Trait("Execution", "Gpu")]
     [GpuFact]
     public void VulkanReportsStableCapabilities()
     {

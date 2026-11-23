@@ -16,6 +16,7 @@ public sealed class ValidatedPresentationNativeTests
     /// <summary>Checks the native Vulkan presentation ownership and synchronization chain.</summary>
     /// <param name="enabled">Whether optional managed diagnostics are enabled.</param>
     /// <returns>The native frame completion.</returns>
+    [Trait("Execution", "Gpu")]
     [PresentationTheory]
     [InlineData(false)]
     [InlineData(true)]
@@ -39,6 +40,7 @@ public sealed class ValidatedPresentationNativeTests
     /// <summary>Checks the native WebGPU presentation ownership and single-queue ordering chain.</summary>
     /// <param name="enabled">Whether optional managed diagnostics are enabled.</param>
     /// <returns>The native frame completion.</returns>
+    [Trait("Execution", "Gpu")]
     [PresentationTheory]
     [InlineData(false)]
     [InlineData(true)]

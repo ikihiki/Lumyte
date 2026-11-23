@@ -1,5 +1,6 @@
 <Solution>
   <Folder Name="/src/Maps/">
+    <Project Path="src/Maps/Lumyte.Maps.Http/Lumyte.Maps.Http.csproj" />
     <Project Path="src/Maps/Lumyte.Maps.UI/Lumyte.Maps.UI.csproj" />
     <Project Path="src/Maps/Lumyte.Maps/Lumyte.Maps.csproj" />
     <Project Path="src/Maps/Lumyte.Maps.Mvt/Lumyte.Maps.Mvt.csproj" />
@@ -67,6 +68,12 @@
     <Project Path="samples/Lumyte.Signals.Sample/Lumyte.Signals.Sample.csproj" />
     <Project Path="samples/Lumyte.UI.Controls.Sample/Lumyte.UI.Controls.Sample.csproj" />
     <Project Path="samples/Lumyte.UI.Collections.Sample/Lumyte.UI.Collections.Sample.csproj" />
+    <Project Path="samples/Lumyte.UI.Virtualization.Sample/Lumyte.UI.Virtualization.Sample.csproj" />
+    <Project Path="samples/Lumyte.UI.DataGrid.Sample/Lumyte.UI.DataGrid.Sample.csproj" />
+    <Project Path="samples/Lumyte.UI.TreeView.Sample/Lumyte.UI.TreeView.Sample.csproj" />
+    <Project Path="samples/Lumyte.UI.Menus.Sample/Lumyte.UI.Menus.Sample.csproj" />
+    <Project Path="samples/Lumyte.UI.Tabs.Sample/Lumyte.UI.Tabs.Sample.csproj" />
+    <Project Path="samples/Lumyte.UI.Dialogs.Sample/Lumyte.UI.Dialogs.Sample.csproj" />
     <Project Path="samples/Lumyte.UI.Functions.Sample/Lumyte.UI.Functions.Sample.csproj" />
     <Project Path="samples/Lumyte.UI.Transitions.Sample/Lumyte.UI.Transitions.Sample.csproj" />
     <Project Path="samples/Lumyte.UI.Transitions.Browser.Sample/Lumyte.UI.Transitions.Browser.Sample.csproj" />
@@ -101,6 +108,8 @@
     <Project Path="samples/Lumyte.Graphics.DeviceCaps.Sample/Lumyte.Graphics.DeviceCaps.Sample.csproj" />
     <Project Path="samples/Lumyte.Graphics.Direct3D12.Sample/Lumyte.Graphics.Direct3D12.Sample.csproj" />
     <Project Path="samples/Lumyte.Graphics.Shared/Lumyte.Graphics.Shared.csproj" />
+    <Project Path="samples/Lumyte.UI.WebView.Sample/Lumyte.UI.WebView.Sample.csproj" />
+    <Project Path="samples/Lumyte.UI.WebView.Helper.Sample/Lumyte.UI.WebView.Helper.Sample.csproj" />
   </Folder>
   <Folder Name="/src/Audio/">
     <Project Path="src/Audio/Lumyte.Resources.Audio.DependencyInjection/Lumyte.Resources.Audio.DependencyInjection.csproj" />
@@ -127,6 +136,7 @@
     <Project Path="src/Animation/Lumyte.Animation/Lumyte.Animation.csproj" />
   </Folder>
   <Folder Name="/src/Core/">
+    <Project Path="src/Core/Lumyte.Pipelines/Lumyte.Pipelines.csproj" />
     <Project Path="src/Core/Lumyte.Signals/Lumyte.Signals.csproj" />
     <Project Path="src/Core/Lumyte.TextEditing/Lumyte.TextEditing.csproj" />
     <Project Path="src/Core/Lumyte.Worlds/Lumyte.Worlds.csproj" />
@@ -162,6 +172,8 @@
     <Project Path="src/Diagnostics/Lumyte.Diagnostics.Generators/Lumyte.Diagnostics.Generators.csproj" />
   </Folder>
   <Folder Name="/src/Graphics/">
+    <Project Path="src/Graphics/Lumyte.Graphics.Pipelines.RenderGraph/Lumyte.Graphics.Pipelines.RenderGraph.csproj" />
+    <Project Path="src/Graphics/Lumyte.Graphics.Pipelines/Lumyte.Graphics.Pipelines.csproj" />
     <Project Path="src/Graphics/Lumyte.Graphics.Validation/Lumyte.Graphics.Validation.csproj" />
     <Project Path="src/Graphics/Lumyte.Graphics.Text/Lumyte.Graphics.Text.csproj" />
     <Project Path="src/Graphics/Lumyte.Graphics.Svg/Lumyte.Graphics.Svg.csproj" />
@@ -207,6 +219,7 @@
     <Project Path="src/UI/Lumyte.UI.Windowing.TextInput/Lumyte.UI.Windowing.TextInput.csproj" />
     <Project Path="src/UI/Lumyte.UI.TextEditing.Automation/Lumyte.UI.TextEditing.Automation.csproj" />
     <Project Path="src/UI/Lumyte.UI.Automation/Lumyte.UI.Automation.csproj" />
+    <Project Path="src/UI/Lumyte.UI.WebView/Lumyte.UI.WebView.csproj" />
     <Project Path="src/UI/Lumyte.UI.Windowing.Automation/Lumyte.UI.Windowing.Automation.csproj" />
     <Project Path="src/UI/Lumyte.UI.Windowing.WindowSystem/Lumyte.UI.Windowing.WindowSystem.csproj" />
     <Project Path="src/UI/Lumyte.UI.Windowing/Lumyte.UI.Windowing.csproj" />
@@ -228,6 +241,7 @@
     <Project Path="tests/Animation/Lumyte.Animation.Tests/Lumyte.Animation.Tests.csproj" />
   </Folder>
   <Folder Name="/tests/Core/">
+    <Project Path="tests/Core/Lumyte.Pipelines.Tests/Lumyte.Pipelines.Tests.csproj" />
     <Project Path="tests/Core/Lumyte.Core.Benchmark.Tests/Lumyte.Core.Benchmark.Tests.csproj" />
     <Project Path="tests/Core/Lumyte.Signals.Benchmarks.Tests/Lumyte.Signals.Benchmarks.Tests.csproj" />
     <Project Path="tests/Core/Lumyte.Signals.Tests/Lumyte.Signals.Tests.csproj" />
@@ -257,6 +271,10 @@
     <Project Path="tests/Diagnostics/Lumyte.Diagnostics.Tests/Lumyte.Diagnostics.Tests.csproj" />
   </Folder>
   <Folder Name="/tests/Graphics/">
+    <Project Path="tests/Graphics/Lumyte.Graphics.Drawing2D.Tests/GenericGpu/GenericGpu.NativeTests.csproj" />
+    <Project Path="tests/Graphics/Lumyte.Graphics.Drawing2D.Tests/GenericGraphNative/GenericGraph.NativeTests.csproj" />
+    <Project Path="tests/Graphics/Lumyte.Graphics.Pipelines.RenderGraph.Tests/Lumyte.Graphics.Pipelines.RenderGraph.Tests.csproj" />
+    <Project Path="tests/Graphics/Lumyte.Graphics.Pipelines.Tests/Lumyte.Graphics.Pipelines.Tests.csproj" />
     <Project Path="tests/Graphics/Lumyte.Graphics.Wgpu.Tests/Lumyte.Graphics.Wgpu.Tests.csproj" />
     <Project Path="tests/Graphics/Lumyte.Graphics.Benchmark.Tests/Lumyte.Graphics.Benchmark.Tests.csproj" />
     <Project Path="tests/Graphics/Lumyte.Graphics.Validation.Tests/Lumyte.Graphics.Validation.Tests.csproj" />
@@ -281,6 +299,7 @@
   <Folder Name="/tests/Tools/">
     <Project Path="tests/Tools/Lumyte.Samples.Tests/Lumyte.Samples.Tests.csproj" />
     <Project Path="tests/Tools/Lumyte.Build.Tests/Lumyte.Build.Tests.csproj" />
+    <Project Path="tests/Tools/Lumyte.TestRunner.Tests/Lumyte.TestRunner.Tests.csproj" />
   </Folder>
   <Folder Name="/build/">
     <Project Path="build/_build.csproj">
@@ -300,6 +319,7 @@
     <Project Path="tests/UI/Lumyte.UI.Controls.Tests/Lumyte.UI.Controls.Tests.csproj" />
     <Project Path="tests/UI/Lumyte.UI.Collections.Tests/Lumyte.UI.Collections.Tests.csproj" />
     <Project Path="tests/UI/Lumyte.UI.IntegrationTests/Lumyte.UI.IntegrationTests.csproj" />
+    <Project Path="tests/UI/Lumyte.UI.WebView.Tests/Lumyte.UI.WebView.Tests.csproj" />
     <Project Path="tests/UI/Lumyte.UI.Windowing.Tests/Lumyte.UI.Windowing.Tests.csproj" />
   </Folder>
   <Folder Name="/tools/colors/">

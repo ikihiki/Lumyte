@@ -25,7 +25,7 @@ SDKと依存ツールは[開発環境](../docs/development-environment.md)の手
 
 ```sh
 dotnet run --project build -c Release -- --target BenchmarkSignals
-dotnet run --project build -c Release -- --target PipelineBenchmark
+dotnet run --project build -c Release -- --target Test --lane gpu --pipeline-validation
 ```
 
 Signalsは`artifacts/signals-benchmarks/`、Vulkanは`artifacts/test-results/vulkan-pipeline-benchmark.jsonl`に出力します。Executionの標準出力を保存する場合も`artifacts/`を使用してください。BenchmarkDotNetを直接実行する場合は`--artifacts`で保存先を指定できます。既定の`BenchmarkDotNet.Artifacts/`もGit管理外です。

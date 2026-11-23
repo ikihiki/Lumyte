@@ -3,9 +3,9 @@
 Use the existing Core build target to enumerate cases or select a workload:
 
 ~~~sh
-dotnet run --project build -c Release -- --target BenchmarkCore --benchmark-project Lumyte.Mathematics --benchmark-list true
-dotnet run --project build -c Release -- --target BenchmarkCore --benchmark-project Lumyte.Mathematics --benchmark-mode screen --benchmark-filter '*GeometryQueries.SpatialBenchmarks*'
-dotnet run --project build -c Release -- --target BenchmarkCore --benchmark-project Lumyte.Mathematics --benchmark-mode screen --benchmark-filter '*GeometryQueries.ShapeBenchmarks*'
+dotnet run --project build -c Release -- --target Benchmark --benchmark-area core --benchmark-project Lumyte.Mathematics --benchmark-list true
+dotnet run --project build -c Release -- --target Benchmark --benchmark-area core --benchmark-project Lumyte.Mathematics --benchmark-mode screen --benchmark-filter '*GeometryQueries.SpatialBenchmarks*'
+dotnet run --project build -c Release -- --target Benchmark --benchmark-area core --benchmark-project Lumyte.Mathematics --benchmark-mode screen --benchmark-filter '*GeometryQueries.ShapeBenchmarks*'
 ~~~
 
 Only measurement-purpose categories are used: `Screening`, `Comparison`, and `Diagnostic`. Select subjects structurally with `*GeometryQueries.*`, `*ColorOperations.*`, or `*InterpolationFunctions.*`; namespaces and classes describe functionality, not categories. These independent library operations do not represent an application frame.

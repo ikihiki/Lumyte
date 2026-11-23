@@ -73,6 +73,7 @@ public sealed class ShaderNumericWireTests
 
     /// <summary>Backend creation and direct uploads accept an ordinary explicit numeric type without a codec.</summary>
     /// <returns>The completion of native upload mapping and immutable metadata checks.</returns>
+    [Trait("Execution", "Gpu")]
     [GpuFact]
     public async Task VulkanNumericWireConstructionDoesNotCaptureCodecAsync()
     {

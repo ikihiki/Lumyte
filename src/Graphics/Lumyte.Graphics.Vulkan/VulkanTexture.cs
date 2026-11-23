@@ -3,12 +3,13 @@ using Silk.NET.Vulkan;
 
 namespace Lumyte.Graphics.Vulkan;
 
-internal sealed unsafe class VulkanTexture : IGraphicsTexture
+internal sealed unsafe class VulkanTexture : IGraphicsTexture, IGraphicsNativeOrigin
 {
     private readonly VulkanDevice _owner;
     private readonly Image _native;
     private readonly DeviceMemory _memory;
     private readonly SurfaceFrameLifetime? _surfaceFrame;
+    private object? _allocationIdentity;
     private bool _disposed;
 
     internal VulkanTexture(VulkanDevice owner, TextureDesc desc)
@@ -98,6 +99,10 @@ internal sealed unsafe class VulkanTexture : IGraphicsTexture
         (_owner, Width, Height, MipLevels, ArrayLayers, Format, Usage, _native, _surfaceFrame) = (owner, desc.Width, desc.Height, 1, 1, desc.Format, desc.Usage, native, lifetime);
     }
 
+    IGraphicDevice IGraphicsNativeOrigin.Device => Owner;
+
+    object IGraphicsNativeOrigin.AllocationIdentity => _allocationIdentity ??= new NativeAllocationIdentity(Owner, _native.Handle);
+
     public uint Width { get; }
 
     public uint Height { get; }
@@ -134,6 +139,21 @@ internal sealed unsafe class VulkanTexture : IGraphicsTexture
         }
 
         return (Math.Max(1U, Width >> (int)mipLevel), Math.Max(1U, Height >> (int)mipLevel));
+    }
+
+    void IGraphicsNativeOrigin.ValidateOrigin()
+    {
+        ObjectDisposedException.ThrowIf(Owner.Status == GraphicsDeviceStatus.Disposed, Owner);
+        if (Owner.Status == GraphicsDeviceStatus.Lost)
+        {
+            throw new GraphicsDeviceLostException(Owner.Loss!);
+        }
+
+        _ = Native;
+        if (SurfaceFrame != null && SurfaceFrame.Status != SurfaceFrameStatus.Acquired)
+        {
+            throw new InvalidOperationException("The surface image lease is no longer acquired.");
+        }
     }
 
     public IGraphicsTextureView CreateView(TextureViewDesc? desc = null)
@@ -244,4 +264,6 @@ internal sealed unsafe class VulkanTexture : IGraphicsTexture
             throw new InvalidOperationException($"Vulkan {operation} failed: {result}.");
         }
     }
+
+    private sealed record NativeAllocationIdentity(VulkanDevice Device, ulong Handle);
 }

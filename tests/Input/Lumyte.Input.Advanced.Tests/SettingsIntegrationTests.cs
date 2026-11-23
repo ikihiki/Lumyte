@@ -15,6 +15,7 @@ public sealed class SettingsIntegrationTests
 {
     /// <summary>Verifies saved rebinds apply on a tick and survive restart.</summary>
     /// <returns>The affine input-thread test.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public Task SavedRebindAppliesAtBoundaryAndSurvivesRestartAsync()
         => RunAffineAsync(SaveRebindAndRestartAsync);
@@ -80,6 +81,7 @@ public sealed class SettingsIntegrationTests
 
     /// <summary>Verifies a capture cannot overwrite settings committed by another editor.</summary>
     /// <returns>The asynchronous affine test.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public Task RebindRefusesAChangedCommittedRevisionAsync()
         => RunAffineAsync(async () =>
@@ -114,6 +116,7 @@ public sealed class SettingsIntegrationTests
     /// <summary>Verifies queued or applied settings cannot be overwritten by an older capture.</summary>
     /// <param name="applyBeforeSave">Whether to apply the replacement before saving the stale capture.</param>
     /// <returns>The asynchronous affine test.</returns>
+    [Trait("Execution", "Integration")]
     [Theory]
     [InlineData(false)]
     [InlineData(true)]

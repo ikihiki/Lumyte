@@ -3,7 +3,7 @@ using Lumyte.Graphics.Abstractions;
 
 namespace Lumyte.Graphics.Direct3D12;
 
-internal sealed class Direct3D12ShaderDataBuffer<T> : IGraphicsShaderDataBuffer<T>, IShaderDataSource
+internal sealed class Direct3D12ShaderDataBuffer<T> : IGraphicsShaderDataBuffer<T>, IShaderDataSource, IGraphicsNativeOrigin
     where T : struct, IShaderArguments
 {
     private bool _disposed;
@@ -27,6 +27,10 @@ internal sealed class Direct3D12ShaderDataBuffer<T> : IGraphicsShaderDataBuffer<
         Count = count;
     }
 
+    IGraphicDevice IGraphicsNativeOrigin.Device => Owner;
+
+    object IGraphicsNativeOrigin.AllocationIdentity => ((IGraphicsNativeOrigin)Storage).AllocationIdentity;
+
     public ulong Count { get; }
 
     public ulong SizeInBytes => checked(Count * ShaderElementStrideInBytes);
@@ -44,6 +48,18 @@ internal sealed class Direct3D12ShaderDataBuffer<T> : IGraphicsShaderDataBuffer<
     internal IGraphicsBuffer<byte> Storage { get; }
 
     internal Direct3D12Device Owner { get; }
+
+    void IGraphicsNativeOrigin.ValidateOrigin()
+    {
+        ObjectDisposedException.ThrowIf(Owner.Status == GraphicsDeviceStatus.Disposed, Owner);
+        if (Owner.Status == GraphicsDeviceStatus.Lost)
+        {
+            throw new GraphicsDeviceLostException(Owner.Loss!);
+        }
+
+        ValidateAlive();
+        ((IGraphicsNativeOrigin)Storage).ValidateOrigin();
+    }
 
     public ValueTask MapAsync(CancellationToken cancellationToken = default)
     {

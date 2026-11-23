@@ -21,15 +21,28 @@ try
 {
     string file = Path.Combine(directory, "fixture.mvt");
     await File.WriteAllBytesAsync(file, LocalFixture.CreateTile());
-    var registration = new LocalMvtRegistration("handmade", "v1", new MapTileLoadProfile("sample"), new Dictionary<MapTileId, string> { [new(0, 0, 0)] = file });
+    var files = new Dictionary<MapTileId, string>();
+    for (int zoom = 0; zoom <= 2; zoom++)
+    {
+        int count = 1 << zoom;
+        for (int x = 0; x < count; x++)
+        {
+            for (int y = 0; y < count; y++)
+            {
+                files.Add(new(zoom, x, y), file);
+            }
+        }
+    }
+
+    var registration = new LocalMvtRegistration("handmade", "v1", new MapTileLoadProfile("sample"), files);
     UiApplicationBuilder builder = UiApplication.CreateBuilder();
     if (desktop)
     {
-        builder.UseDesktop(new() { Title = "Lumyte Maps — hand-authored fixture (no OSM data)" });
+        builder.UseDesktop(new() { Title = "Lumyte Maps — hand-authored fixture (no OSM data)", ClientSize = new(512, 256) });
     }
     else
     {
-        builder.UseHeadless();
+        builder.UseHeadless(new() { ClientSize = new(512, 256) });
     }
 
     builder.Services.AddMemoryManagement();
@@ -42,7 +55,7 @@ try
     if (!desktop)
     {
         using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(10));
-        while (!await app.Dispatcher.InvokeAsync(() => content?.HasLoadedTile == true, deadline.Token))
+        while (!await app.Dispatcher.InvokeAsync(() => content?.AdvanceSmokePath() == true, deadline.Token))
         {
             await Task.Delay(1, deadline.Token);
         }
@@ -51,7 +64,7 @@ try
     }
 
     await run;
-    Console.WriteLine(desktop ? "Map sample stopped cleanly." : "Map sample headless record-only host completed; no GPU pixel claim.");
+    Console.WriteLine(desktop ? "Map sample stopped cleanly." : "Map sample headless spatial path completed: actual tile arrivals, manager reclamation and orderly stop; record-only, no GPU pixel claim.");
 }
 finally
 {

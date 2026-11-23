@@ -6,6 +6,9 @@ using Xunit;
 // Native log callbacks are process-global; hardware fixtures must not race during opt-in runs.
 [assembly: CollectionBehavior(DisableTestParallelization = true)]
 
+// The filtered CPU lane contains no native-device/callback cases; keep default and GPU runs serial.
+[assembly: System.Reflection.AssemblyMetadata("Lumyte.CpuMethodParallelism", "true")]
+
 namespace Lumyte.UI.Benchmark.Tests;
 
 /// <summary>Checks device-free metadata discovery and purpose-only classifications.</summary>

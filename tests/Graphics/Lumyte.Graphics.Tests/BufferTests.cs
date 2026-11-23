@@ -39,6 +39,7 @@ public sealed class BufferTests
 
     /// <summary>Checks wgpu allocation, mapping, CPU copies and lifetime through common interfaces.</summary>
     /// <returns>A task that completes when common buffer checks finish.</returns>
+    [Trait("Execution", "Gpu")]
     [GpuFact]
     public async Task WgpuBuffersUseExplicitCpuAccessAsync()
     {
@@ -48,6 +49,7 @@ public sealed class BufferTests
 
     /// <summary>Checks Vulkan allocation, mapping, CPU copies and lifetime through common interfaces.</summary>
     /// <returns>A task that completes when common buffer checks finish.</returns>
+    [Trait("Execution", "Gpu")]
     [GpuFact]
     public async Task VulkanBuffersUseExplicitCpuAccessAsync()
     {

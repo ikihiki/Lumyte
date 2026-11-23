@@ -2,9 +2,10 @@ using Lumyte.Graphics.Abstractions;
 
 namespace Lumyte.Graphics.Direct3D12;
 
-internal sealed class Direct3D12Texture : IGraphicsTexture
+internal sealed class Direct3D12Texture : IGraphicsTexture, IGraphicsNativeOrigin
 {
     private nint _native;
+    private object? _allocationIdentity;
 
     internal Direct3D12Texture(Direct3D12Device owner, TextureDesc desc)
     {
@@ -20,6 +21,10 @@ internal sealed class Direct3D12Texture : IGraphicsTexture
         _native = native;
         SurfaceFrame = frame;
     }
+
+    IGraphicDevice IGraphicsNativeOrigin.Device => Owner;
+
+    object IGraphicsNativeOrigin.AllocationIdentity => _allocationIdentity ??= new NativeAllocationIdentity(Owner, _native);
 
     public uint Width { get; }
 
@@ -63,6 +68,17 @@ internal sealed class Direct3D12Texture : IGraphicsTexture
         return (Math.Max(1, Width >> (int)level), Math.Max(1, Height >> (int)level));
     }
 
+    void IGraphicsNativeOrigin.ValidateOrigin()
+    {
+        ObjectDisposedException.ThrowIf(Owner.Status == GraphicsDeviceStatus.Disposed, Owner);
+        if (Owner.Status == GraphicsDeviceStatus.Lost)
+        {
+            throw new GraphicsDeviceLostException(Owner.Loss!);
+        }
+
+        _ = Native;
+    }
+
     public IGraphicsTextureView CreateView(TextureViewDesc? desc = null)
     {
         _ = Native;
@@ -102,4 +118,6 @@ internal sealed class Direct3D12Texture : IGraphicsTexture
         NativeMethods.Release(_native);
         _native = 0;
     }
+
+    private sealed record NativeAllocationIdentity(Direct3D12Device Device, nint Handle);
 }

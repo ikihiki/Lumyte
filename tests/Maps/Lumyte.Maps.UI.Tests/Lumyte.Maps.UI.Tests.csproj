@@ -13,5 +13,6 @@
     <ProjectReference Include="../../../src/Maps/Lumyte.Maps.Mvt/Lumyte.Maps.Mvt.csproj" />
     <ProjectReference Include="../../../src/Core/Lumyte.Memory.DependencyInjection/Lumyte.Memory.DependencyInjection.csproj" />
     <ProjectReference Include="../../../src/Core/Lumyte.Resources.DependencyInjection/Lumyte.Resources.DependencyInjection.csproj" />
+    <ProjectReference Include="../../../src/UI/Lumyte.UI.Application.Headless/Lumyte.UI.Application.Headless.csproj" />
   </ItemGroup>
 </Project>

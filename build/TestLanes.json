@@ -1,0 +1,571 @@
+[
+  {
+    "Project": "tests/Animation/Lumyte.Animation.Benchmark.Tests/Lumyte.Animation.Benchmark.Tests.csproj",
+    "Default": "Cpu",
+    "IntegrationClasses": [],
+    "Lanes": [
+      "Cpu"
+    ]
+  },
+  {
+    "Project": "tests/Animation/Lumyte.Animation.Tests/Lumyte.Animation.Tests.csproj",
+    "Default": "Cpu",
+    "IntegrationClasses": [],
+    "Lanes": [
+      "Cpu",
+      "Integration"
+    ]
+  },
+  {
+    "Project": "tests/Audio/Lumyte.Audio.Benchmark.Tests/Lumyte.Audio.Benchmark.Tests.csproj",
+    "Default": "Cpu",
+    "IntegrationClasses": [
+      "BackendAndExecutionTests"
+    ],
+    "Lanes": [
+      "Cpu",
+      "Integration"
+    ]
+  },
+  {
+    "Project": "tests/Audio/Lumyte.Audio.OpenAL.Tests/Lumyte.Audio.OpenAL.Tests.csproj",
+    "Default": "Integration",
+    "IntegrationClasses": [],
+    "Lanes": [
+      "Integration"
+    ]
+  },
+  {
+    "Project": "tests/Audio/Lumyte.Resources.Audio.Tests/Lumyte.Resources.Audio.Tests.csproj",
+    "Default": "Cpu",
+    "IntegrationClasses": [],
+    "Lanes": [
+      "Cpu"
+    ]
+  },
+  {
+    "Project": "tests/Core/Lumyte.Composition.Tests/Lumyte.Composition.Tests.csproj",
+    "Default": "Cpu",
+    "IntegrationClasses": [],
+    "Lanes": [
+      "Cpu"
+    ]
+  },
+  {
+    "Project": "tests/Core/Lumyte.Core.Benchmark.Tests/Lumyte.Core.Benchmark.Tests.csproj",
+    "Default": "Cpu",
+    "IntegrationClasses": [],
+    "Lanes": [
+      "Cpu",
+      "Integration"
+    ]
+  },
+  {
+    "Project": "tests/Core/Lumyte.Execution.Tests/Lumyte.Execution.Tests.csproj",
+    "Default": "Cpu",
+    "IntegrationClasses": [],
+    "Lanes": [
+      "Cpu",
+      "Integration"
+    ]
+  },
+  {
+    "Project": "tests/Core/Lumyte.Mathematics.Tests/Lumyte.Mathematics.Tests.csproj",
+    "Default": "Cpu",
+    "IntegrationClasses": [],
+    "Lanes": [
+      "Cpu",
+      "Integration"
+    ]
+  },
+  {
+    "Project": "tests/Core/Lumyte.Memory.Tests/Lumyte.Memory.Tests.csproj",
+    "Default": "Cpu",
+    "IntegrationClasses": [],
+    "Lanes": [
+      "Cpu",
+      "Integration"
+    ]
+  },
+  {
+    "Project": "tests/Core/Lumyte.Resources.Tests/Lumyte.Resources.Tests.csproj",
+    "Default": "Cpu",
+    "IntegrationClasses": [],
+    "Lanes": [
+      "Cpu",
+      "Integration"
+    ]
+  },
+  {
+    "Project": "tests/Core/Lumyte.Settings.Tests/Lumyte.Settings.Tests.csproj",
+    "Default": "Cpu",
+    "IntegrationClasses": [],
+    "Lanes": [
+      "Cpu"
+    ]
+  },
+  {
+    "Project": "tests/Core/Lumyte.Signals.Benchmarks.Tests/Lumyte.Signals.Benchmarks.Tests.csproj",
+    "Default": "Cpu",
+    "IntegrationClasses": [],
+    "Lanes": [
+      "Cpu"
+    ]
+  },
+  {
+    "Project": "tests/Core/Lumyte.Signals.Tests/Lumyte.Signals.Tests.csproj",
+    "Default": "Cpu",
+    "IntegrationClasses": [],
+    "Lanes": [
+      "Cpu",
+      "Integration"
+    ]
+  },
+  {
+    "Project": "tests/Core/Lumyte.StateMachines.Tests/Lumyte.StateMachines.Tests.csproj",
+    "Default": "Cpu",
+    "IntegrationClasses": [],
+    "Lanes": [
+      "Cpu"
+    ]
+  },
+  {
+    "Project": "tests/Core/Lumyte.Worlds.Tests/Lumyte.Worlds.Tests.csproj",
+    "Default": "Cpu",
+    "IntegrationClasses": [],
+    "Lanes": [
+      "Cpu"
+    ]
+  },
+  {
+    "Project": "tests/Diagnostics/Lumyte.Diagnostics.Tests/Lumyte.Diagnostics.Tests.csproj",
+    "Default": "Cpu",
+    "IntegrationClasses": [],
+    "Lanes": [
+      "Cpu",
+      "Integration"
+    ]
+  },
+  {
+    "Project": "tests/Diagnostics/Lumyte.Diagnostics.UI.Automation.Tests/Lumyte.Diagnostics.UI.Automation.Tests.csproj",
+    "Default": "Cpu",
+    "IntegrationClasses": [],
+    "Lanes": [
+      "Cpu",
+      "Integration"
+    ]
+  },
+  {
+    "Project": "tests/Diagnostics/Lumyte.Diagnostics.Windowing.Tests/Lumyte.Diagnostics.Windowing.Tests.csproj",
+    "Default": "Cpu",
+    "IntegrationClasses": [],
+    "Lanes": [
+      "Cpu"
+    ]
+  },
+  {
+    "Project": "tests/Graphics/Lumyte.Graphics.Benchmark.Tests/Lumyte.Graphics.Benchmark.Tests.csproj",
+    "Default": "Cpu",
+    "IntegrationClasses": [],
+    "Lanes": [
+      "Cpu",
+      "Integration",
+      "Gpu"
+    ]
+  },
+  {
+    "Project": "tests/Graphics/Lumyte.Graphics.Direct3D12.Tests/Lumyte.Graphics.Direct3D12.Tests.csproj",
+    "Default": "Integration",
+    "IntegrationClasses": [],
+    "Lanes": [
+      "Integration",
+      "Gpu"
+    ]
+  },
+  {
+    "Project": "tests/Graphics/Lumyte.Graphics.Drawing.Tests/Lumyte.Graphics.Drawing.Tests.csproj",
+    "Default": "Cpu",
+    "IntegrationClasses": [],
+    "Lanes": [
+      "Cpu",
+      "Gpu"
+    ]
+  },
+  {
+    "Project": "tests/Graphics/Lumyte.Graphics.Drawing2D.Tests/Lumyte.Graphics.Drawing2D.Tests.csproj",
+    "Default": "Cpu",
+    "IntegrationClasses": [
+      "SvgTests"
+    ],
+    "Lanes": [
+      "Cpu",
+      "Integration"
+    ]
+  },
+  {
+    "Project": "tests/Graphics/Lumyte.Graphics.Hosting.Tests/Lumyte.Graphics.Hosting.Tests.csproj",
+    "Default": "Cpu",
+    "IntegrationClasses": [],
+    "Lanes": [
+      "Cpu",
+      "Integration",
+      "Gpu"
+    ]
+  },
+  {
+    "Project": "tests/Graphics/Lumyte.Graphics.ImageEffects.Tests/Lumyte.Graphics.ImageEffects.Tests.csproj",
+    "Default": "Cpu",
+    "IntegrationClasses": [],
+    "Lanes": [
+      "Cpu"
+    ]
+  },
+  {
+    "Project": "tests/Graphics/Lumyte.Graphics.RenderGraph.Tests/Lumyte.Graphics.RenderGraph.Tests.csproj",
+    "Default": "Cpu",
+    "IntegrationClasses": [],
+    "Lanes": [
+      "Cpu",
+      "Integration"
+    ]
+  },
+  {
+    "Project": "tests/Graphics/Lumyte.Graphics.Svg.Tests/Lumyte.Graphics.Svg.Tests.csproj",
+    "Default": "Integration",
+    "IntegrationClasses": [],
+    "Lanes": [
+      "Gpu"
+    ]
+  },
+  {
+    "Project": "tests/Graphics/Lumyte.Graphics.Tests/Lumyte.Graphics.Tests.csproj",
+    "Default": "Cpu",
+    "IntegrationClasses": [
+      "ShaderCompilerTests",
+      "FragmentArraySignatureTests",
+      "MeshLinkageTests",
+      "MeshShaderCompilationTests",
+      "ShaderSnapshotValidationTests",
+      "ShaderToolOutputPathTests",
+      "ShaderSourcePreparationTests",
+      "ShaderTests",
+      "SpirVSignatureRegressionTests"
+    ],
+    "Lanes": [
+      "Cpu",
+      "Integration",
+      "Gpu"
+    ]
+  },
+  {
+    "Project": "tests/Graphics/Lumyte.Graphics.Text.Parley.Tests/Lumyte.Graphics.Text.Parley.Tests.csproj",
+    "Default": "Integration",
+    "IntegrationClasses": [],
+    "Lanes": [
+      "Integration"
+    ]
+  },
+  {
+    "Project": "tests/Graphics/Lumyte.Graphics.Text.Tests/Lumyte.Graphics.Text.Tests.csproj",
+    "Default": "Cpu",
+    "IntegrationClasses": [],
+    "Lanes": [
+      "Cpu"
+    ]
+  },
+  {
+    "Project": "tests/Graphics/Lumyte.Graphics.Validation.Tests/Lumyte.Graphics.Validation.Tests.csproj",
+    "Default": "Cpu",
+    "IntegrationClasses": [],
+    "Lanes": [
+      "Cpu"
+    ]
+  },
+  {
+    "Project": "tests/Graphics/Lumyte.Graphics.Wgpu.Tests/Lumyte.Graphics.Wgpu.Tests.csproj",
+    "Default": "Integration",
+    "IntegrationClasses": [],
+    "Lanes": [
+      "Gpu"
+    ]
+  },
+  {
+    "Project": "tests/Graphics/Lumyte.Resources.Graphics.Tests/Lumyte.Resources.Graphics.Tests.csproj",
+    "Default": "Cpu",
+    "IntegrationClasses": [],
+    "Lanes": [
+      "Cpu",
+      "Integration"
+    ]
+  },
+  {
+    "Project": "tests/Input/Lumyte.Input.Advanced.Tests/Lumyte.Input.Advanced.Tests.csproj",
+    "Default": "Cpu",
+    "IntegrationClasses": [],
+    "Lanes": [
+      "Cpu",
+      "Integration"
+    ]
+  },
+  {
+    "Project": "tests/Input/Lumyte.Input.Benchmark.Tests/Lumyte.Input.Benchmark.Tests.csproj",
+    "Default": "Cpu",
+    "IntegrationClasses": [],
+    "Lanes": [
+      "Cpu"
+    ]
+  },
+  {
+    "Project": "tests/Input/Lumyte.Input.Tests/Lumyte.Input.Tests.csproj",
+    "Default": "Cpu",
+    "IntegrationClasses": [],
+    "Lanes": [
+      "Cpu"
+    ]
+  },
+  {
+    "Project": "tests/Maps/Lumyte.Maps.Session.Tests/Lumyte.Maps.Session.Tests.csproj",
+    "Default": "Cpu",
+    "IntegrationClasses": [],
+    "Lanes": [
+      "Cpu",
+      "Gpu"
+    ]
+  },
+  {
+    "Project": "tests/Maps/Lumyte.Maps.Tests/Lumyte.Maps.Tests.csproj",
+    "Default": "Cpu",
+    "IntegrationClasses": [],
+    "Lanes": [
+      "Cpu"
+    ]
+  },
+  {
+    "Project": "tests/Maps/Lumyte.Maps.UI.Tests/Lumyte.Maps.UI.Tests.csproj",
+    "Default": "Cpu",
+    "IntegrationClasses": [],
+    "Lanes": [
+      "Cpu",
+      "Integration"
+    ]
+  },
+  {
+    "Project": "tests/Platform/Lumyte.Platform.Tests/Lumyte.Platform.Tests.csproj",
+    "Default": "Cpu",
+    "IntegrationClasses": [
+      "LinuxNativeTests",
+      "WindowsNativeTests"
+    ],
+    "Lanes": [
+      "Cpu",
+      "Integration"
+    ]
+  },
+  {
+    "Project": "tests/Platform/Lumyte.Platform.Windows.TextInput.Tests/Lumyte.Platform.Windows.TextInput.Tests.csproj",
+    "Default": "Integration",
+    "IntegrationClasses": [],
+    "Lanes": [
+      "Integration"
+    ]
+  },
+  {
+    "Project": "tests/Tools/Lumyte.Build.Tests/Lumyte.Build.Tests.csproj",
+    "Default": "Cpu",
+    "IntegrationClasses": [],
+    "Lanes": [
+      "Cpu",
+      "Integration"
+    ]
+  },
+  {
+    "Project": "tests/Tools/Lumyte.Samples.Tests/Lumyte.Samples.Tests.csproj",
+    "Default": "Cpu",
+    "IntegrationClasses": [],
+    "Lanes": [
+      "Cpu"
+    ]
+  },
+  {
+    "Project": "tests/UI/Lumyte.UI.Application.Navigation.Tests/Lumyte.UI.Application.Navigation.Tests.csproj",
+    "Default": "Cpu",
+    "IntegrationClasses": [],
+    "Lanes": [
+      "Cpu",
+      "Integration"
+    ]
+  },
+  {
+    "Project": "tests/UI/Lumyte.UI.Application.Tests/Lumyte.UI.Application.Tests.csproj",
+    "Default": "Cpu",
+    "IntegrationClasses": [],
+    "Lanes": [
+      "Cpu",
+      "Integration",
+      "Gpu"
+    ]
+  },
+  {
+    "Project": "tests/UI/Lumyte.UI.Automation.Tests/Lumyte.UI.Automation.Tests.csproj",
+    "Default": "Cpu",
+    "IntegrationClasses": [],
+    "Lanes": [
+      "Cpu"
+    ]
+  },
+  {
+    "Project": "tests/UI/Lumyte.UI.Benchmark.Tests/Lumyte.UI.Benchmark.Tests.csproj",
+    "Default": "Cpu",
+    "IntegrationClasses": [
+      "BrowserApplicationBenchmarkTests"
+    ],
+    "Lanes": [
+      "Cpu",
+      "Integration",
+      "Gpu"
+    ]
+  },
+  {
+    "Project": "tests/UI/Lumyte.UI.Collections.Tests/Lumyte.UI.Collections.Tests.csproj",
+    "Default": "Cpu",
+    "IntegrationClasses": [],
+    "Lanes": [
+      "Cpu"
+    ]
+  },
+  {
+    "Project": "tests/UI/Lumyte.UI.Controls.Tests/Lumyte.UI.Controls.Tests.csproj",
+    "Default": "Cpu",
+    "IntegrationClasses": [],
+    "Lanes": [
+      "Cpu"
+    ]
+  },
+  {
+    "Project": "tests/UI/Lumyte.UI.IntegrationTests/Lumyte.UI.IntegrationTests.csproj",
+    "Default": "Cpu",
+    "IntegrationClasses": [],
+    "Lanes": [
+      "Cpu"
+    ]
+  },
+  {
+    "Project": "tests/UI/Lumyte.UI.Media.Parley.Tests/Lumyte.UI.Media.Parley.Tests.csproj",
+    "Default": "Integration",
+    "IntegrationClasses": [],
+    "Lanes": [
+      "Integration"
+    ]
+  },
+  {
+    "Project": "tests/UI/Lumyte.UI.Media.Tests/Lumyte.UI.Media.Tests.csproj",
+    "Default": "Cpu",
+    "IntegrationClasses": [],
+    "Lanes": [
+      "Cpu"
+    ]
+  },
+  {
+    "Project": "tests/UI/Lumyte.UI.Navigation.Tests/Lumyte.UI.Navigation.Tests.csproj",
+    "Default": "Cpu",
+    "IntegrationClasses": [],
+    "Lanes": [
+      "Cpu",
+      "Integration"
+    ]
+  },
+  {
+    "Project": "tests/UI/Lumyte.UI.Tests/Lumyte.UI.Tests.csproj",
+    "Default": "Cpu",
+    "IntegrationClasses": [],
+    "Lanes": [
+      "Cpu",
+      "Integration"
+    ]
+  },
+  {
+    "Project": "tests/UI/Lumyte.UI.TextEditing.Tests/Lumyte.UI.TextEditing.Tests.csproj",
+    "Default": "Cpu",
+    "IntegrationClasses": [
+      "ConnectionTests",
+      "RetainedTextDrawingTests",
+      "ParleyRangeIndexTests",
+      "ParleyEditingTests"
+    ],
+    "Lanes": [
+      "Cpu",
+      "Integration"
+    ]
+  },
+  {
+    "Project": "tests/UI/Lumyte.UI.WebView.Tests/Lumyte.UI.WebView.Tests.csproj",
+    "Default": "Cpu",
+    "IntegrationClasses": [
+      "HelperIsolationTests",
+      "CefStopRecoveryTests"
+    ],
+    "Lanes": [
+      "Cpu",
+      "Integration"
+    ]
+  },
+  {
+    "Project": "tests/UI/Lumyte.UI.Windowing.Tests/Lumyte.UI.Windowing.Tests.csproj",
+    "Default": "Cpu",
+    "IntegrationClasses": [],
+    "Lanes": [
+      "Cpu"
+    ]
+  },
+  {
+    "Project": "tests/Tools/Lumyte.TestRunner.Tests/Lumyte.TestRunner.Tests.csproj",
+    "Default": "Cpu",
+    "IntegrationClasses": [],
+    "Lanes": [
+      "Integration"
+    ]
+  },
+  {
+    "Project": "tests/Core/Lumyte.Pipelines.Tests/Lumyte.Pipelines.Tests.csproj",
+    "Default": "Cpu",
+    "IntegrationClasses": [],
+    "Lanes": [
+      "Cpu"
+    ]
+  },
+  {
+    "Project": "tests/Graphics/Lumyte.Graphics.Drawing2D.Tests/GenericGpu/GenericGpu.NativeTests.csproj",
+    "Default": "Cpu",
+    "IntegrationClasses": [],
+    "Lanes": [
+      "Cpu",
+      "Gpu"
+    ]
+  },
+  {
+    "Project": "tests/Graphics/Lumyte.Graphics.Drawing2D.Tests/GenericGraphNative/GenericGraph.NativeTests.csproj",
+    "Default": "Cpu",
+    "IntegrationClasses": [],
+    "Lanes": [
+      "Gpu"
+    ]
+  },
+  {
+    "Project": "tests/Graphics/Lumyte.Graphics.Pipelines.RenderGraph.Tests/Lumyte.Graphics.Pipelines.RenderGraph.Tests.csproj",
+    "Default": "Cpu",
+    "IntegrationClasses": [],
+    "Lanes": [
+      "Cpu",
+      "Gpu"
+    ]
+  },
+  {
+    "Project": "tests/Graphics/Lumyte.Graphics.Pipelines.Tests/Lumyte.Graphics.Pipelines.Tests.csproj",
+    "Default": "Cpu",
+    "IntegrationClasses": [],
+    "Lanes": [
+      "Cpu",
+      "Gpu"
+    ]
+  }
+]
