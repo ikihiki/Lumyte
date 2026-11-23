@@ -108,9 +108,9 @@ public sealed class GraphicsPipelineBuildHost : IDisposable
                 throw new ArgumentException("A device access refers to a missing input.");
             }
 
-            if (gpu.Domain == GraphicsExecutionDomain.Compute && (_device.Caps.ShaderTarget == ShaderTarget.Wgsl || _device.Caps.MaxComputeInvocationsPerWorkgroup == 0))
+            if (gpu.Domain == GraphicsExecutionDomain.Compute)
             {
-                throw new NotSupportedException("The selected compute topology is unavailable on this device.");
+                GraphicsComputeAdmission.Validate(_device.Caps, OperatingSystem.IsBrowser());
             }
 
             if (gpu.Domain == GraphicsExecutionDomain.Mesh && _device.Caps.MeshShaderLimits is null)

@@ -149,6 +149,7 @@ public sealed class Upload<TSchema> : IStage<Host<TSchema>, Device<TSchema>>
                 {
                     if (staging is not null)
                     {
+                        record.Commands.Barrier(new BufferBarrierDesc<TElement> { Buffer = staging.SliceElements(0, staging.Count), Before = new(PipelineStage.Host, ResourceAccess.HostWrite), After = new(PipelineStage.Copy, ResourceAccess.CopyRead) });
                         record.Commands.CopyBuffer(staging.SliceElements(0, staging.Count), buffer.SliceElements(0, buffer.Count));
                     }
                 }
@@ -218,6 +219,7 @@ public sealed class Upload<TSchema> : IStage<Host<TSchema>, Device<TSchema>>
             output.Encode();
             run.Encode(preparation.Node, context =>
             {
+                context.Commands.Barrier(new BufferBarrierDesc<TElement> { Buffer = staging.SliceElements(0, staging.Count), Before = new(PipelineStage.Host, ResourceAccess.HostWrite), After = new(PipelineStage.Copy, ResourceAccess.CopyRead) });
                 context.Commands.CopyBuffer(staging.SliceElements(0, staging.Count), destination.SliceElements(0, destination.Count));
                 context.Commands.Barrier(new MemoryBarrierDesc
                 {

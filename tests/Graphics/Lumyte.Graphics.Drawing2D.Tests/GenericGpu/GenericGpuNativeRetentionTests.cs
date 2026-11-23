@@ -16,11 +16,14 @@ public sealed partial class GenericGpuNativeTests
 {
     /// <summary>Retains real immutable upload chunks across three overlapping generic frames, placement and COW edits.</summary>
     /// <param name="viaGraph">Whether each frame is borrowed into the existing parent Graph.</param>
+    /// <param name="paged">Whether to exercise the opt-in immutable page directory and fresh writable windows.</param>
     [GenericGpuNativeTheory]
-    [InlineData(false)]
-    [InlineData(true)]
+    [InlineData(false, false)]
+    [InlineData(true, false)]
+    [InlineData(false, true)]
+    [InlineData(true, true)]
     [Trait("Execution", "Gpu")]
-    public void GenericRetainedUploadsPublishOnlyAfterCompletionAndPreserveThreeVersions(bool viaGraph)
+    public void GenericRetainedUploadsPublishOnlyAfterCompletionAndPreserveThreeVersions(bool viaGraph, bool paged)
     {
         IGraphicDevice device = CreateDevice();
         using var deviceOwner = (IDisposable)device;
@@ -37,8 +40,22 @@ public sealed partial class GenericGpuNativeTests
             Port<Device<FrameV1>> framePort = graph.Stage(RenderFields2D.Frame(), graph.Input).Then(Transfers.Upload<FrameV1>());
             Port<Device<ResourceViewsV1>> views = graph.Stage(RenderFields2D.ResourceViews(), graph.Input);
             Port<Device<TargetV1>> target = graph.Stage(RenderFields2D.Target(), graph.Input);
-            PipelineDefinition<RenderRequest2D, Device<TargetWritesV1>> definition = graph.Complete(graph.Stage(RasterStages2D.EvaluateAndComposite(new(16, 1)), scenePort, views, framePort, target));
-            var policy = new GraphicsPipelinePolicy(64 * 1024 * 1024, 16 * 1024 * 1024, 16 * 1024 * 1024, 3)
+            PipelineDefinition<RenderRequest2D, Device<TargetWritesV1>> definition;
+            if (paged)
+            {
+                var samples = new SamplePolicy2D(16, 1);
+                var paging = new GenericPagingLimits2D();
+                Port<Device<Coverage16V1>> coverage = graph.Stage(ComputeStages2D.PagedCoverage(samples, paging), scenePort, framePort);
+                Port<Device<Paint16V1>> paint = graph.Stage(ComputeStages2D.PagedPaint(samples, paging), scenePort, views, framePort);
+                Port<Device<Clip16V1>> clip = graph.Stage(ComputeStages2D.PagedClip(samples, paging), scenePort, framePort);
+                definition = graph.Complete(graph.Stage(RasterStages2D.PagedCompose(samples, paging), scenePort, coverage, paint, clip, target));
+            }
+            else
+            {
+                definition = graph.Complete(graph.Stage(RasterStages2D.EvaluateAndComposite(new(16, 1)), scenePort, views, framePort, target));
+            }
+
+            var policy = new GraphicsPipelinePolicy((paged ? 512L : 64L) * 1024 * 1024, 16 * 1024 * 1024, 16 * 1024 * 1024, 3)
             {
                 ImmutableUploads = new(1024 * 1024, 128, 256),
             };

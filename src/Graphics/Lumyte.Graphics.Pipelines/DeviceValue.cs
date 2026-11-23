@@ -4,7 +4,7 @@ using Lumyte.Pipelines;
 
 namespace Lumyte.Graphics.Pipelines;
 
-internal sealed class DeviceValue(GraphicsRun run, SchemaDescriptor descriptor, SchemaExtent extent, int producerNode = 0)
+internal sealed class DeviceValue(GraphicsRun run, SchemaDescriptor descriptor, SchemaExtent extent, int producerNode = 0, Action<long>? reserveScratch = null)
 {
     private readonly List<PipelineTextureResource> _textures = [];
     private readonly List<IGraphicsSampler> _samplers = [];
@@ -182,7 +182,15 @@ internal sealed class DeviceValue(GraphicsRun run, SchemaDescriptor descriptor, 
         if (_buffer is null)
         {
             long bytes = checked(Extent.ElementCount * Descriptor.ElementStride);
-            Run.ReserveScratch(bytes);
+            if (reserveScratch is null)
+            {
+                Run.ReserveScratch(bytes);
+            }
+            else
+            {
+                reserveScratch(bytes);
+            }
+
             IGraphicsBuffer<TElement> buffer = Run.Device.CreateBuffer<TElement>(new BufferDesc<TElement>
             {
                 Count = checked((ulong)Extent.ElementCount),
