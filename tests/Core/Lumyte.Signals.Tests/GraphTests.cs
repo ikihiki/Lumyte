@@ -223,6 +223,7 @@ public sealed class GraphTests
 
     /// <summary>Checks sequential use can move threads without a creator-thread restriction.</summary>
     /// <returns>The verification.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task ValuesCanMoveBetweenThreadsWhenOperationsAreSequentialAsync()
     {

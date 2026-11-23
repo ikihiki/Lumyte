@@ -41,6 +41,7 @@ public sealed class UiSurfaceTests
 
     /// <summary>Checks sequential operations on another thread need no explicit runtime or dispatcher.</summary>
     /// <returns>The asynchronous verification.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task TreesCanBeUpdatedAcrossThreadsSequentiallyAsync()
     {

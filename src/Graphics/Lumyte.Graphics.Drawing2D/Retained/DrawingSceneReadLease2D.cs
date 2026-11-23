@@ -7,6 +7,7 @@ public sealed class DrawingSceneReadLease2D : IDisposable, IDrawingSceneSource2D
     private readonly DrawingScene2D _scene;
     private readonly ulong _revision;
     private readonly IReadOnlyList<DrawingSceneEntry2D> _entries;
+    private readonly IDisposable _resources;
     private bool _disposed;
 
     internal DrawingSceneReadLease2D(DrawingScene2D scene, ulong revision, IReadOnlyList<DrawingSceneEntry2D> entries)
@@ -14,6 +15,7 @@ public sealed class DrawingSceneReadLease2D : IDisposable, IDrawingSceneSource2D
         _scene = scene;
         _revision = revision;
         _entries = entries;
+        _resources = ImageResourceRegistry2D.Retain(entries.Select(entry => entry.Content));
     }
 
     /// <summary>Gets the captured scene revision while the lease is alive.</summary>
@@ -43,6 +45,7 @@ public sealed class DrawingSceneReadLease2D : IDisposable, IDrawingSceneSource2D
         {
             _disposed = true;
             _scene.ReleaseBorrow();
+            _resources.Dispose();
         }
     }
 }

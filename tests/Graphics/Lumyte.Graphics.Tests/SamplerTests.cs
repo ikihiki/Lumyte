@@ -9,6 +9,7 @@ namespace Lumyte.Graphics.Tests;
 public sealed class SamplerTests
 {
     /// <summary>Checks wgpu filtering, addressing, LOD, anisotropy and ownership.</summary>
+    [Trait("Execution", "Gpu")]
     [GpuFact]
     public void WgpuSamplersPreserveRequestedState()
     {
@@ -17,6 +18,7 @@ public sealed class SamplerTests
     }
 
     /// <summary>Checks Vulkan filtering, addressing, LOD, anisotropy and ownership.</summary>
+    [Trait("Execution", "Gpu")]
     [GpuFact]
     public void VulkanSamplersPreserveRequestedState()
     {

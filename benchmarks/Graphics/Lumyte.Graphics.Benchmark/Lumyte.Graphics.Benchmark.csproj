@@ -5,9 +5,13 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <IsPackable>false</IsPackable>
+    <DefineConstants>$(DefineConstants);M6_GPU</DefineConstants>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="BenchmarkDotNet" Version="0.15.8" />
+    <ProjectReference Include="../../../src/Maps/Lumyte.Maps.Mvt/Lumyte.Maps.Mvt.csproj" />
+    <ProjectReference Include="../../../src/Maps/Lumyte.Maps.UI/Lumyte.Maps.UI.csproj" />
+    <Compile Include="../Lumyte.Graphics.Drawing2D.Benchmark/Maps/DenseMapFixture.cs;../Lumyte.Graphics.Drawing2D.Benchmark/Maps/MapWorkload.cs" Link="Shared/Maps/%(Filename)%(Extension)" />
     <ProjectReference Include="../../../src/Graphics/Lumyte.Graphics.Vulkan/Lumyte.Graphics.Vulkan.csproj" />
     <ProjectReference Include="../../../src/Graphics/Lumyte.Graphics.Drawing/Lumyte.Graphics.Drawing.csproj" />
     <ProjectReference Include="../../../src/Graphics/Lumyte.Graphics.Drawing2D/Lumyte.Graphics.Drawing2D.csproj" />

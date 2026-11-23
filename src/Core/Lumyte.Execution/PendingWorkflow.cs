@@ -8,6 +8,9 @@ internal sealed class PendingWorkflow<TCommand, TResult> : QueuedWork, IValueTas
 {
     private readonly long _bytes;
     private readonly WorkflowContext _context;
+    private readonly Func<TCommand, CancellationToken, ValueTask<TResult>>? _graphInvoke;
+    private readonly Action<Exception?, bool>? _graphFinished;
+    private readonly Func<bool>? _graphCanceled;
     private Queue<(SendOrPostCallback Callback, object? State)>? _callbacks;
     private ManualResetValueTaskSourceCore<TResult> _source;
     private ExecutionRuntime? _runtime;
@@ -41,7 +44,20 @@ internal sealed class PendingWorkflow<TCommand, TResult> : QueuedWork, IValueTas
         _source.RunContinuationsAsynchronously = true;
     }
 
-    internal override bool IsCanceled => !_started && base.IsCanceled;
+    internal PendingWorkflow(ExecutionRuntime runtime, TCommand command, CancellationToken token, Func<TCommand, CancellationToken, ValueTask<TResult>> invoke, Action<Exception?, bool> finished, Func<bool> canceled)
+        : base(null, token)
+    {
+        _runtime = runtime;
+        _command = command;
+        _graphInvoke = invoke;
+        _graphFinished = finished;
+        _graphCanceled = canceled;
+        _context = new WorkflowContext(this);
+        _callbacks = new(4);
+        _source.RunContinuationsAsynchronously = true;
+    }
+
+    internal override bool IsCanceled => !_started && (base.IsCanceled || (_graphCanceled?.Invoke() ?? false));
 
     internal override bool CancelOnShutdown => !_started && base.CancelOnShutdown;
 
@@ -113,7 +129,7 @@ internal sealed class PendingWorkflow<TCommand, TResult> : QueuedWork, IValueTas
             {
                 try
                 {
-                    _operation = _work!.Invoke(_command, Token);
+                    _operation = _graphInvoke is null ? _work!.Invoke(_command, Token) : _graphInvoke(_command, Token);
                 }
                 finally
                 {
@@ -163,6 +179,15 @@ internal sealed class PendingWorkflow<TCommand, TResult> : QueuedWork, IValueTas
             _work = null;
             _operation = default;
             _callbacks = null;
+            if (_graphFinished is not null)
+            {
+                _graphFinished(_failure, CanceledBeforeStart);
+                _runtime = null;
+                _result = default;
+                _failure = null;
+                return WorkFinish.GraphWorkerCompleted;
+            }
+
             if (_failure is not null)
             {
                 _handlerCanceledException = _failure is OperationCanceledException && !CanceledBeforeStart;

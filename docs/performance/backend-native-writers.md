@@ -1,7 +1,7 @@
 # Backend-native shader writers: bounded allocation comparison
 
 > 2026-11-15: 旧Graphics計測harnessは現行treeから撤去しました。以下の手順は[撤去前の履歴](https://github.com/ikihiki/Lumyte/tree/40ecd0f7e979301c630917815613bdb8947732ff/tools/benchmarks)用です。
-> 現行のCPU計測入口は `dotnet run --project build -c Release -- --target BenchmarkGraphics --benchmark-mode screen` です。GPUを含む統合計測は `BenchmarkGraphicsIntegration` を明示して選び、実GPUのopt-inとdevice確認を別途必要とします。
+> 現行のCPU計測入口は `dotnet run --project build -c Release -- --target Benchmark --benchmark-area graphics --benchmark-mode screen` です。GPUを含む統合計測は `Benchmark --benchmark-area graphics --benchmark-integrated` を明示して選び、実GPUのopt-inとdevice確認を別途必要とします。
 
 2026-11-14。Aは旧Shared callback writerのf27e4b29d02a7e5d78c37b91dc94d33881264e2b、Bはbackend-native writerのcheckpoint 3582af8ada8c00ff38553eebc216bc64527171c1（uniform-root実装）である。
 Bは計測時にはf27上の未commit sourceとして凍結し、四processをA1→B1→B2→A2で直列実行した。

@@ -28,6 +28,7 @@ public sealed class NativeUiCpuTests(ITestOutputHelper output)
 
     /// <summary>Checks warm reuse, fresh renderer recording, native unsubmitted disposal, slot release and full analytic GPU pixels.</summary>
     /// <returns>The bounded hardware functional proof; no timing campaign is performed.</returns>
+    [Trait("Execution", "Gpu")]
     [NativeCpuGpuFact]
     public async Task NativeCpuDiscardAndEquivalentHardwarePixelsAsync()
     {

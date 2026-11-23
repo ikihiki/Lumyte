@@ -15,6 +15,8 @@ case "$(uname -m)" in
     *) echo 'Unsupported CPU architecture.' >&2; exit 1 ;;
 esac
 
+source "$script_dir/ci-apt.sh"
+
 packages=(build-essential pkg-config curl ca-certificates git
     unzip zip tar python3 fontconfig fonts-noto-cjk libicu-dev libssl-dev zlib1g-dev libvulkan-dev
     mesa-vulkan-drivers vulkan-tools)
@@ -49,8 +51,8 @@ install_system_packages() {
         else reason=python_probe_unavailable_or_old; py_probe=not-compatible
         fi
         report_acquisition_route native "$reason" "$privilege" "$py_probe"
-        "$@" apt-get update -o APT::Update::Error-Mode=any
-        "$@" env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends "${packages[@]}"
+        "$@" apt-get "${lumyte_apt_options[@]}" update -o APT::Update::Error-Mode=any
+        "$@" env DEBIAN_FRONTEND=noninteractive apt-get "${lumyte_apt_options[@]}" install -y --no-install-recommends "${packages[@]}"
     fi
 }
 
@@ -109,8 +111,8 @@ Dir::Cache::srcpkgcache "";
 Debug::NoLocking "true";
 APT::Sandbox::User "$(id -un)";
 EOF
-    APT_CONFIG="$apt_root/apt.conf" /usr/bin/apt-get update -o APT::Update::Error-Mode=any
-    APT_CONFIG="$apt_root/apt.conf" /usr/bin/apt-get install -y --download-only --no-install-recommends "${packages[@]}"
+    APT_CONFIG="$apt_root/apt.conf" /usr/bin/apt-get "${lumyte_apt_options[@]}" update -o APT::Update::Error-Mode=any
+    APT_CONFIG="$apt_root/apt.conf" /usr/bin/apt-get "${lumyte_apt_options[@]}" install -y --download-only --no-install-recommends "${packages[@]}"
     shopt -s nullglob
     for package in "$apt_root/archives/"*.deb; do
         dpkg-deb --extract "$package" "$LUMYTE_ENV_ROOT/sysroot"

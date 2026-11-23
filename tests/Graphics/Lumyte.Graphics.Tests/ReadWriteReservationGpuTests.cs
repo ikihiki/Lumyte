@@ -20,6 +20,7 @@ public sealed class ReadWriteReservationGpuTests
 
     /// <summary>Runs the native Vulkan path with and without the managed validation wrapper.</summary>
     /// <returns>The completed native readback checks.</returns>
+    [Trait("Execution", "Gpu")]
     [GpuFact]
     public async Task VulkanSameReservationReadAndWriteAsync()
     {
@@ -32,6 +33,7 @@ public sealed class ReadWriteReservationGpuTests
 
     /// <summary>Runs the native WebGPU path without creating overlapping storage aliases.</summary>
     /// <returns>The completed native readback checks.</returns>
+    [Trait("Execution", "Gpu")]
     [GpuFact]
     public async Task WgpuSameReservationReadAndWriteAsync()
     {

@@ -8,15 +8,22 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../../Core/Lumyte.Composition/Lumyte.Composition.csproj" />
+    <ProjectReference Include="../../Core/Lumyte.Pipelines/Lumyte.Pipelines.csproj" />
+    <ProjectReference Include="../Lumyte.Graphics.Pipelines/Lumyte.Graphics.Pipelines.csproj" />
     <ProjectReference Include="../../Core/Lumyte.Composition.Generators/Lumyte.Composition.Generators.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
     <PackageReference Include="Microsoft.Extensions.ObjectPool" Version="10.0.0" />
     <ProjectReference Include="../../Core/Lumyte.Mathematics/Lumyte.Mathematics.csproj" />
     <ProjectReference Include="../Lumyte.Graphics.Abstractions/Lumyte.Graphics.Abstractions.csproj" />
     <ProjectReference Include="../Lumyte.Graphics.Generators/Lumyte.Graphics.Generators.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
     <InternalsVisibleTo Include="Lumyte.Graphics.Drawing2D.Tests" />
+    <InternalsVisibleTo Include="Lumyte.Graphics.Drawing2D.GenericGpu.NativeTests" />
+    <InternalsVisibleTo Include="Lumyte.Graphics.Drawing2D.GenericGraph.NativeTests" />
+    <InternalsVisibleTo Include="Lumyte.Graphics.Tests" />
     <InternalsVisibleTo Include="Lumyte.UI.IntegrationTests" />
     <InternalsVisibleTo Include="Lumyte.UI.Application.Tests" />
     <InternalsVisibleTo Include="Lumyte.UI.Application" />
+    <InternalsVisibleTo Include="Lumyte.UI.Application.WebView.Cef" />
+    <InternalsVisibleTo Include="Lumyte.UI.WebView.Tests" />
     <InternalsVisibleTo Include="Lumyte.UI.TextEditing.Tests" />
     <InternalsVisibleTo Include="Lumyte.Graphics.Drawing2D.RenderGraph" />
     <None Update="README.md" Pack="true" PackagePath="/" />
@@ -40,6 +47,15 @@
     <SlangShader Include="Shaders/drawing-fragment.slang" ResourceName="Lumyte.Drawing2D.drawing-fragment" Stage="fragment" />
     <SlangShader Include="Shaders/rectangles-vertex.slang" ResourceName="Lumyte.Drawing2D.rectangles-vertex" Stage="vertex" />
     <SlangShader Include="Shaders/rectangles-fragment.slang" ResourceName="Lumyte.Drawing2D.rectangles-fragment" Stage="fragment" />
+  </ItemGroup>
+  <ItemGroup>
+    <SlangShader Include="Shaders/generic-coverage-compute.slang" ResourceName="Lumyte.Drawing2D.generic-coverage-compute" Stage="compute" AdditionalInputs="$(MSBuildProjectDirectory)/Shaders/generic-evaluator.slang" />
+    <SlangShader Include="Shaders/generic-paint-compute.slang" ResourceName="Lumyte.Drawing2D.generic-paint-compute" Stage="compute" AdditionalInputs="$(MSBuildProjectDirectory)/Shaders/generic-evaluator.slang" />
+    <SlangShader Include="Shaders/generic-clip-compute.slang" ResourceName="Lumyte.Drawing2D.generic-clip-compute" Stage="compute" AdditionalInputs="$(MSBuildProjectDirectory)/Shaders/generic-evaluator.slang" />
+    <SlangShader Include="Shaders/generic-vertex.slang" ResourceName="Lumyte.Drawing2D.generic-vertex" Stage="vertex" AdditionalInputs="$(MSBuildProjectDirectory)/Shaders/generic-evaluator.slang" />
+    <SlangShader Include="Shaders/generic-compose-fragment.slang" ResourceName="Lumyte.Drawing2D.generic-compose-fragment" Stage="fragment" AdditionalInputs="$(MSBuildProjectDirectory)/Shaders/generic-evaluator.slang" />
+    <SlangShader Include="Shaders/generic-fused-fragment.slang" ResourceName="Lumyte.Drawing2D.generic-fused-fragment" Stage="fragment" AdditionalInputs="$(MSBuildProjectDirectory)/Shaders/generic-evaluator.slang" />
+    <SlangShader Include="Shaders/generic-mesh.slang" ResourceName="Lumyte.Drawing2D.generic-mesh" Stage="mesh" AdditionalInputs="$(MSBuildProjectDirectory)/Shaders/generic-evaluator.slang" />
   </ItemGroup>
   <Import Project="../../../tools/shaders/Slang.targets" />
 </Project>

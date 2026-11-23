@@ -14,4 +14,7 @@ internal interface IGraphRendererSource2D
 
     /// <summary>Gets the compiled ResourceState.</summary>
     DrawingResourceState2D ResourceState { get; }
+
+    /// <summary>Gets the same directly borrowed generic pipeline binding, when selected.</summary>
+    Pipelines.PipelineBinding2D? PipelineBinding { get; }
 }

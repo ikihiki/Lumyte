@@ -10,12 +10,21 @@ public partial class UiElement
     private bool _layoutDirty = true;
     private bool _layoutCacheValid;
     private UiBoxConstraints _layoutConstraints;
+    private Vector2 _size;
+    private Rect2D _bounds;
+    private (Vector2 Size, Rect2D Bounds, UiBoxConstraints? Constraints)? _preparedLayout;
+    private WidgetDefinition? _preparedLayoutWidget;
+    private UiElement[]? _preparedLayoutChildren;
 
     /// <summary>Gets the last computed size; a failed pass may leave partial results.</summary>
-    public Vector2 Size { get; private set; }
+    public Vector2 Size => PreparationSurface?.LayoutPass is not null ? PreparedSize : _size;
 
     /// <summary>Gets the current bounds in the parent's logical coordinates.</summary>
-    public Rect2D Bounds { get; private set; }
+    public Rect2D Bounds => PreparationSurface?.LayoutPass is not null ? _preparedLayout?.Bounds ?? _bounds : _bounds;
+
+    internal Vector2 PreparedSize => _preparedLayout?.Size ?? _size;
+
+    internal Rect2D PreparedBounds => _preparedLayout?.Bounds ?? _bounds;
 
     internal bool IsLayoutDirty => _layoutDirty;
 
@@ -25,10 +34,21 @@ public partial class UiElement
 
     internal bool LayoutOffsetSet { get; set; }
 
-    internal bool CanReuseLayout(UiBoxConstraints constraints) => !_layoutDirty && _layoutCacheValid && _layoutConstraints == constraints;
+    internal bool CanReuseLayout(UiBoxConstraints constraints) => PreparationSurface?.IsPreparingViewportLayout == true
+        ? (_preparedLayout?.Constraints == constraints && ReferenceEquals(_preparedLayoutWidget, Widget) && _preparedLayoutChildren is not null && _preparedLayoutChildren.SequenceEqual(Children))
+            || (_preparedLayout is null && !_layoutDirty && _layoutCacheValid && _layoutConstraints == constraints && ReferenceEquals(_layoutPreparationWidget, _widget))
+        : !_layoutDirty && _layoutCacheValid && _layoutConstraints == constraints;
 
     internal void CacheLayout(UiBoxConstraints constraints)
     {
+        if (_preparedLayout is { } prepared)
+        {
+            _preparedLayout = (prepared.Size, prepared.Bounds, constraints);
+            _preparedLayoutWidget = Widget;
+            _preparedLayoutChildren = Children.ToArray();
+            return;
+        }
+
         _layoutConstraints = constraints;
         _layoutCacheValid = true;
     }
@@ -39,9 +59,44 @@ public partial class UiElement
 
     internal void PublishLayout(Vector2 size, Vector2 offset)
     {
-        Size = size;
-        Bounds = new(offset.X, offset.Y, size.X, size.Y);
+        if (PreparationSurface?.IsPreparingViewportLayout == true)
+        {
+            _preparedLayout = (size, new(offset.X, offset.Y, size.X, size.Y), _preparedLayout?.Constraints);
+            return;
+        }
+
+        _size = size;
+        _bounds = new(offset.X, offset.Y, size.X, size.Y);
         _layoutDirty = false;
+    }
+
+    internal void CompletePreparedLayout(bool commit)
+    {
+        if (_preparedLayout is { } prepared && commit)
+        {
+            _size = prepared.Size;
+            _bounds = prepared.Bounds;
+            if (prepared.Constraints is { } constraints)
+            {
+                _layoutConstraints = constraints;
+                _layoutCacheValid = true;
+            }
+
+            _layoutDirty = false;
+        }
+
+        _preparedLayout = null;
+        _preparedLayoutWidget = null;
+        _preparedLayoutChildren = null;
+        CompletePreparedContentGeometry(commit);
+    }
+
+    internal void InvalidatePreparedLayout()
+    {
+        if (_preparedLayout is { } prepared)
+        {
+            _preparedLayout = (prepared.Size, prepared.Bounds, null);
+        }
     }
 
     internal void MarkLayoutDirty()
@@ -98,5 +153,5 @@ public partial class UiElement
     /// <param name="offset">The finite parent-local offset.</param>
     protected void SetChildOffset(UiElement child, Vector2 offset) => GetLayoutPass().SetChildOffset(this, child, offset);
 
-    private UiLayoutPass GetLayoutPass() => Surface?.LayoutPass ?? throw new InvalidOperationException("Layout helpers require an active layout pass.");
+    private UiLayoutPass GetLayoutPass() => PreparationSurface?.LayoutPass ?? throw new InvalidOperationException("Layout helpers require an active layout pass.");
 }

@@ -18,6 +18,7 @@ public static class UiDesktopApplicationExtensions
         UiApplicationBuilder.ValidateSize(options.ClientSize);
         builder.SetPrimaryDefaults(options.Title, options.ClientSize);
         builder.UseDriver(() => new DesktopDriver());
+        builder.IntegrationDriverKind = "desktop";
         builder.Services.AddGraphicsDevice<DesktopDeviceFactory>(ServiceLifetime.Singleton);
         return builder;
     }

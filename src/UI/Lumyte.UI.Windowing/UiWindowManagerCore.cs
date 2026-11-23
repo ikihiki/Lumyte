@@ -28,6 +28,8 @@ internal sealed partial class UiWindowManagerCore(TimeProvider clock, IUiNativeW
 
     public bool IsStopped => _stopping && _nodes.Values.All(n => n.Terminal && n.Surface is null && n.Loans == 0 && (n.Registration is null || n.Registration.IsReleased));
 
+    internal long KeyboardTargetGeneration { get; private set; }
+
     public UiWindowRegistration Register(IUiWindowSource source, UiWindowId? keyboardRoot = null)
     {
         CheckAdmission();
@@ -298,6 +300,7 @@ internal sealed partial class UiWindowManagerCore(TimeProvider clock, IUiNativeW
         }
 
         _keyboardTargets[node.Keyboard] = window;
+        KeyboardTargetGeneration++;
     }
 
     public UiWindowHit? HitTest(UiWindowId presentationRoot, Vector2 position)

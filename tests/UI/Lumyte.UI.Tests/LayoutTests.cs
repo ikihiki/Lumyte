@@ -454,6 +454,7 @@ public sealed class LayoutTests
 
     /// <summary>Tests that sequential worker updates and layout do not introduce thread affinity.</summary>
     /// <returns>A task representing sequential layout across worker tasks.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task LayoutCanMoveAcrossThreadsSequentiallyAsync()
     {

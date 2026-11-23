@@ -17,7 +17,15 @@ public static partial class Compose
             public ProgressBar()
             {
                 Role = UiRole.ProgressBar;
+                TrackChildren = CreateChildren(1);
+                FillChildren = CreateChildren(1);
             }
+
+            /// <summary>Gets the optional track replacement; an explicitly empty slot hides the default track.</summary>
+            public WidgetChildren TrackChildren { get; }
+
+            /// <summary>Gets the optional fill replacement; an explicitly empty slot hides the default fill.</summary>
+            public WidgetChildren FillChildren { get; }
 
             /// <summary>Gets or sets a finite value in the closed interval [0,1].</summary>
             [ComposeParameter]
@@ -31,8 +39,32 @@ public static partial class Compose
             [ComposeParameter]
             public SRgba<float> Background { get; set => field = MediaGeometry.UnitColor(value, nameof(Background)); } = new(0.2f, 0.2f, 0.2f, 1);
 
+            internal bool HasTrack { get => field || TrackChildren.IsInitialized; private set; }
+
+            internal bool HasFill { get => field || FillChildren.IsInitialized; private set; }
+
             /// <inheritdoc/>
             protected override UiElement CreateElement() => new ProgressBarElement(this);
+
+            /// <inheritdoc/>
+            protected override Lumyte.UI.Compose.Definitions.Widget? RebuildDeclaration(UiWidgetRebuildContext context)
+            {
+                var next = (ProgressBar?)base.RebuildDeclaration(context);
+                if (next is not null)
+                {
+                    if (HasTrack && !next.HasTrack)
+                    {
+                        next.RegisterSlotState(true, static (ProgressBar declaration, bool specified) => declaration.HasTrack = specified);
+                    }
+
+                    if (HasFill && !next.HasFill)
+                    {
+                        next.RegisterSlotState(true, static (ProgressBar declaration, bool specified) => declaration.HasFill = specified);
+                    }
+                }
+
+                return next;
+            }
 
             /// <inheritdoc/>
             protected override void ValidateDeclaration(UiWidgetValidationContext context)
@@ -41,6 +73,20 @@ public static partial class Compose
                 {
                     throw new ArgumentOutOfRangeException(nameof(Value));
                 }
+            }
+
+            [ComposeSlot]
+            private static void Track(ProgressBar target, Lumyte.UI.Compose.Definitions.Widget[] children)
+            {
+                target.TrackChildren.Initialize(children);
+                target.RegisterSlotState(true, static (ProgressBar next, bool specified) => next.HasTrack = specified);
+            }
+
+            [ComposeSlot]
+            private static void Fill(ProgressBar target, Lumyte.UI.Compose.Definitions.Widget[] children)
+            {
+                target.FillChildren.Initialize(children);
+                target.RegisterSlotState(true, static (ProgressBar next, bool specified) => next.HasFill = specified);
             }
         }
     }

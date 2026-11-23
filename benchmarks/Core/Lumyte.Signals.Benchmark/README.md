@@ -4,10 +4,10 @@ Signalの読出し、依存グラフ、更新配送、非同期変換の時間�
 
 ## 実行
 
-リポジトリルートから共通runnerを実行します。`TestSignals`は単体テスト、sample、ベンチマークの動作確認を行い、`BenchmarkSignals`はその後に全ケースを計測します。
+リポジトリルートから共通runnerを実行します。`Test --suite signals`は単体テスト、sample、ベンチマークの動作確認を行い、`BenchmarkSignals`はその後に全ケースを計測します。
 
 ```sh
-dotnet run --project build -c Release -- --target TestSignals
+dotnet run --project build -c Release -- --target Test --suite signals
 dotnet run --project build -c Release -- --target BenchmarkSignals
 ```
 
@@ -67,7 +67,7 @@ heap増分はグラフ全体の概算で、1操作の割当量ではありませ
 
 ## 検証
 
-変更後は`TestSignals`を実行してください。[単体テスト](../../../tests/Core/Lumyte.Signals.Tests/README.md)が例外後の追跡復元、評価中の書込み拒否、動的依存、キャンセル、外へ保持したread set、購読解除後の参照解放を確認し、ベンチマークの動作確認テストが各測定ケースの前提を確認します。
+変更後は`Test --suite signals`を実行してください。[単体テスト](../../../tests/Core/Lumyte.Signals.Tests/README.md)が例外後の追跡復元、評価中の書込み拒否、動的依存、キャンセル、外へ保持したread set、購読解除後の参照解放を確認し、ベンチマークの動作確認テストが各測定ケースの前提を確認します。
 
 ## 参考資料
 

@@ -6,6 +6,9 @@ using Xunit.Abstractions;
 
 [assembly: CollectionBehavior(DisableTestParallelization = true)]
 
+// The filtered CPU lane contains no native-device/callback cases; keep default and GPU runs serial.
+[assembly: System.Reflection.AssemblyMetadata("Lumyte.CpuMethodParallelism", "true")]
+
 namespace Lumyte.Graphics.Wgpu.Tests;
 
 /// <summary>Runs panic-prone native ownership regressions in bounded, owned subprocesses.</summary>
@@ -14,11 +17,13 @@ public sealed class UnsubmittedNativeLifetimeTests(ITestOutputHelper output)
 {
     /// <summary>Checks 2500 warm and cold public recordings and analytic hardware pixels.</summary>
     /// <returns>The bounded native subprocess completion.</returns>
+    [Trait("Execution", "Gpu")]
     [HardwareFact]
     public Task PublicRecordingDoesNotExhaustUnsubmittedCommandsAsync() => RunChildAsync("--public-stress");
 
     /// <summary>Checks native registry counts, reference counts and both submission entry points.</summary>
     /// <returns>The bounded native subprocess completion.</returns>
+    [Trait("Execution", "Gpu")]
     [NativeFunctionalFact]
     public Task NativeCommandRegistryRetiresAfterFinalReleaseAsync() => RunChildAsync("--native-fixed");
 

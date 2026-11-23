@@ -82,6 +82,85 @@ public sealed partial class UiSurface
             return false;
         }
 
+        if (input is UiExpandInput expand)
+        {
+            if (!float.IsFinite(expand.Position.X) || !float.IsFinite(expand.Position.Y))
+            {
+                throw new ArgumentOutOfRangeException(nameof(input));
+            }
+
+            UiElement? target = FindElement(expand.Target);
+            if (target is null || !ReferenceEquals(target.InputVersion, _inputVersion)
+                || (target.SupportedActions & UiAutomationActions.ExpandCollapse) == 0 || target.AutomationActivePress || target.IsTransitioning
+                || !AcceptsCurrentInput(target)
+                || !IsInside(target, expand.Position))
+            {
+                return false;
+            }
+
+            for (UiElement? ancestor = target; ancestor is not null; ancestor = ancestor.Parent)
+            {
+                if (ancestor.EffectiveAutomationExposure == UiAutomationExposure.RedactedSubtree)
+                {
+                    return false;
+                }
+            }
+
+            UiElement? expandHit = _rootElement.FindInputHit(expand.Position, _inputVersion);
+            for (UiElement? node = expandHit; node is not null; node = node.Parent)
+            {
+                if (node.EffectiveAutomationExposure == UiAutomationExposure.RedactedSubtree)
+                {
+                    return false;
+                }
+
+                UiInputResult probe = node.InvokePointerProbe(expand.Position - node.InputOrigin);
+                if (probe != UiInputResult.Unhandled)
+                {
+                    return ReferenceEquals(node, target) && probe == UiInputResult.Handled && DeliverInput(target, expand, false) == UiInputResult.Handled;
+                }
+            }
+
+            return false;
+        }
+
+        if (input is UiBringItemInput bring)
+        {
+            if (string.IsNullOrEmpty(bring.Key) || bring.Key.Length > 1024 || (bring.ColumnKey is { } columnKey && (columnKey.Length == 0 || columnKey.Length > 256)) || !float.IsFinite(bring.Position.X) || !float.IsFinite(bring.Position.Y))
+            {
+                throw new ArgumentOutOfRangeException(nameof(input));
+            }
+
+            UiElement? target = FindElement(bring.Target);
+            if (target is not IUiItemViewport items || !ReferenceEquals(target.InputVersion, _inputVersion)
+                || !AcceptsCurrentInput(target) || !IsInside(target, bring.Position) || target.IsTransitioning || target.AutomationActivePress
+                || (target.SupportedActions & UiAutomationActions.SelectOption) == 0)
+            {
+                return false;
+            }
+
+            for (UiElement? ancestor = target; ancestor is not null; ancestor = ancestor.Parent)
+            {
+                if (ancestor.EffectiveAutomationExposure == UiAutomationExposure.RedactedSubtree)
+                {
+                    return false;
+                }
+            }
+
+            bool contained = false;
+            for (UiElement? itemHit = _rootElement.FindInputHit(bring.Position, _inputVersion); itemHit is not null; itemHit = itemHit.Parent)
+            {
+                if (itemHit.EffectiveAutomationExposure == UiAutomationExposure.RedactedSubtree)
+                {
+                    return false;
+                }
+
+                contained |= ReferenceEquals(itemHit, target);
+            }
+
+            return contained && (bring.ColumnKey is { } column ? target is IUiGridViewport grid && grid.BringCellIntoView(bring.Key, column) : items.BringIntoView(bring.Key));
+        }
+
         if (input is UiSetNumericInput numeric)
         {
             if (!double.IsFinite(numeric.Value) || (numeric.Upper is { } upper && (!double.IsFinite(upper) || numeric.Value > upper))
@@ -136,6 +215,12 @@ public sealed partial class UiSurface
         {
             bool consumed = _consumedKeys.Contains(keyCancel.Key);
             return CancelKey(keyCancel.Key) || consumed;
+        }
+
+        if (input is UiCommittedTextInput text)
+        {
+            ArgumentNullException.ThrowIfNull(text.Text);
+            return _focusedElement is { } focused && IsFocusEligible(focused) && RouteInput(focused, text);
         }
 
         if (input is UiKeyInput key)

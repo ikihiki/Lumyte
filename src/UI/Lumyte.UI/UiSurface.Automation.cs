@@ -40,7 +40,14 @@ public sealed partial class UiSurface
             UiNumericState? numeric = redacted ? null : element.SemanticNumericState;
             numeric?.Validate();
             bool indeterminate = !redacted && element.AutomationIndeterminate;
-            nodes.Add(new(element.AutomationId, parent, redacted ? null : element.Widget.TestId, redacted ? null : element.Widget.AutomationName, element.Widget.Role, Rectangle(bounds), Rectangle(clipped), visible, enabled, hitTestVisible, focusable, IsFocused(element), element.AutomationPressed, element.AutomationActivePress, element.SupportedActions, element.IsTransitioning, Rectangle(UiInputBounds.From(bodyOrigin, element.ContentSize)), Rectangle(element.InputBounds), value, indeterminate, redacted ? null : element.SemanticAutomationChecked, redacted ? null : element.SemanticAutomationSelected, redacted ? null : element.SemanticAutomationSelectionGroup, redacted ? null : element.SemanticAutomationOptionKey, redacted ? null : element.SemanticAutomationSelectedKey, numeric));
+            Rect2D actionRegion = redacted ? new(0, 0, element.ContentSize.X, element.ContentSize.Y) : element.SemanticActionRegion;
+            if (!float.IsFinite(actionRegion.X) || !float.IsFinite(actionRegion.Y) || !float.IsFinite(actionRegion.Width) || !float.IsFinite(actionRegion.Height)
+                || actionRegion.Width < 0 || actionRegion.Height < 0)
+            {
+                throw new InvalidOperationException("Automation action regions must be finite and nonnegative in size.");
+            }
+
+            nodes.Add(new(element.AutomationId, parent, redacted ? null : element.Widget.TestId, redacted ? null : element.Widget.AutomationName, element.Widget.Role, Rectangle(bounds), Rectangle(clipped), visible, enabled, hitTestVisible, focusable, IsFocused(element), element.AutomationPressed, element.AutomationActivePress, element.SupportedActions, element.IsTransitioning, Rectangle(UiInputBounds.From(bodyOrigin, element.ContentSize)), Rectangle(element.InputBounds.Intersect(UiInputBounds.From(bodyOrigin + new Vector2(actionRegion.X, actionRegion.Y), new Vector2(actionRegion.Width, actionRegion.Height)))), value, indeterminate, redacted ? null : element.SemanticAutomationChecked, redacted ? null : element.SemanticAutomationSelected, redacted ? null : element.SemanticAutomationSelectionGroup, redacted ? null : element.SemanticAutomationOptionKey, redacted ? null : element.SemanticAutomationSelectedKey, numeric, redacted ? null : element.SemanticAutomationExpanded, redacted ? null : element.SemanticTreeItem, redacted ? null : element.SemanticGridCell));
             if (redacted)
             {
                 return;

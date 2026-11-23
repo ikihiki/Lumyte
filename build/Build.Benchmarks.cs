@@ -21,26 +21,49 @@ internal sealed partial class Build
     [Parameter("Enumerate compiled Benchmark cases without running timings.")]
     public bool BenchmarkList { get; set; }
 
-    [Parameter("Deadline seconds, up to 900: shared for BenchmarkCore; per build/catalog/Type.Method partition for BenchmarkCoreEvaluate.")]
+    [Parameter("Deadline seconds, up to 900: shared for Benchmark --benchmark-area core; per build/catalog/Type.Method partition for Benchmark --benchmark-area core --benchmark-evaluate.")]
     public double BenchmarkTimeoutSeconds { get; set; } = 900;
 
-    private Target BenchmarkCore => definition => definition.Executes(() => RunBenchmarksAsync("Core"));
+    [Parameter("Benchmark area: core, animation, input, audio, graphics, or ui.")]
+    public string BenchmarkArea { get; set; } = "core";
 
-    private Target BenchmarkAnimation => definition => definition.Executes(() => RunBenchmarksAsync("Animation"));
+    [Parameter("Include hardware-integrated Graphics/UI benchmarks.")]
+    public bool BenchmarkIntegrated { get; set; }
 
-    private Target BenchmarkInput => definition => definition.Executes(() => RunBenchmarksAsync("Input"));
+    [Parameter("Evaluate Core in isolated serial method partitions.")]
+    public bool BenchmarkEvaluate { get; set; }
 
-    private Target BenchmarkAudio => definition => definition.Executes(() => RunBenchmarksAsync("Audio"));
+    private Target Benchmark => definition => definition.Executes(async () =>
+    {
+        string area = BenchmarkArea switch
+        {
+            "core" => "Core",
+            "animation" => "Animation",
+            "input" => "Input",
+            "audio" => "Audio",
+            "graphics" => "Graphics",
+            "ui" => "UI",
+            _ => throw new ArgumentException("Invalid --benchmark-area. Expected core, animation, input, audio, graphics, or ui."),
+        };
+        if (BenchmarkIntegrated && area is not ("Graphics" or "UI"))
+        {
+            throw new ArgumentException("--benchmark-integrated requires graphics or ui.");
+        }
 
-    private Target BenchmarkGraphics => definition => definition.Executes(() => RunBenchmarksAsync("Graphics"));
+        if (BenchmarkEvaluate && (area != "Core" || BenchmarkIntegrated))
+        {
+            throw new ArgumentException("--benchmark-evaluate requires non-integrated core.");
+        }
 
-    private Target BenchmarkGraphicsIntegration => definition => definition.Executes(() => RunBenchmarksAsync("Graphics", integratedGraphics: true));
-
-    private Target BenchmarkUI => definition => definition.Executes(() => RunBenchmarksAsync("UI"));
-
-    private Target BenchmarkUIIntegration => definition => definition.Executes(() => RunBenchmarksAsync("UI", integratedUI: true));
-
-    private Target BenchmarkCoreEvaluate => definition => definition.Executes(EvaluateCoreAsync);
+        if (BenchmarkEvaluate)
+        {
+            await EvaluateCoreAsync().ConfigureAwait(false);
+        }
+        else
+        {
+            await RunBenchmarksAsync(area, integratedGraphics: BenchmarkIntegrated, integratedUI: BenchmarkIntegrated).ConfigureAwait(false);
+        }
+    });
 
     private async Task EvaluateCoreAsync()
     {
@@ -48,7 +71,7 @@ internal sealed partial class Build
         string? mode = BenchmarkList && string.IsNullOrWhiteSpace(BenchmarkMode) ? null : BenchmarkCatalog.NormalizeMode(BenchmarkMode);
         if (NoBuild)
         {
-            throw new ArgumentException("BenchmarkCoreEvaluate owns fresh isolated builds; --no-build is not supported.");
+            throw new ArgumentException("Benchmark --benchmark-area core --benchmark-evaluate owns fresh isolated builds; --no-build is not supported.");
         }
 
         string[] projects = BenchmarkCatalog.SelectProjects(RepositoryDirectory, BenchmarkProject);
@@ -440,7 +463,7 @@ internal sealed partial class Build
                     JsonNode? built = File.Exists(provenance) ? JsonNode.Parse(File.ReadAllText(provenance)) : null;
                     if (built?["inputs_sha256"]?.ToString() != inputHash || built?["binary_sha256"]?.ToString() != binaryHash || built?["outputs_sha256"]?.ToString() != outputHash)
                     {
-                        throw new InvalidOperationException("No-build benchmark outputs do not match current inputs; run BenchmarkCore without --no-build first.");
+                        throw new InvalidOperationException("No-build benchmark outputs do not match current inputs; run Benchmark --benchmark-area core without --no-build first.");
                     }
                 }
                 else
@@ -567,7 +590,7 @@ internal sealed partial class Build
 
         if (area == "Graphics")
         {
-            foreach (string path in new[] { "benchmarks/Graphics/Shared", "tools/shaders", "build/Targets", "native/lumyte_text_parley", "native/wgpu_native", "tests/Graphics/Lumyte.Graphics.Text.Parley.Tests/Fonts" })
+            foreach (string path in new[] { "src/Maps", "src/UI", "src/Animation", "src/Input/Lumyte.Input.Abstractions", "benchmarks/Graphics/Lumyte.Graphics.Drawing2D.Benchmark/Maps", "benchmarks/Graphics/Shared", "tools/shaders", "build/Targets", "native/lumyte_text_parley", "native/wgpu_native", "tests/Graphics/Lumyte.Graphics.Text.Parley.Tests/Fonts" })
             {
                 inputs.Add(ComponentScreening.TreeHash(Path.Combine(RepositoryDirectory, path)));
             }

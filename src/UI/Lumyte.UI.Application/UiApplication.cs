@@ -231,6 +231,18 @@ public sealed partial class UiApplication : IAsyncDisposable
         await waiter.Task.WaitAsync(cancellationToken);
     }
 
+    internal UiUseEnvironment? CreateRootEnvironment(UiApplicationWindowContext context)
+    {
+        Owner.CheckOwner();
+        Lumyte.UI.Compose.Definitions.Widget carrier = Lumyte.UI.Compose.Panel();
+        foreach (IUiApplicationParticipant participant in _participants)
+        {
+            carrier = participant.ProvideRootContext(context, carrier);
+        }
+
+        return carrier.ProvidedContexts;
+    }
+
     private static TaskCompletionSource NewCompletion() => new(TaskCreationOptions.RunContinuationsAsynchronously);
 
     private void SetState(UiApplicationState state) => Volatile.Write(ref _state, (int)state);
@@ -247,6 +259,14 @@ public sealed partial class UiApplication : IAsyncDisposable
                 if (!Completion.IsCompleted)
                 {
                     TimeSpan timeout = FrameWait();
+                    foreach (IUiApplicationParticipant participant in _participants)
+                    {
+                        if (participant.NextWorkDelay is { } delay && delay < timeout)
+                        {
+                            timeout = delay < TimeSpan.Zero ? TimeSpan.Zero : delay;
+                        }
+                    }
+
                     using UiApplicationProfiling.Scope? waitProfile = UiApplicationProfiling.Begin(2);
                     try
                     {
@@ -332,6 +352,7 @@ public sealed partial class UiApplication : IAsyncDisposable
 
                 _windows?.Advance();
                 _popups?.Advance();
+                AdvanceDialogs(false);
                 DiscoverPopupText();
                 Driver.DispatchPendingInput();
                 PumpExecution();
@@ -349,6 +370,7 @@ public sealed partial class UiApplication : IAsyncDisposable
                     entry.Slot?.Advance(animationFrame);
                 }
 
+                AdvanceDialogs(animationFrame);
                 AdvancePopupAnimations(animationFrame);
                 AdvanceText();
                 foreach (IUiApplicationParticipant participant in _participants)

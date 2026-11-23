@@ -3,7 +3,7 @@ using Lumyte.Graphics.Abstractions;
 
 namespace Lumyte.Graphics.Vulkan;
 
-internal sealed class VulkanShaderDataBuffer<T> : IGraphicsShaderDataBuffer<T>, IShaderDataSource, IVulkanShaderBuffer
+internal sealed class VulkanShaderDataBuffer<T> : IGraphicsShaderDataBuffer<T>, IShaderDataSource, IVulkanShaderBuffer, IGraphicsNativeOrigin
     where T : struct, IShaderArguments
 {
     private bool _disposed;
@@ -26,6 +26,10 @@ internal sealed class VulkanShaderDataBuffer<T> : IGraphicsShaderDataBuffer<T>, 
         Owner = owner;
         Count = count;
     }
+
+    IGraphicDevice IGraphicsNativeOrigin.Device => Owner;
+
+    object IGraphicsNativeOrigin.AllocationIdentity => ((IGraphicsNativeOrigin)Storage).AllocationIdentity;
 
     public ulong Count { get; }
 
@@ -53,6 +57,18 @@ internal sealed class VulkanShaderDataBuffer<T> : IGraphicsShaderDataBuffer<T>, 
     internal IGraphicsBuffer<byte> Storage { get; }
 
     internal VulkanDevice Owner { get; }
+
+    void IGraphicsNativeOrigin.ValidateOrigin()
+    {
+        ObjectDisposedException.ThrowIf(Owner.Status == GraphicsDeviceStatus.Disposed, Owner);
+        if (Owner.Status == GraphicsDeviceStatus.Lost)
+        {
+            throw new GraphicsDeviceLostException(Owner.Loss!);
+        }
+
+        ValidateAlive();
+        ((IGraphicsNativeOrigin)Storage).ValidateOrigin();
+    }
 
     public ValueTask MapAsync(CancellationToken cancellationToken = default)
     {

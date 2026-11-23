@@ -1,0 +1,207 @@
+using System.Text;
+using Lumyte.UI.Application.WebView.Cef;
+
+if (args.Contains("--detached-child", StringComparer.Ordinal))
+{
+    NativeMethods.SetSid();
+    await Task.Delay(Timeout.Infinite);
+    return;
+}
+
+if (args.Contains("--selfcheck", StringComparer.Ordinal))
+{
+    using var stream = new MemoryStream();
+    await CefHelperProtocol.WriteAsync(stream, new(103, 7, Width: 1, Height: 1, Body: []), CancellationToken.None);
+    stream.Position = 0;
+    CefHelperPacket roundtrip = await CefHelperProtocol.ReadAsync(stream, CancellationToken.None);
+    if (roundtrip.Generation != 7 || roundtrip.Body!.Length != 0 || stream.Length != 44)
+    {
+        throw new InvalidDataException("helper-selfcheck");
+    }
+
+    Console.WriteLine("Bounded helper protocol selfcheck passed (no CEF).");
+    return;
+}
+
+// Engine-free IPC fault injection. Never selected by a normal application implicitly.
+string mode = Path.GetFileName(Environment.ProcessPath)!.Split('.').First();
+if (mode.EndsWith("argumentproof", StringComparison.Ordinal))
+{
+    File.AppendAllText(Path.Combine(Path.GetDirectoryName(Environment.ProcessPath)!, "launch-args.txt"), string.Join(" ", args) + "\n");
+    Environment.Exit(134);
+}
+
+Stream input = Console.OpenStandardInput();
+Stream output = Console.OpenStandardOutput();
+CefHelperPacket start = await CefHelperProtocol.ReadAsync(input, CancellationToken.None);
+using var startJson = System.Text.Json.JsonDocument.Parse(start.Body!);
+byte[] startUrl = Encoding.UTF8.GetBytes(startJson.RootElement.GetProperty("url").GetString()!);
+if (mode.Contains("orphan-", StringComparison.Ordinal))
+{
+    string marker = Path.Combine(Path.GetDirectoryName(Environment.ProcessPath)!, "child.txt");
+    System.Diagnostics.Process child = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(Environment.ProcessPath!)
+    {
+        ArgumentList = { "--detached-child" },
+        UseShellExecute = false,
+    })!;
+    string home = Environment.GetEnvironmentVariable("HOME")!;
+    int permissions = OperatingSystem.IsLinux() ? (int)File.GetUnixFileMode(home) : 0;
+    File.WriteAllText(marker, child.Id + "\n" + home + "\n" + Convert.ToString(permissions, 8));
+    Environment.Exit(mode.EndsWith("134", StringComparison.Ordinal) ? 134 : 0);
+}
+
+if (mode.EndsWith("slowready", StringComparison.Ordinal))
+{
+    await Task.Delay(500);
+}
+
+if (mode.EndsWith("sigabrt", StringComparison.Ordinal))
+{
+    NativeMethods.DisableCoreDump(4, default);
+    NativeMethods.Raise(6);
+    throw new InvalidOperationException("SIGABRT did not terminate fixture.");
+}
+
+if (mode.EndsWith("crash", StringComparison.Ordinal))
+{
+    Environment.Exit(134);
+}
+
+if (mode.EndsWith("-hang", StringComparison.Ordinal))
+{
+    await Task.Delay(Timeout.Infinite);
+}
+
+if (mode.EndsWith("malformed", StringComparison.Ordinal))
+{
+    await output.WriteAsync(new byte[44]);
+    return;
+}
+
+using var frames = new FakeSharedFrameProducer(Environment.GetEnvironmentVariable("TMPDIR")!);
+byte[] readyBody = new byte[32];
+frames.ReadyBody.CopyTo(readyBody, 0);
+System.Buffers.Binary.BinaryPrimitives.WriteUInt32LittleEndian(readyBody.AsSpan(24), 2);
+if (mode.EndsWith("input-js", StringComparison.Ordinal))
+{
+    System.Buffers.Binary.BinaryPrimitives.WriteUInt32LittleEndian(readyBody.AsSpan(28), 7);
+}
+
+if (mode.EndsWith("stale-ready", StringComparison.Ordinal))
+{
+    readyBody[23] ^= 1;
+}
+
+if (mode.EndsWith("start-paint", StringComparison.Ordinal))
+{
+    File.WriteAllText(Path.Combine(Path.GetDirectoryName(Environment.ProcessPath)!, "start-size.txt"), $"{start.Width}x{start.Height}");
+    frames.Publish(start.Width, start.Height, 0, 88);
+}
+
+if (mode.EndsWith("ready-frame", StringComparison.Ordinal))
+{
+    frames.Publish(start.Width, start.Height, 0, 88);
+}
+
+await CefHelperProtocol.WriteAsync(output, new(101, Body: readyBody), CancellationToken.None);
+if (mode.EndsWith("input-js", StringComparison.Ordinal))
+{
+    await CefHelperProtocol.WriteAsync(output, new(108, Body: BitConverter.GetBytes(1L)), CancellationToken.None);
+}
+
+if (mode.EndsWith("navigationhang", StringComparison.Ordinal))
+{
+    await Task.Delay(Timeout.Infinite);
+}
+
+if (mode.EndsWith("sequence-rewind", StringComparison.Ordinal))
+{
+    await CefHelperProtocol.WriteAsync(output, new(102, Sequence: 10, Body: startUrl), CancellationToken.None);
+    await CefHelperProtocol.WriteAsync(output, new(102, Sequence: 9, Body: startUrl), CancellationToken.None);
+    return;
+}
+
+if (mode.EndsWith("backpressure", StringComparison.Ordinal))
+{
+    await Task.Delay(Timeout.Infinite);
+}
+
+await CefHelperProtocol.WriteAsync(output, new(102, Body: startUrl), CancellationToken.None);
+while (true)
+{
+    CefHelperPacket packet;
+    try
+    {
+        packet = await CefHelperProtocol.ReadAsync(input, CancellationToken.None);
+    }
+    catch (EndOfStreamException)
+    {
+        return;
+    }
+
+    if (packet.Kind == 4)
+    {
+        return;
+    }
+
+    if (packet.Kind == 3)
+    {
+        frames.Publish(packet.Width, packet.Height, Math.Max(0, packet.Generation - 1));
+        frames.Publish(packet.Width, packet.Height, packet.Generation);
+        if (mode.EndsWith("lost-notice", StringComparison.Ordinal))
+        {
+            // Model a full native frame-notification queue: final frame only has a state wake.
+            await CefHelperProtocol.WriteAsync(output, new(102, Body: startUrl), CancellationToken.None);
+        }
+        else
+        {
+            await CefHelperProtocol.WriteAsync(output, new(103, packet.Generation, Width: packet.Width, Height: packet.Height), CancellationToken.None);
+        }
+    }
+    else if (packet.Kind == 10 && mode.EndsWith("input-js", StringComparison.Ordinal))
+    {
+        string script = Encoding.UTF8.GetString(packet.Body!.AsSpan(20));
+        string json = script == "deep" ? new string('[', 65) + "0" + new string(']', 65) : "42";
+        if (script == "deep-message")
+        {
+            byte[] source = Encoding.UTF8.GetBytes("https://example.test/");
+            foreach (string value in new[] { new string('[', 65) + "0" + new string(']', 65), "42" })
+            {
+                byte[] message = new byte[12 + source.Length + Encoding.UTF8.GetByteCount(value)];
+                BitConverter.GetBytes(1L).CopyTo(message, 0);
+                BitConverter.GetBytes((uint)source.Length).CopyTo(message, 8);
+                source.CopyTo(message, 12);
+                Encoding.UTF8.GetBytes(value).CopyTo(message, 12 + source.Length);
+                await CefHelperProtocol.WriteAsync(output, new(107, Body: message), CancellationToken.None);
+            }
+        }
+
+        byte[] result = new byte[20 + Encoding.UTF8.GetByteCount(json)];
+        packet.Body.AsSpan(0, 16).CopyTo(result);
+        Encoding.UTF8.GetBytes(json).CopyTo(result, 20);
+        await CefHelperProtocol.WriteAsync(output, new(106, Body: result), CancellationToken.None);
+    }
+    else if (packet.Kind is 2 or 5 or 6 or 7 or 8)
+    {
+        await CefHelperProtocol.WriteAsync(output, new(102, Sequence: packet.Sequence, Body: packet.Body!.Length == 0 ? Encoding.UTF8.GetBytes("https://example.test/") : packet.Body), CancellationToken.None);
+    }
+}
+
+internal static partial class NativeMethods
+{
+    [System.Runtime.InteropServices.LibraryImport("libc", EntryPoint = "setsid")]
+    internal static partial int SetSid();
+
+    [System.Runtime.InteropServices.LibraryImport("libc", EntryPoint = "raise")]
+    internal static partial int Raise(int signal);
+
+    [System.Runtime.InteropServices.LibraryImport("libc", EntryPoint = "setrlimit")]
+    internal static partial int DisableCoreDump(int resource, in ResourceLimit limit);
+
+    [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
+    internal struct ResourceLimit
+    {
+        internal nuint Current;
+        internal nuint Maximum;
+    }
+}

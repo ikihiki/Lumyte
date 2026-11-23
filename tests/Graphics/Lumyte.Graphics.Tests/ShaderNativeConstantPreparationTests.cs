@@ -51,6 +51,7 @@ public sealed class ShaderNativeConstantPreparationTests
     [InlineData(ShaderTarget.SpirV, 64)]
     [InlineData(ShaderTarget.SpirV, 65)]
     [InlineData(ShaderTarget.Dxil, 58)]
+    [Trait("Execution", "Integration")]
     public async Task CompilerPreservesLogicalNativeRootSizeAsync(ShaderTarget target, int words)
     {
         string fields = string.Join(" ", Enumerable.Range(0, words).Select(i => $"uint V{i};"));

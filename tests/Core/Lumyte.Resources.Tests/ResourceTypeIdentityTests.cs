@@ -12,6 +12,7 @@ public sealed class ResourceTypeIdentityTests
 
     /// <summary>Closed generic types with the same name and address have separate caches and ownership.</summary>
     /// <returns>Completion of typed acquisition and cache reuse.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task ClosedGenericTypesAtTheSameAddressRemainDistinctAsync()
     {
@@ -40,6 +41,7 @@ public sealed class ResourceTypeIdentityTests
 
     /// <summary>The same assembly-qualified type name loaded in two contexts identifies two distinct outputs.</summary>
     /// <returns>Completion of both acquisitions and assembly unload requests.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task IdenticalTypeNamesInDifferentLoadContextsRemainDistinctAsync()
     {
@@ -76,6 +78,7 @@ public sealed class ResourceTypeIdentityTests
 
     /// <summary>Two producers for one output type are ambiguous even when their pipeline objects differ.</summary>
     /// <returns>Completion of memory manager disposal.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task DuplicateOutputTypeRegistrationsAreRejectedAsync()
     {
@@ -91,6 +94,7 @@ public sealed class ResourceTypeIdentityTests
 
     /// <summary>Static transform cycles are rejected using primary input types.</summary>
     /// <returns>Completion of memory manager disposal.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task StaticInputTypeCycleIsRejectedAsync()
     {

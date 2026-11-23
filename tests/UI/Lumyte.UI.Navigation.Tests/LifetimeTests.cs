@@ -9,6 +9,7 @@ public sealed class LifetimeTests
 {
     /// <summary>Checks cleanup can explicitly return from ConfigureAwait(false) after ordinary admission has closed.</summary>
     /// <returns>The verification.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task CleanupDispatchRemainsAvailableOnlyDuringAwaitedRetirementAsync()
     {
@@ -34,6 +35,7 @@ public sealed class LifetimeTests
 
     /// <summary>Checks a failed final scope disposal is never retried while the remaining active page can still stop.</summary>
     /// <returns>The verification.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task TerminalDisposalFailureDoesNotDisposeTheSameLeaseTwiceAsync()
     {

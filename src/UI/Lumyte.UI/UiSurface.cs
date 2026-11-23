@@ -7,21 +7,52 @@ namespace Lumyte.UI;
 public sealed partial class UiSurface : IDisposable
 {
     private readonly HashSet<UiElement> _treeValidators = new(ReferenceEqualityComparer.Instance);
+    private readonly UiUseEnvironment? _rootEnvironment;
     private UiElement _rootElement;
     private bool _isDisposed;
 
     /// <summary>Initializes a new instance of the <see cref="UiSurface"/> class.</summary>
     /// <param name="root">The passive root declaration.</param>
     public UiSurface(Widget root)
+        : this(root, independentContent: false, environment: null)
     {
+    }
+
+    internal UiSurface(Widget root, bool independentContent)
+        : this(root, independentContent, environment: null)
+    {
+    }
+
+    private UiSurface(Widget root, UiUseEnvironment? environment)
+        : this(root, independentContent: false, environment: environment)
+    {
+    }
+
+    private UiSurface(Widget root, bool independentContent, UiUseEnvironment? environment)
+    {
+        _rootEnvironment = environment;
         ValidateRoot(root);
-        using var plan = new RebuildPlan(null, root, prepareArguments: PrepareAnimationUpdate);
+        if (independentContent)
+        {
+            root.ValidateFreshItemRoot();
+            if (root.HasBeenMounted)
+            {
+                throw new InvalidOperationException("Popup content roots must be newly constructed for every opening.");
+            }
+        }
+
+        using var plan = new RebuildPlan(null, root, prepareArguments: PrepareAnimationUpdate, rootEnvironment: _rootEnvironment);
         _rootElement = plan.Root;
+        if (independentContent)
+        {
+            _rootElement.HasIndependentContentOwnership = true;
+        }
+
         _applyingRebuild = true;
         try
         {
             PrepareAnimationUpdates(plan);
-            plan.Prepare();
+            plan.Prepare(this);
             PrepareSignalUpdates(plan);
             if (!_isDisposed)
             {
@@ -66,6 +97,7 @@ public sealed partial class UiSurface : IDisposable
         }
 
         _isDisposed = true;
+        CloseRequested = null;
         _panCandidates.Clear();
         _revealFocus = null;
         _restoreItemFocus = null;
@@ -80,6 +112,7 @@ public sealed partial class UiSurface : IDisposable
         _sharedElements.Clear();
         _signalDispatcher = null;
         _pendingRebuild = null;
+        ClearContentRefreshes();
         _treeValidators.Clear();
         try
         {

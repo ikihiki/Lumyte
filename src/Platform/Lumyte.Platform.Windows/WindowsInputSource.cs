@@ -222,7 +222,14 @@ public sealed class WindowsInputSource : IWindowInputSource
         else if (message is 0x20A or 0x20E)
         {
             float steps = (short)((wParam >> 16) & 0xFFFF) / 120f;
-            _buffer.Mouse(window.Id, new MouseWheelData(message == 0x20A ? new Vector2(0, steps) : new Vector2(steps, 0)));
+            NativeMethods.Point origin = default;
+            if (NativeMethods.ClientToScreen(window.Hwnd, ref origin))
+            {
+                ulong capture = _buffer.BeginAcquisition();
+                Vector2 point = (new Vector2((short)(lParam & 0xFFFF), (short)((lParam >> 16) & 0xFFFF)) - new Vector2(origin.X, origin.Y)) / window.State.Scale;
+                _buffer.Mouse(window.Id, new MouseMoveData(point), capture);
+                _buffer.Mouse(window.Id, new MouseWheelData(message == 0x20A ? new Vector2(0, steps) : new Vector2(steps, 0)), capture);
+            }
         }
         else if (message is 0x201 or 0x202 or 0x203 or 0x204 or 0x205 or 0x206 or 0x207 or 0x208 or 0x209 or 0x20B or 0x20C or 0x20D)
         {

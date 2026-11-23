@@ -12,6 +12,7 @@ public sealed class FunctionNavigationTests
     /// <summary>Checks root and nested function components obtain the activation's navigator.</summary>
     /// <param name="nested">Whether another function returns the component.</param>
     /// <returns>The asynchronous verification.</returns>
+    [Trait("Execution", "Integration")]
     [Theory]
     [InlineData(false)]
     [InlineData(true)]

@@ -16,6 +16,7 @@ public sealed class HostedRetainedPixelTests
 {
     /// <summary>Checks staged preparation and visual-image updates use retained GPU owners.</summary>
     /// <returns>The asynchronous GPU verification.</returns>
+    [Trait("Execution", "Gpu")]
     [GpuFact]
     public async Task WgpuCandidateAndVisualLayersUseRetainedFramesAsync()
     {
@@ -43,6 +44,7 @@ public sealed class HostedRetainedPixelTests
 
     /// <summary>Checks reuse, translucent overlap, clip, DPI, placement, visibility and generation rebuild.</summary>
     /// <returns>The asynchronous GPU verification.</returns>
+    [Trait("Execution", "Gpu")]
     [GpuFact]
     public async Task WgpuHostedRetainedMatchesDirectPixelsAsync()
     {

@@ -4,20 +4,22 @@ using Lumyte.Resources;
 
 namespace Lumyte.Maps;
 
-/// <summary>Owns a bounded, explicit fixed tile set; no automatic spatial requests or HTTP.</summary>
+/// <summary>Owns bounded explicit local tiles with fixed or viewport-selected admission; no HTTP.</summary>
 public sealed partial class MapSession : IAsyncDisposable
 {
     private readonly ResourceManager _resources;
-    private readonly MapTileSet _tiles;
+    private readonly MapMaintenanceCoordinator _coordinator;
     private readonly MapStyle _style;
     private readonly MapSessionOptions _options;
     private readonly List<Entry> _entries;
+    private MapTileSet _tiles;
     private Vector2 _viewport;
     private object? _attachment;
     private Task? _disposeTask;
     private bool _stopping;
     private bool _disposed;
     private bool _entered;
+    private bool _retirementQuiescent;
 
     /// <summary>Initializes a new instance of the <see cref="MapSession"/> class.</summary>
     /// <param name="resources">Borrowed manager, outliving this session.</param>
@@ -46,6 +48,7 @@ public sealed partial class MapSession : IAsyncDisposable
         }
 
         _resources = resources;
+        _coordinator = MapMaintenanceCoordinator.For(resources);
         _tiles = tiles;
         _style = style;
         _options = options;
@@ -64,7 +67,7 @@ public sealed partial class MapSession : IAsyncDisposable
                 throw new ArgumentException("Fixed demand contains a duplicate normalized tile.", nameof(fixedTiles));
             }
 
-            if (_entries.Count > 0 && _entries[0].Id.Zoom != normalized.Zoom)
+            if (!options.SelectVisibleTiles && _entries.Count > 0 && _entries[0].Id.Zoom != normalized.Zoom)
             {
                 throw new ArgumentException("M2 fixed sessions require a single zoom; overlapping parent/child fallback is not supported.", nameof(fixedTiles));
             }
@@ -86,8 +89,10 @@ public sealed partial class MapSession : IAsyncDisposable
     /// <summary>Gets the display dependency revision.</summary>
     public ulong DisplayRevision { get; private set; }
 
-    /// <summary>Gets a value indicating whether stop was requested and all retains reached terminal collection.</summary>
-    public bool IsStopped => _stopping && _entries.All(entry => entry.Operation is null);
+    /// <summary>Gets a value indicating whether stop reached producer quiescence; established quiescence remains stable during retirement.</summary>
+    /// <remarks>DisposeAsync owns final cleanup completion. Starting disposal before terminal collection does not establish quiescence.</remarks>
+    public bool IsStopped => _retirementQuiescent || (_spatial ? SpatialStopped : _stopping && _maintenance is null
+        && !_maintenanceRequired && _maintenanceFailure is null && _entries.All(entry => entry.Operation is null));
 
     /// <summary>Gets storage charged in full even for shared manager cache hits.</summary>
     public long ResidentCpuBytes => _entries.Sum(entry => entry.Charge);
@@ -97,6 +102,12 @@ public sealed partial class MapSession : IAsyncDisposable
 
     /// <summary>Gets the adopted tile count.</summary>
     public int PublishedTiles => _entries.Count(entry => entry.Lease is not null);
+
+    /// <summary>Gets integer acquisition zoom; continuous camera scale is applied only when recording.</summary>
+    public int SourceZoom => Math.Clamp((int)Math.Floor(Camera.Zoom), _tiles.MinZoom, _tiles.MaxZoom);
+
+    /// <summary>Gets normalized visible known IDs in deterministic tile order; repeated worlds share an ID.</summary>
+    public IReadOnlyList<MapTileId> VisibleTiles => _spatial ? SelectVisible(out _) : _entries.Where(entry => IsVisible(entry.Id)).Select(entry => entry.Id).ToArray();
 
     /// <summary>Gets failed tile diagnostics in stable fixed-set order.</summary>
     public IReadOnlyList<Exception> Failures => _entries.Where(entry => entry.Error is not null).Select(entry => entry.Error!).ToArray();
@@ -132,7 +143,7 @@ public sealed partial class MapSession : IAsyncDisposable
         _attachment = null;
     }
 
-    /// <summary>Changes projection only; it never requests tiles outside the explicit set.</summary>
+    /// <summary>Changes projection and finite-set demand without starting I/O.</summary>
     /// <param name="camera">Finite camera coordinates.</param>
     public void SetCamera(MapCamera camera)
     {
@@ -143,6 +154,7 @@ public sealed partial class MapSession : IAsyncDisposable
             if (Camera != normalized)
             {
                 Camera = normalized;
+                _demandDirty = true;
                 Notify();
             }
         }
@@ -167,6 +179,7 @@ public sealed partial class MapSession : IAsyncDisposable
             if (_viewport != logicalSize)
             {
                 _viewport = logicalSize;
+                _demandDirty = true;
                 Notify();
             }
         }
@@ -182,6 +195,12 @@ public sealed partial class MapSession : IAsyncDisposable
         Enter(false);
         try
         {
+            if (_spatial)
+            {
+                AdvanceSpatial();
+                return;
+            }
+
             int collected = 0;
             bool changed = false;
             foreach (Entry entry in _entries)
@@ -227,6 +246,7 @@ public sealed partial class MapSession : IAsyncDisposable
                     lease?.Dispose();
                     reference?.Dispose();
                     entry.Operation = null;
+                    EndRetain(entry);
                     if (entry.Lease is null)
                     {
                         entry.Charge = 0;
@@ -238,12 +258,18 @@ public sealed partial class MapSession : IAsyncDisposable
             {
                 foreach (Entry entry in _entries)
                 {
-                    if (entry.Dispatched || InFlightTiles >= Math.Min(_options.MaxInFlightTiles, _options.MaxCompletedTiles)
+                    if (entry.Dispatched || (_options.SelectVisibleTiles && !IsVisible(entry.Id)) || InFlightTiles >= Math.Min(_options.MaxInFlightTiles, _options.MaxCompletedTiles)
                         || ResidentCpuBytes > _options.MaxResidentCpuBytes - _tiles.LoadProfile.MaxReservationBytesPerTile)
                     {
                         continue;
                     }
 
+                    if (!_coordinator.TryBeginRetain())
+                    {
+                        continue;
+                    }
+
+                    entry.CoordinatedRetain = true;
                     entry.Charge = _tiles.LoadProfile.MaxReservationBytesPerTile;
                     entry.Dispatched = true;
                     try
@@ -254,6 +280,7 @@ public sealed partial class MapSession : IAsyncDisposable
                     {
                         entry.Charge = 0;
                         entry.Dispatched = false;
+                        EndRetain(entry);
                         throw;
                     }
                 }
@@ -277,6 +304,14 @@ public sealed partial class MapSession : IAsyncDisposable
         try
         {
             _stopping = true;
+            if (_spatial)
+            {
+                _entries.RemoveAll(entry => entry.Operation is null && entry.Lease is null && !entry.Retiring);
+                foreach (Entry entry in _entries)
+                {
+                    entry.Wanted = false;
+                }
+            }
         }
         finally
         {
@@ -303,41 +338,13 @@ public sealed partial class MapSession : IAsyncDisposable
             throw new InvalidOperationException("Session callbacks cannot reenter cleanup.");
         }
 
+        _retirementQuiescent = IsStopped;
         _stopping = true;
         _disposeTask = DisposeCoreAsync();
         return new(_disposeTask);
     }
 
-    private async Task DisposeCoreAsync()
-    {
-        foreach (Entry entry in _entries)
-        {
-            if (entry.Operation is { } operation)
-            {
-                ResourceReference<MapTileContent>? result = null;
-                try
-                {
-                    result = await operation.ConfigureAwait(false);
-                }
-                catch (Exception error)
-                {
-                    entry.Error = error;
-                }
-
-                result?.Dispose();
-                entry.Operation = null;
-            }
-
-            entry.Lease?.Dispose();
-            entry.Lease = null;
-            entry.Reference?.Dispose();
-            entry.Reference = null;
-            entry.Charge = 0;
-        }
-
-        _disposed = true;
-        Changed = null;
-    }
+    private Task DisposeCoreAsync() => DisposeOwnedAsync();
 
     private void Enter(bool changing)
     {
@@ -361,6 +368,20 @@ public sealed partial class MapSession : IAsyncDisposable
     private sealed class Entry(MapTileId id)
     {
         internal MapTileId Id { get; } = id;
+
+        internal MapTileSet? Tiles { get; init; }
+
+        internal bool Wanted { get; set; }
+
+        internal int Priority { get; set; }
+
+        internal double Distance { get; set; }
+
+        internal ulong LastUse { get; set; }
+
+        internal bool Retiring { get; set; }
+
+        internal bool CoordinatedRetain { get; set; }
 
         internal bool Dispatched { get; set; }
 

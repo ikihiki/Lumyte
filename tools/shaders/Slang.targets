@@ -1,7 +1,9 @@
 <Project>
   <PropertyGroup>
     <SlangCompilerPath Condition="'$(SlangCompilerPath)' == ''">slangc</SlangCompilerPath>
-    <_LumyteShaderToolProject>$(MSBuildThisFileDirectory)Lumyte.ShaderCompiler/Lumyte.ShaderCompiler.csproj</_LumyteShaderToolProject>
+    <_LumyteShaderToolProject>$([MSBuild]::NormalizePath($(MSBuildThisFileDirectory), Lumyte.ShaderCompiler, Lumyte.ShaderCompiler.csproj))</_LumyteShaderToolProject>
+    <_LumyteCanonicalPrebuiltShaderProject Condition="'$(LUMYTE_PREBUILT_ROOT)' != ''">$([MSBuild]::NormalizePath($(LUMYTE_PREBUILT_ROOT), tools, shaders, Lumyte.ShaderCompiler, Lumyte.ShaderCompiler.csproj))</_LumyteCanonicalPrebuiltShaderProject>
+    <_LumyteUsePrebuiltShaderTool Condition="'$(LUMYTE_PREBUILT_CONSUMER)' == '1' and '$(_LumyteShaderToolProject)' == '$(_LumyteCanonicalPrebuiltShaderProject)'">true</_LumyteUsePrebuiltShaderTool>
     <_LumyteShaderDotnet Condition="'$(DotNetHostPath)' != ''">$(DotNetHostPath)</_LumyteShaderDotnet>
     <_LumyteShaderDotnet Condition="'$(_LumyteShaderDotnet)' == ''">dotnet</_LumyteShaderDotnet>
   </PropertyGroup>
@@ -153,10 +155,11 @@ public sealed class ResolveSlangCompilerInput : Microsoft.Build.Utilities.Task {
   </ItemGroup>
   <!-- Use the shared MSBuild graph, not recursive independent dotnet build processes. -->
   <Target Name="PrepareLumyteShaderCompiler" Condition="'@(SlangShader)' != ''">
-    <!-- NoBuild consumers (including Pack) may resolve existing output, never build it. -->
+    <!-- NoBuild and prebuilt CI consumers may resolve the canonical tool, never
+         build it. A temporary fixture may still compile its own Slang inputs. -->
     <PropertyGroup>
-      <_LumyteShaderToolTargetName Condition="'$(NoBuild)' != 'true'">Build</_LumyteShaderToolTargetName>
-      <_LumyteShaderToolTargetName Condition="'$(NoBuild)' == 'true'">GetTargetPath</_LumyteShaderToolTargetName>
+      <_LumyteShaderToolTargetName Condition="'$(NoBuild)' != 'true' and '$(_LumyteUsePrebuiltShaderTool)' != 'true'">Build</_LumyteShaderToolTargetName>
+      <_LumyteShaderToolTargetName Condition="'$(NoBuild)' == 'true' or '$(_LumyteUsePrebuiltShaderTool)' == 'true'">GetTargetPath</_LumyteShaderToolTargetName>
     </PropertyGroup>
     <MSBuild Projects="$(_LumyteShaderToolProject)" Targets="$(_LumyteShaderToolTargetName)" Properties="Configuration=Release"
              RemoveProperties="TargetFramework;RuntimeIdentifier;SelfContained;PublishAot;PublishTrimmed" BuildInParallel="false">
@@ -180,9 +183,9 @@ public sealed class ResolveSlangCompilerInput : Microsoft.Build.Utilities.Task {
     </ItemGroup>
   </Target>
   <Target Name="CompileSlangShaders" DependsOnTargets="PrepareLumyteShaderCompiler"
-          Inputs="%(SlangShader.FullPath);$(MSBuildThisFileDirectory)include/lumyte.slang;$(MSBuildThisFileFullPath);$(MSBuildAllProjects);$(_LumyteSlangCompilerInput);$(_LumyteSlangCompilerIdentityFile);@(_LumyteShaderToolInputs)"
+          Inputs="%(SlangShader.FullPath);%(SlangShader.AdditionalInputs);$(MSBuildThisFileDirectory)include/lumyte.slang;$(MSBuildThisFileFullPath);$(MSBuildAllProjects);$(_LumyteSlangCompilerInput);$(_LumyteSlangCompilerIdentityFile);@(_LumyteShaderToolInputs)"
           Outputs="$(IntermediateOutputPath)Slang/%(SlangShader.ResourceName).lshader"
-          Condition="'@(SlangShader)' != '' and '$(NoBuild)' != 'true'">
+          Condition="'@(SlangShader)' != '' and '$(NoBuild)' != 'true' and '$(DesignTimeBuild)' != 'true'">
     <Error Condition="'%(SlangShader.ResourceName)' == ''" Text="SlangShader requires a unique ResourceName." />
     <ResolveSlangTargets Shader="@(SlangShader)">
       <Output TaskParameter="Targets" PropertyName="_ResolvedSlangTargets" />

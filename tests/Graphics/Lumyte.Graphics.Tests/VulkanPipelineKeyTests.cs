@@ -114,6 +114,7 @@ public sealed class VulkanPipelineKeyTests
     }
 
     /// <summary>Rejects oversized public state/pass calls before touching attachment resources.</summary>
+    [Trait("Execution", "Gpu")]
     [GpuFact]
     public void PublicAdmissionRejectsNineAttachments()
     {

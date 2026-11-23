@@ -23,7 +23,7 @@ services.AddSingleton<ExecutionRuntime>();
 ## ベンチマーク
 
 ```sh
-dotnet run --project build -c Release -- --target BenchmarkCore --benchmark-project Lumyte.Execution --benchmark-mode screen
+dotnet run --project build -c Release -- --target Benchmark --benchmark-area core --benchmark-project Lumyte.Execution --benchmark-mode screen
 ```
 
 Linux x64のNative AOTでも、DI有無とHost／専用threadの4構成を起動から終了まで確認した。

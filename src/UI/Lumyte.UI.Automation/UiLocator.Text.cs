@@ -14,9 +14,21 @@ public sealed partial class UiLocator
         return Page.ExecuteAsync(
  async run =>
         {
+            if (_queries.LastOrDefault() is { } targetQuery && targetQuery.ColumnKey is not null)
+            {
+                throw run.Failure(UiAutomationFailureKind.UnsupportedAction, "Read-only grid cells do not support Fill.");
+            }
+
+            await PrepareItemTargetAsync(run);
             if (run.Host is not IUiAutomationTextHost editing)
             {
                 throw run.Failure(UiAutomationFailureKind.UnsupportedAction, "The host does not provide committed text editing.");
+            }
+
+            UiAutomationNode? target = Single(run, await run.SnapshotAsync());
+            if (target is not null)
+            {
+                RequireAction(run, target, UiAutomationActions.Edit);
             }
 
             return await run.WithInputAsync(

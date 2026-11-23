@@ -5,6 +5,7 @@ using Xunit;
 namespace Lumyte.Graphics.Validation.Tests;
 
 /// <summary>Reference cardinality belongs to the validation adapter, not raw encoders.</summary>
+[Collection("Static codec counters")]
 public sealed class ReferenceCountLayerTests
 {
     private static int _declared;

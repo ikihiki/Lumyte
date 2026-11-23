@@ -18,6 +18,7 @@ public sealed partial class Drawing2DTests
 {
     /// <summary>Checks strict admitted texture budgets in direct and graph drawing on Vulkan.</summary>
     /// <returns>The asynchronous GPU verification.</returns>
+    [Trait("Execution", "Gpu")]
     [GpuFact]
     public async Task VulkanArgumentPartitionsAsync()
     {
@@ -28,6 +29,7 @@ public sealed partial class Drawing2DTests
 
     /// <summary>Checks strict admitted texture budgets in direct and graph drawing on wgpu.</summary>
     /// <returns>The asynchronous GPU verification.</returns>
+    [Trait("Execution", "Gpu")]
     [GpuFact]
     public async Task WgpuArgumentPartitionsAsync()
     {
@@ -38,6 +40,7 @@ public sealed partial class Drawing2DTests
 
     /// <summary>Mis-sized WGSL storage ranges fail preflight before earlier valid reservations publish.</summary>
     /// <returns>The asynchronous GPU-device verification.</returns>
+    [Trait("Execution", "Gpu")]
     [GpuFact]
     public async Task WgpuArgumentRangeSizePreflightAsync()
     {

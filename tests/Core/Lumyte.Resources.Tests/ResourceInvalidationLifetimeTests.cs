@@ -13,6 +13,7 @@ public sealed class ResourceInvalidationLifetimeTests
     /// <summary>Returning the last owner before or after loss lets trim remove monitoring and recovery work.</summary>
     /// <param name="returnBeforeLoss">Whether ownership is returned before the runtime becomes unavailable.</param>
     /// <returns>Completion of invalidation, reclamation and recovery without rebuilding unused values.</returns>
+    [Trait("Execution", "Integration")]
     [Theory]
     [InlineData(true)]
     [InlineData(false)]
@@ -41,6 +42,7 @@ public sealed class ResourceInvalidationLifetimeTests
 
     /// <summary>A live logical reference keeps its input provenance after the invalidated content is reclaimed.</summary>
     /// <returns>Completion of content reclamation and recovery through the original handle.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task LiveReferencePreservesRecoveryAfterContentTrimAsync()
     {
@@ -69,6 +71,7 @@ public sealed class ResourceInvalidationLifetimeTests
     /// <summary>A retained parent preserves a child's provenance for both resident and reclaimed build dependencies.</summary>
     /// <param name="lifetime">How long the parent retains the child's content.</param>
     /// <returns>Completion of child reclamation and parent recovery.</returns>
+    [Trait("Execution", "Integration")]
     [Theory]
     [InlineData(ResourceDependencyLifetime.Resident)]
     [InlineData(ResourceDependencyLifetime.Build)]
@@ -97,6 +100,7 @@ public sealed class ResourceInvalidationLifetimeTests
 
     /// <summary>Failed cleanup keeps invalidated provenance until a later trim finishes its release.</summary>
     /// <returns>Completion of failed destruction, retry and recovery without resurrecting the released value.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task FailedCleanupRetainsWatchUntilRetryCompletesAsync()
     {

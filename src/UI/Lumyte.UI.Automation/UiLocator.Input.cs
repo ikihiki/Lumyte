@@ -96,6 +96,7 @@ public sealed partial class UiLocator
 
     private async ValueTask<UiAutomationId> FocusAsync(UiAutomationRun run, IUiAutomationInputLease lease)
     {
+        UiAutomationNode? previous = null;
         while (true)
         {
             UiAutomationId? focused = await run.Host.RunOnUiThreadAsync(
@@ -121,6 +122,38 @@ public sealed partial class UiLocator
                         return node.Id;
                     }
 
+                    if (node.GridCell is not null)
+                    {
+                        if (!Actionable(node, null, out Vector2 point) || previous is null || !SameGeometry(previous, node)
+                            || run.Probe(surface, point).ActivationTarget != node.Id)
+                        {
+                            previous = node;
+                            return null;
+                        }
+
+                        run.Send(lease, surface, new UiPointerInput(lease.PointerId, UiPointerPhase.Move, point));
+                        UiAutomationSnapshot moved = surface.CaptureAutomationSnapshot();
+                        run.Remember(moved);
+                        UiAutomationNode? current = Single(run, moved);
+                        if (current is null || !SameGeometry(node, current) || !Actionable(current, null, out Vector2 currentPoint)
+                            || currentPoint != point || run.Probe(surface, point).ActivationTarget != node.Id)
+                        {
+                            throw run.Failure(UiAutomationFailureKind.TargetChanged, "The cell changed after pointer Move; focus input will not be retried.");
+                        }
+
+                        run.Send(lease, surface, new UiPointerInput(lease.PointerId, UiPointerPhase.Down, point));
+                        run.Send(lease, surface, new UiPointerInput(lease.PointerId, UiPointerPhase.Cancel, point));
+                        UiAutomationSnapshot after = surface.CaptureAutomationSnapshot();
+                        run.Remember(after);
+                        UiAutomationNode? focusedCell = Single(run, after);
+                        if (focusedCell is null || focusedCell.Id != node.Id || !focusedCell.IsFocused || !run.CanReceiveKeys(surface))
+                        {
+                            throw run.Failure(UiAutomationFailureKind.TargetChanged, "The cell changed during normal focus input; input will not be retried.");
+                        }
+
+                        return node.Id;
+                    }
+
                     SendKey(run, lease, surface, Key.Tab, true, UiModifiers.None);
                     SendKey(run, lease, surface, Key.Tab, false, UiModifiers.None);
                     return null;
@@ -131,7 +164,7 @@ public sealed partial class UiLocator
                 return id;
             }
 
-            await run.NextFrameAsync("Tab focus traversal");
+            await run.NextFrameAsync("ordinary focus traversal");
         }
     }
 

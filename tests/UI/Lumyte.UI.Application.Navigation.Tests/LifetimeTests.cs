@@ -8,6 +8,7 @@ public sealed class LifetimeTests
 {
     /// <summary>Checks constructor injection, shared context, fresh scopes on history and final disposal order.</summary>
     /// <returns>The verification.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task PageScopesAreIndependentAcrossHistoryAndShareTheApplicationSingletonAsync()
     {
@@ -43,6 +44,7 @@ public sealed class LifetimeTests
     /// <summary>Checks partial scope ownership survives each user-code failure and leaves the current view intact.</summary>
     /// <param name="stage">The failing user-code stage.</param>
     /// <returns>The verification.</returns>
+    [Trait("Execution", "Integration")]
     [Theory]
     [InlineData("factory")]
     [InlineData("constructor")]
@@ -65,6 +67,7 @@ public sealed class LifetimeTests
 
     /// <summary>Checks canceled nonpublished pages are retired and never built after a late completion.</summary>
     /// <returns>The verification.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task CancellationReleasesThePreparedScopeWithoutPublishingAsync()
     {
@@ -84,6 +87,7 @@ public sealed class LifetimeTests
 
     /// <summary>Checks failed retirement preserves the same scope until its retry succeeds.</summary>
     /// <returns>The verification.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task RetirementFailureCanRetryBeforeScopeDisposalAsync()
     {
@@ -101,6 +105,7 @@ public sealed class LifetimeTests
 
     /// <summary>Checks DI disposal failure is terminal and never invokes the failed scope a second time.</summary>
     /// <returns>The verification.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task ScopeDisposalFailureIsNotRetriedAndOtherScopesStillStopAsync()
     {
@@ -117,6 +122,7 @@ public sealed class LifetimeTests
 
     /// <summary>Checks the current DI page's guard is borrowed and rejection releases only the candidate scope.</summary>
     /// <returns>The verification.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task GuardRejectionPreservesTheCurrentScopeAsync()
     {

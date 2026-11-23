@@ -41,6 +41,7 @@ public sealed class DesktopApplicationBenchmarkTests(ITestOutputHelper output)
 
     /// <summary>Proves a concurrent application owner cannot select the native host request's frame.</summary>
     /// <returns>The deterministic thread-identity acknowledgment check.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task ForeignOwnerCannotSelectAcceptedFrameAsync()
     {
@@ -100,6 +101,7 @@ public sealed class DesktopApplicationBenchmarkTests(ITestOutputHelper output)
     /// <summary>Exercises static, local and full actual standard desktop frames with untimed analytic pixels and orderly stop.</summary>
     /// <param name="count">The approved visible rectangle count.</param>
     /// <returns>The explicitly opted-in native functional validation, never a performance run.</returns>
+    [Trait("Execution", "Gpu")]
     [OwnedDesktopTheory]
     [InlineData(100)]
     [InlineData(1000)]

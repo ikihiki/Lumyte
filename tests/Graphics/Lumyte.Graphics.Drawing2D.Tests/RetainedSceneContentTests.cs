@@ -111,6 +111,7 @@ public sealed class RetainedSceneContentTests
     }
 
     /// <summary>Checks concurrent readers observe one published immutable layout.</summary>
+    [Trait("Execution", "Integration")]
     [Fact]
     public void ConcurrentReadersSharePublishedPages()
     {

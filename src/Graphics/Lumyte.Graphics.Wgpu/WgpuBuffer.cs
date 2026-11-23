@@ -6,7 +6,7 @@ using A = Ahjo.Wgpu;
 
 namespace Lumyte.Graphics.Wgpu;
 
-internal sealed class WgpuBuffer<T> : IGraphicsBuffer<T>, IShaderRawBuffer
+internal sealed class WgpuBuffer<T> : IGraphicsBuffer<T>, IShaderRawBuffer, IGraphicsNativeOrigin
     where T : unmanaged
 {
     private readonly WgpuDevice _owner;
@@ -64,6 +64,10 @@ internal sealed class WgpuBuffer<T> : IGraphicsBuffer<T>, IShaderRawBuffer
         _native = owner.NativeDevice.CreateBuffer(new A.BufferDescriptor { Size = size, Usage = usage });
     }
 
+    IGraphicDevice IGraphicsNativeOrigin.Device => Owner;
+
+    object IGraphicsNativeOrigin.AllocationIdentity => this;
+
     public unsafe object ShaderHandle => (nint)Native.Handle;
 
     public Type ElementType => typeof(T);
@@ -97,6 +101,17 @@ internal sealed class WgpuBuffer<T> : IGraphicsBuffer<T>, IShaderRawBuffer
     }
 
     internal WgpuDevice Owner => _owner;
+
+    void IGraphicsNativeOrigin.ValidateOrigin()
+    {
+        ObjectDisposedException.ThrowIf(Owner.Status == GraphicsDeviceStatus.Disposed, Owner);
+        if (Owner.Status == GraphicsDeviceStatus.Lost)
+        {
+            throw new GraphicsDeviceLostException(Owner.Loss!);
+        }
+
+        ValidateByteRange(0, SizeInBytes);
+    }
 
     public BufferSlice<T> SliceElements(ulong offset, ulong count) => new(this, offset, count);
 

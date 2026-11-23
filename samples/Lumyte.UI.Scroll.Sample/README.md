@@ -6,6 +6,6 @@ Headless host上でScrollView、借用ScrollController、実体を持つScrollBa
 
 ```sh
 dotnet run --project samples/Lumyte.Samples -- --sample ui-scroll --backend headless -- tests/Graphics/Lumyte.Graphics.Text.Parley.Tests/Fonts/DejaVuSans.ttf
-dotnet run --project build -- TestUiScroll
-dotnet run --project build -- TestUiScrollAot
+dotnet run --project build -- Test --suite ui --feature scroll
+dotnet run --project build -- Test --suite ui --feature scroll --aot
 ```

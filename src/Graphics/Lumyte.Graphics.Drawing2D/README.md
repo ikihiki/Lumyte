@@ -182,5 +182,9 @@ device、renderer、target、commands の初期化と target の ColorAttachment
 
 ## 明示的な GPU 資源保持
 
-Composition の完全な 11 Slot 宣言へ RetentionGpuLimits を指定すると、完了済みの不変 native payload と引数表世代を複数フレームで共有できる。既定は変更しない。
-方針、4 page の更新単位、整数移動の資格と完了後の回収は [GRAPHICS-0041](../../../docs/adr/graphics/GRAPHICS-0041-immutable-gpu-drawing-retention.md) を参照する。
+汎用の直接 IPipeline 経路は、GraphicsPipelinePolicy.ImmutableUploads に GraphicsImmutableUploadPolicy(maxBytes, maxChunks, chunkBytes) を明示し、同じ build 方針と EnableResidentInstances=true の DrawingRetentionOptions2D を Renderer2D へ渡す。Stage/Then と明示 Transfers.Upload は変更しない。完了済みの読み取り専用規範 chunk を共有し、変更 chunk は別の native owner へ構築する。target、実行 plan、writable scratch と複数 chunk の連続結合先は毎回固有であり、共有しない。保持中・未公開の使用権も有限 native 予算へ課金し、全入場を先に検査する。
+
+保持経路の capture と snapshot を先に課金し、RenderRequest2D が IGraphicsPreparationBudget で残りの作業上限だけを汎用 host に渡す。宣言済み pipeline 方針を拡張したり品質を落としたりしない。無条件に準備結果や最終画像を cache せず、live image の view と内容は各準備の資源 snapshot と使用権で管理する。
+
+互換 Composition の完全な宣言に対する RetentionGpuLimits、native record と引数表世代の共有も維持する。既定は変更しない。
+汎用の byte chunk と互換経路の 4 page という異なる更新単位、整数移動の資格と完了後の回収は [GRAPHICS-0041](../../../docs/adr/graphics/GRAPHICS-0041-immutable-gpu-drawing-retention.md) を参照する。

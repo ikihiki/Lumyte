@@ -3,6 +3,7 @@ using Lumyte.Diagnostics.UI.Automation;
 using Lumyte.Diagnostics.UI.Automation.Contracts;
 using Lumyte.Input.Abstractions;
 using Lumyte.UI.Automation;
+using Lumyte.UI.Collections;
 using Lumyte.UI.Windowing.Automation;
 using Xunit;
 
@@ -272,6 +273,316 @@ public sealed class AutomationTests
         f.Pump();
         f.Windows.Release(window);
         f.Pump();
+    }
+
+    /// <summary>Remote actions share the actual modal policy and exclusive group lease, including background rejection.</summary>
+    /// <returns>The asynchronous cleanup completion.</returns>
+    [Fact]
+    public async Task RemoteDialogActionsRejectUnderlyingLocatorAndAllowCurrentDialogAsync()
+    {
+        using var fixture = new Fixture();
+        int dialogClicks = 0;
+        Lumyte.UI.Windowing.Compose.Definitions.Dialog portal = Lumyte.UI.Windowing.Compose.Dialog(key: "modal", isOpen: true, initialClientSize: new System.Numerics.Vector2(80, 60))[Lumyte.UI.Compose.Button(testId: "dialog-action", width: 40, height: 20, onClick: () => dialogClicks++)];
+        fixture.Surface.Rebuild(Lumyte.UI.Compose.Panel()[Lumyte.UI.Compose.Button(testId: "behind", width: 20, height: 20), portal]);
+        fixture.Surface.UpdateLayout();
+        using var dialogs = new UiDialogPortalCoordinator(fixture.Windows, fixture.Popups, fixture.Owner, fixture.Registration.Window, fixture.Surface);
+        void Pump()
+        {
+            fixture.Pump(1);
+            dialogs.Advance();
+        }
+
+        for (int index = 0; index < 24; index++)
+        {
+            Pump();
+        }
+
+        UiDialogOpened opened = Assert.Single(dialogs.CaptureDialogs());
+        Assert.True(dialogs.TryGetSurface(opened.DialogId, out UiSurface? content));
+        using var input = new SemaphoreSlim(1, 1);
+        IUiAutomationHost Factory(UiSurface surface) => new Host(surface, () => fixture.Pump(1), input);
+        var routing = new UiPopupAutomationSession(fixture.Popups, Factory(fixture.Surface), Factory);
+        using var runtime = new UiAutomationDiagnosticsRuntime(TimeProvider.System, new());
+        using UiAutomationDiagnosticRegistration parent = runtime.Register("dialog-owner", fixture.Surface, routing.CreateOwnerHost(fixture.Surface), new() { AllowInput = true });
+        using UiAutomationDiagnosticRegistration child = runtime.RegisterPopup(parent, opened.DialogId, "dialog-content", content!, routing.CreateOwnerHost(content!), new() { AllowInput = true });
+        var operations = new DiagnosticOperationSet(new UiAutomationDiagnostics(runtime));
+        var remoteSession = Guid.NewGuid();
+        long frame = 0;
+        try
+        {
+            var control = Guid.Parse(Call("control-acquire", new() { ["target-id"] = DiagnosticValue.From(parent.TargetId.ToString("D")), ["duration-ms"] = DiagnosticValue.From(5000L) })["control-id"].String!);
+            Assert.Null(fixture.Popups.ProbePointer(fixture.Surface, new(5)).ActivationTarget);
+            Assert.False(fixture.Popups.CanReceiveKeys(fixture.Surface));
+            Assert.Equal("TimedOut", Complete(parent.TargetId, "behind", control, 1)["state"].String);
+            Assert.Equal(0, dialogClicks);
+            Assert.Equal("Succeeded", Complete(child.TargetId, "dialog-action", control, 2)["state"].String);
+            Assert.Equal(1, dialogClicks);
+        }
+        finally
+        {
+            runtime.BeginStop();
+            for (int index = 0; index < 1000 && !runtime.IsStopped; index++)
+            {
+                runtime.Advance(new(frame++, System.Diagnostics.Stopwatch.GetTimestamp()));
+                fixture.Pump(1);
+                Thread.Yield();
+            }
+
+            Assert.True(runtime.IsStopped);
+            await routing.DisposeAsync();
+            dialogs.Dispose();
+            for (int index = 0; index < 30; index++)
+            {
+                Pump();
+            }
+
+            Assert.True(dialogs.IsStopped);
+        }
+
+        IReadOnlyDictionary<string, DiagnosticValue> Call(string operation, Dictionary<string, DiagnosticValue> arguments)
+        {
+            var context = new DiagnosticOperationContext(Guid.NewGuid(), remoteSession, new(frame, 0), "modal-test", null, CancellationToken.None);
+            DiagnosticOperationResult result = operations.Invoke(operation, arguments, context, new HashSet<DiagnosticPermission> { DiagnosticPermission.Observe, DiagnosticPermission.OverrideInput });
+            Assert.Equal("success", result.Status);
+            return result.Values!;
+        }
+
+        IReadOnlyDictionary<string, DiagnosticValue> Complete(Guid target, string testId, Guid control, long sequence)
+        {
+            IReadOnlyDictionary<string, DiagnosticValue> accepted = Call("action-start", new()
+            {
+                ["target-id"] = DiagnosticValue.From(target.ToString("D")),
+                ["control-id"] = DiagnosticValue.From(control.ToString("D")),
+                ["sequence"] = DiagnosticValue.From(sequence),
+                ["plan-json"] = DiagnosticValue.From(UiRemoteSchema.SerializePlan(new UiRemotePlan(9, "click", [new("test-id", Value: testId)]))),
+                ["job-timeout-ms"] = DiagnosticValue.From(1000L),
+            });
+            for (int index = 0; index < 2000; index++)
+            {
+                runtime.Advance(new(frame++, System.Diagnostics.Stopwatch.GetTimestamp()));
+                fixture.Pump(1);
+                IReadOnlyDictionary<string, DiagnosticValue> state = Call("action-get", new() { ["job-id"] = accepted["job-id"] });
+                if (state["state"].String is "Succeeded" or "Failed" or "Canceled" or "TimedOut")
+                {
+                    return state;
+                }
+
+                Thread.Yield();
+            }
+
+            throw new InvalidOperationException("The bounded remote modal test did not finish.");
+        }
+    }
+
+    /// <summary>Offscreen key realization never scrolls a covered owner or a different normal window.</summary>
+    /// <param name="covered">Whether another real hosted window covers the group point.</param>
+    /// <returns>The asynchronous check.</returns>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task KeyRealizationHonorsNormalWindowOcclusionAsync(bool covered)
+    {
+        using var f = new Fixture();
+        int templates = 0;
+        f.Surface.Rebuild(Lumyte.UI.Compose.Panel()[Collections.Compose.ListBox<int>(
+            items: Enumerable.Range(0, 1000).ToArray(),
+            keySelector: item => item.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            itemTemplate: _ =>
+            {
+                templates++;
+                return Lumyte.UI.Compose.SizedBox(height: 20);
+            },
+            testId: "list",
+            width: 200,
+            height: 60,
+            virtualization: new Collections.UiItemVirtualization(20, 0))]);
+        f.Surface.UpdateLayout();
+        ScrollViewElement scroll = Assert.IsType<ScrollViewElement>(f.Surface.RootElement.Children[0].Children[0]);
+        using var other = new UiSurface(Lumyte.UI.Compose.Button());
+        UiWindowId window = f.Windows.Create(new(f.Registration.Window, new(200, 150), UiWindowRole.Normal, UiWindowInputMode.Interactive, new(f.Registration.Window, new(0, 0, 0, 0), UiWindowPlacementSide.Below)));
+        Task<UiWindowBinding> pending = f.Windows.BindPresentationAsync(window, other).AsTask();
+        f.Pump();
+        UiWindowBinding binding = await pending;
+        using UiPopupOwner owner = f.Popups.RegisterOwner(window, other);
+        if (covered)
+        {
+            f.Windows.Show(window);
+            f.Pump();
+        }
+
+        Assert.Equal(covered ? window : f.Registration.Window, f.Windows.HitTest(f.Registration.Window, new(100, 30))!.Value.Window);
+        using var gate = new SemaphoreSlim(1, 1);
+        IUiAutomationHost Factory(UiSurface surface) => new Host(surface, () => f.Pump(1), gate);
+        await using var session = new UiPopupAutomationSession(f.Popups, Factory(f.Surface), Factory);
+        var page = new UiAutomationPage(session.CreateOwnerHost(f.Surface));
+        try
+        {
+            UiLocator item = page.GetByTestId("list").GetByItemKey("999");
+            Assert.Equal(0, await item.CountAsync());
+            if (covered)
+            {
+                await Assert.ThrowsAsync<UiAutomationException>(() => item.BringIntoViewAsync(new() { Timeout = TimeSpan.FromMilliseconds(30) }));
+                Assert.Equal(0, scroll.Controller.Offset);
+                Assert.Equal(3, templates);
+            }
+            else
+            {
+                await item.BringIntoViewAsync();
+                Assert.Equal(19940, scroll.Controller.Offset);
+                Assert.Equal(1, await item.CountAsync());
+                Assert.Equal(6, templates);
+            }
+        }
+        finally
+        {
+            owner.Dispose();
+            Task retired = binding.DisposeAsync().AsTask();
+            f.Pump();
+            Assert.True(retired.IsCompletedSuccessfully);
+            f.Windows.Close(window);
+            f.Pump();
+            f.Windows.Release(window);
+            f.Pump();
+        }
+    }
+
+    /// <summary>Covered real windows cannot discover collapsed tree children through key input.</summary>
+    /// <param name="covered">Whether a real window covers the tree.</param>
+    /// <returns>The asynchronous check.</returns>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task TreePathRealizationHonorsNormalWindowOcclusionAsync(bool covered)
+    {
+        using var f = new Fixture();
+        int templates = 0;
+        f.Surface.Rebuild(Lumyte.UI.Compose.Panel()[Collections.Compose.TreeView<int>(
+            roots: new[] { -1 },
+            childrenSelector: _ => Enumerable.Range(0, 1000).ToArray(),
+            hasChildren: item => item == -1,
+            keyPathSelector: key => new[] { "-1", key },
+            keySelector: item => item.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            itemTemplate: _ =>
+            {
+                templates++;
+                return Lumyte.UI.Compose.SizedBox(height: 20);
+            },
+            testId: "list",
+            width: 200,
+            height: 60,
+            virtualization: new Collections.UiItemVirtualization(20, 0))]);
+        f.Surface.UpdateLayout();
+        ScrollViewElement scroll = Assert.IsType<ScrollViewElement>(f.Surface.RootElement.Children[0].Children[0].Children[0]);
+        using var other = new UiSurface(Lumyte.UI.Compose.Button());
+        UiWindowId window = f.Windows.Create(new(f.Registration.Window, new(200, 150), UiWindowRole.Normal, UiWindowInputMode.Interactive, new(f.Registration.Window, new(0, 0, 0, 0), UiWindowPlacementSide.Below)));
+        Task<UiWindowBinding> pending = f.Windows.BindPresentationAsync(window, other).AsTask();
+        f.Pump();
+        UiWindowBinding binding = await pending;
+        using UiPopupOwner owner = f.Popups.RegisterOwner(window, other);
+        if (covered)
+        {
+            f.Windows.Show(window);
+            f.Pump();
+        }
+
+        Assert.Equal(covered ? window : f.Registration.Window, f.Windows.HitTest(f.Registration.Window, new(100, 30))!.Value.Window);
+        using var gate = new SemaphoreSlim(1, 1);
+        IUiAutomationHost Factory(UiSurface surface) => new Host(surface, () => f.Pump(1), gate);
+        await using var session = new UiPopupAutomationSession(f.Popups, Factory(f.Surface), Factory);
+        var page = new UiAutomationPage(session.CreateOwnerHost(f.Surface));
+        try
+        {
+            UiLocator item = page.GetByTestId("list").GetByItemKey("999");
+            Assert.Equal(0, await item.CountAsync());
+            if (covered)
+            {
+                await Assert.ThrowsAsync<UiAutomationException>(() => item.BringIntoViewAsync(new() { Timeout = TimeSpan.FromMilliseconds(30) }));
+                Assert.Equal(0, scroll.Controller.Offset);
+                Assert.Equal(1, templates);
+            }
+            else
+            {
+                await item.BringIntoViewAsync();
+                Assert.Equal(19960, scroll.Controller.Offset);
+                Assert.Equal(1, await item.CountAsync());
+                Assert.InRange(templates, 4, 8);
+            }
+        }
+        finally
+        {
+            owner.Dispose();
+            Task retired = binding.DisposeAsync().AsTask();
+            f.Pump();
+            Assert.True(retired.IsCompletedSuccessfully);
+            f.Windows.Close(window);
+            f.Pump();
+            f.Windows.Release(window);
+            f.Pump();
+        }
+    }
+
+    /// <summary>The actual popup page reveals only its own key scope before normal selection.</summary>
+    /// <returns>The asynchronous check.</returns>
+    [Fact]
+    public async Task VirtualPopupKeySelectionUsesPopupScopeAsync()
+    {
+        using var f = new Fixture();
+        int changes = 0;
+        UiPopupHandle popup = f.Popups.RequestOpen(f.Owner, new(f.Anchor, new(80, 60), () => Collections.Compose.ListBox<int>(items: Enumerable.Range(0, 1000).ToArray(), keySelector: item => item.ToString(System.Globalization.CultureInfo.InvariantCulture), itemTemplate: _ => Lumyte.UI.Compose.SizedBox(height: 20), testId: "list", height: 60, virtualization: new Collections.UiItemVirtualization(20, 0), onSelectionChanged: _ => changes++)));
+        f.Pump();
+        using var gate = new SemaphoreSlim(1, 1);
+        IUiAutomationHost Factory(UiSurface surface) => new Host(surface, () => f.Pump(1), gate);
+        await using var session = new UiPopupAutomationSession(f.Popups, Factory(f.Surface), Factory);
+        UiAutomationPage page = session.Popup(popup.Id);
+        await page.GetByTestId("list").GetByItemKey("999").ClickAsync();
+        Assert.Equal(1, changes);
+        Assert.Equal(0, f.Clicks);
+        popup.Close();
+        f.Pump();
+    }
+
+    /// <summary>Menu ownership rejects a covered grid header and offscreen cell before model callbacks or reveal.</summary>
+    /// <returns>The asynchronous check.</returns>
+    [Fact]
+    public async Task MenuScopeRejectsGridSortAndCellRevealBeforeStateChangesAsync()
+    {
+        using var fixture = new Fixture();
+        int comparisons = 0;
+        int factories = 0;
+        var comparer = Comparer<int>.Create((left, right) =>
+        {
+            comparisons++;
+            return left.CompareTo(right);
+        });
+        Lumyte.UI.Compose.Definitions.Widget Header(DataGridColumn<int> column, Collections.Compose.Definitions.DataGrid<int> owner) => Lumyte.UI.Compose.SizedBox();
+        Lumyte.UI.Compose.Definitions.Widget Cell(DataGridCellContext<int> cell, Collections.Compose.Definitions.DataGrid<int> owner)
+        {
+            factories++;
+            return Lumyte.UI.Compose.SizedBox();
+        }
+
+        Collections.Compose.Definitions.DataGrid<int> gridDeclaration = Collections.Compose.DataGrid<int>(items: Enumerable.Range(0, 1000).ToArray(), keySelector: value => value.ToString(System.Globalization.CultureInfo.InvariantCulture), columns: new[] { new DataGridColumn<int>("value", "Value", 100, comparer: comparer) }, testId: "grid", height: 100, virtualization: new UiItemVirtualization(20, 0))[
+            Collections.Compose.DataGridFactory<int>().Header()[Header], Collections.Compose.DataGridFactory<int>().Cell()[Cell]];
+        fixture.Surface.Rebuild(Lumyte.UI.Compose.Panel()[fixture.Root.Children[0], gridDeclaration]);
+        fixture.Surface.UpdateLayout();
+        DataGridElement<int> grid = Assert.IsType<DataGridElement<int>>(fixture.Surface.RootElement.Children[1]);
+        int before = factories;
+        using var gate = new SemaphoreSlim(1, 1);
+        IUiAutomationHost Factory(UiSurface surface) => new Host(surface, () => fixture.Pump(1), gate);
+        await using var session = new UiPopupAutomationSession(fixture.Popups, Factory(fixture.Surface), Factory);
+        var page = new UiAutomationPage(session.CreateOwnerHost(fixture.Surface));
+        UiAutomationException editing = await Assert.ThrowsAsync<UiAutomationException>(() => page.GetByTestId("grid").GetByItemKey("999").GetByColumnKey("value").FillAsync("not an editor"));
+        Assert.Equal(UiAutomationFailureKind.UnsupportedAction, editing.Kind);
+        Assert.Equal(before, factories);
+        fixture.Open();
+        await Assert.ThrowsAsync<UiAutomationException>(() => page.GetByRole(UiRole.Button, "Value").ClickAsync(new() { Timeout = TimeSpan.FromMilliseconds(30) }));
+        await Assert.ThrowsAsync<UiAutomationException>(() => page.GetByTestId("grid").GetByItemKey("999").GetByColumnKey("value").BringIntoViewAsync(new() { Timeout = TimeSpan.FromMilliseconds(30) }));
+        await Assert.ThrowsAsync<UiAutomationException>(() => page.GetByTestId("grid").GetByItemKey("999").GetByColumnKey("value").FocusAsync(new() { Timeout = TimeSpan.FromMilliseconds(30) }));
+        Assert.Equal(0, comparisons);
+        Assert.Equal(before, factories);
+        Assert.Equal(DataGridSortDirection.None, grid.Sort.Direction);
+        Assert.Null(grid.SelectedKey);
+        Assert.DoesNotContain(fixture.Surface.CaptureAutomationSnapshot().Nodes, node => node.GridCell?.RowKey == "999");
     }
 
     private sealed class Host(UiSurface surface, Action nextFrame, SemaphoreSlim gate) : IUiAutomationHost
