@@ -13,14 +13,19 @@ public partial class UiElement
 
     internal ulong VisualRevision => _visualRevision;
 
-    internal bool LayoutVisible => Widget.IsVisible && PresenceState != UiPresenceState.Hidden;
+    internal bool LayoutVisible => Widget.IsVisible && PresenceState != UiPresenceState.Hidden && IsContentActive;
 
-    internal bool TransitionCaptureSupported => SupportsTransitionCapture;
+    internal bool IsContentActive => Parent is null || (Parent.IsContentActive && Parent.IsChildActive(this));
+
+    internal bool TransitionCaptureSupported => SupportsTransitionCapture && !EnumerateSubtree().Any(element => element.PreventsAncestorTransitionCapture);
 
     internal bool IsTransitioning => Surface?.PageTransitioning == true || (_presence?.IsGated ?? false) || (Parent?.IsTransitioning ?? false);
 
     /// <summary>Gets a value indicating whether deterministic isolated capture is supported.</summary>
     protected virtual bool SupportsTransitionCapture => false;
+
+    /// <summary>Gets a value indicating whether this live resource also prevents capture of its ancestors.</summary>
+    protected virtual bool PreventsAncestorTransitionCapture => false;
 
     internal void ConnectPresence(UiSurface surface, Compose.Definitions.Widget? previous = null)
     {
@@ -86,6 +91,11 @@ public partial class UiElement
     }
 
     internal void InvalidateChildVisuals() => InvalidateTransitionCapture();
+
+    /// <summary>Determines whether a retained direct child participates in layout, drawing and input.</summary>
+    /// <param name="child">A mounted direct child.</param>
+    /// <returns>Whether the parent currently presents the child.</returns>
+    protected virtual bool IsChildActive(UiElement child) => true;
 
     /// <summary>Compares component-specific drawing configuration for isolated capture reuse.</summary>
     /// <param name="other">The configuration in the other surface.</param>

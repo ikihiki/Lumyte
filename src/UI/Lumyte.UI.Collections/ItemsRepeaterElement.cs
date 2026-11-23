@@ -8,6 +8,9 @@ namespace Lumyte.UI.Collections;
 public class ItemsRepeaterElement<T> : UiElement<Compose.Definitions.ItemsRepeater<T>>
     where T : notnull
 {
+    private T[] _itemSnapshot = [];
+    private string[] _keySnapshot = [];
+
     /// <summary>Initializes a new instance of the <see cref="ItemsRepeaterElement{T}"/> class.</summary>
     /// <param name="widget">The declaration.</param>
     protected internal ItemsRepeaterElement(Compose.Definitions.ItemsRepeater<T> widget)
@@ -21,13 +24,25 @@ public class ItemsRepeaterElement<T> : UiElement<Compose.Definitions.ItemsRepeat
     /// <summary>Gets the adopted ordinal keys.</summary>
     public IReadOnlyList<string> Keys { get; private set; } = Array.Empty<string>();
 
+    /// <summary>Gets a value indicating whether an internal range update uses the adopted model.</summary>
+    protected virtual bool UseAdoptedItems => false;
+
     /// <inheritdoc/>
     protected override UiElementContent? BuildContent(Widget next, UiElementBuildContext context)
     {
         var declaration = (Compose.Definitions.ItemsRepeater<T>)next;
+        if (UseAdoptedItems)
+        {
+            return PrepareRealization(declaration, _itemSnapshot, _keySnapshot);
+        }
+
         ArgumentNullException.ThrowIfNull(declaration.Items);
         ArgumentNullException.ThrowIfNull(declaration.KeySelector);
-        ArgumentNullException.ThrowIfNull(declaration.ItemTemplate);
+        if (!declaration.HasItemTemplate)
+        {
+            ArgumentNullException.ThrowIfNull(declaration.ItemTemplate);
+        }
+
         if (!Enum.IsDefined(declaration.Orientation))
         {
             throw new ArgumentOutOfRangeException(nameof(next));
@@ -62,7 +77,7 @@ public class ItemsRepeaterElement<T> : UiElement<Compose.Definitions.ItemsRepeat
         var seen = new HashSet<Widget>(ReferenceEqualityComparer.Instance);
         for (int index = 0; index < items.Length; index++)
         {
-            Widget root = declaration.ItemTemplate!(items[index]) ?? throw new InvalidOperationException("An item template returned null.");
+            Widget root = declaration.RealizeItem(items[index]);
             ValidateTemplate(root, seen);
             roots[index] = WrapItem(declaration, items[index], keys[index], root);
         }
@@ -85,6 +100,8 @@ public class ItemsRepeaterElement<T> : UiElement<Compose.Definitions.ItemsRepeat
         Action? commit = PrepareItems(declaration, items, keys);
         return new(content, () =>
         {
+            _itemSnapshot = items;
+            _keySnapshot = keys;
             Items = Array.AsReadOnly(items);
             Keys = Array.AsReadOnly(keys);
             commit?.Invoke();

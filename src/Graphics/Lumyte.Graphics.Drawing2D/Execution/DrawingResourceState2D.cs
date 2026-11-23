@@ -9,6 +9,7 @@ internal sealed class DrawingResourceState2D : IDisposable
     private readonly IGraphicDevice? _device;
     private readonly Action? _validate;
     private readonly long _numericPoolBudget;
+    private readonly bool _pipelineMode;
     private DrawingResources2D? _resources;
     private IDisposable? _owner;
     private IDisposable? _compositionOwner;
@@ -20,20 +21,21 @@ internal sealed class DrawingResourceState2D : IDisposable
     private bool _closing;
     private bool _retryingCleanup;
 
-    internal DrawingResourceState2D(IGraphicDevice? device, DrawingResources2D? resources = null, IDisposable? owner = null, Action? validate = null, long numericPoolBudget = 8 * 1024 * 1024)
+    internal DrawingResourceState2D(IGraphicDevice? device, DrawingResources2D? resources = null, IDisposable? owner = null, Action? validate = null, long numericPoolBudget = 8 * 1024 * 1024, bool pipelineMode = false)
     {
         if (resources is not null && !ReferenceEquals(device, resources.Device))
         {
             throw new ArgumentException("Drawing resources belong to a different physical device.", nameof(resources));
         }
 
-        if (resources is null && (owner is not null || validate is not null))
+        if (!pipelineMode && resources is null && (owner is not null || validate is not null))
         {
             throw new ArgumentException("An external owner or validator requires explicit drawing resources.", nameof(resources));
         }
 
         (_device, _resources, _owner, _validate) = (device, resources, owner, validate);
         _numericPoolBudget = numericPoolBudget;
+        _pipelineMode = pipelineMode;
     }
 
     internal DrawingResources2D Resources
@@ -75,6 +77,14 @@ internal sealed class DrawingResourceState2D : IDisposable
         }
     }
 
+    internal void ValidateDevice(IGraphicDevice device)
+    {
+        if (!ReferenceEquals(_device, device))
+        {
+            throw new ArgumentException("Drawing resources belong to a different physical device.", nameof(device));
+        }
+    }
+
     internal void AttachCompositionOwner(IDisposable owner) => _compositionOwner = owner;
 
     internal void ReturnBorrow(IDisposable use)
@@ -101,7 +111,7 @@ internal sealed class DrawingResourceState2D : IDisposable
         lock (_gate)
         {
             ObjectDisposedException.ThrowIf((_returned && !allowReturned) || _closing || _users == 0, this);
-            if (ensureResources)
+            if (ensureResources && !_pipelineMode)
             {
                 EnsureResources();
             }
@@ -210,6 +220,11 @@ internal sealed class DrawingResourceState2D : IDisposable
 
     private void EnsureResources()
     {
+        if (_pipelineMode && _resources is null)
+        {
+            throw new InvalidOperationException("A generic pipeline binding does not implicitly construct legacy drawing shaders.");
+        }
+
         if (_resources is not null)
         {
             return;

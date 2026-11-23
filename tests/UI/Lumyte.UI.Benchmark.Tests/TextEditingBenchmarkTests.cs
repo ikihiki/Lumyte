@@ -125,6 +125,7 @@ public sealed class TextEditingBenchmarkTests
     [InlineData("Japanese")]
     [InlineData("Bidi")]
     [InlineData("Grapheme")]
+    [Trait("Execution", "Integration")]
     public void ParleyLayoutsExposeActualUiEditingGeometry(string script)
     {
         var benchmark = new ParleyUiLayoutBenchmarks { Script = script };

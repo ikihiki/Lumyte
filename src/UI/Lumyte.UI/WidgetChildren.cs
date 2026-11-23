@@ -22,13 +22,14 @@ public sealed class WidgetChildren : IReadOnlyList<Widget>, ICompositionContent<
     /// <summary>Gets the number of declared children.</summary>
     public int Count => _items.Count;
 
+    /// <summary>Gets a value indicating whether content was successfully initialized, including an explicitly empty array.</summary>
+    public bool IsInitialized => _initialized;
+
     internal Widget Owner { get; }
 
     internal int SlotIndex { get; }
 
     internal bool IsPortal { get; }
-
-    internal bool IsInitialized => _initialized;
 
     /// <summary>Gets the child declaration at the specified position.</summary>
     /// <param name="index">The zero-based position.</param>

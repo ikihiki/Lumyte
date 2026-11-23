@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><TargetFramework>net10.0</TargetFramework><ImplicitUsings>enable</ImplicitUsings><IsPackable>false</IsPackable><IsTestProject>true</IsTestProject><AllowUnsafeBlocks>true</AllowUnsafeBlocks></PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../../src/UI/Lumyte.UI.Media/Lumyte.UI.Media.csproj" />
+    <ProjectReference Include="../../../src/Core/Lumyte.Composition.Generators/Lumyte.Composition.Generators.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" PrivateAssets="all" />
+    <Compile Include="../../../samples/Lumyte.UI.WebView.Helper.Sample/FakeSharedFrameProducer.cs" Link="FakeSharedFrameProducer.cs" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
+    <PackageReference Include="xunit" Version="2.9.3" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="3.1.1" PrivateAssets="all" />
+    <ProjectReference Include="../../../src/UI/Lumyte.UI.WebView/Lumyte.UI.WebView.csproj" />
+    <ProjectReference Include="../../../src/UI/Lumyte.UI.Application.Headless/Lumyte.UI.Application.Headless.csproj" />
+    <ProjectReference Include="../../../src/UI/Lumyte.UI.Application.WebView.Cef/Lumyte.UI.Application.WebView.Cef.csproj" />
+    <ProjectReference Include="../../../samples/Lumyte.UI.WebView.Helper.Sample/Lumyte.UI.WebView.Helper.Sample.csproj" ReferenceOutputAssembly="false" />
+    <Compile Include="../../Graphics/Lumyte.Graphics.Drawing2D.Tests/DispatchTexture.cs" Link="DispatchTexture.cs" />
+    <Compile Include="../../Graphics/Lumyte.Graphics.Drawing2D.Tests/DispatchTextureView.cs" Link="DispatchTextureView.cs" />
+    <Compile Include="../../Graphics/Lumyte.Graphics.Drawing2D.Tests/DispatchSampler.cs" Link="DispatchSampler.cs" />
+  </ItemGroup>
+</Project>

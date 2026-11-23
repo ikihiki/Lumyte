@@ -39,9 +39,14 @@ cd "$repo_root"
 mise trust "$repo_root/mise.toml"
 mise install --locked
 mise reshim
+# CI can checkpoint DXC immediately after its own successful setup, before
+# unrelated native verification. Local setup remains the complete default.
+if [[ "${LUMYTE_SETUP_TOOLS_ONLY:-0}" == 1 ]]; then
+    exit 0
+fi
 mise run setup-native
 source "$script_dir/activate.sh"
-dotnet run --project build -c Release -- --target VerifySdk
+dotnet run --project build -c Release -- --target Verify --verify-scope sdk
 mise ls --current
 echo 'Setup complete. Run: source tools/setup/activate.sh'
 echo 'Then validate with: mise run verify'

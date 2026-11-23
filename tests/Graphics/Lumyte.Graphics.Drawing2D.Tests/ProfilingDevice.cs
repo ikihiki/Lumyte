@@ -43,6 +43,10 @@ internal sealed class ProfilingDevice : IGraphicDevice
 
     internal int ActiveTables { get; private set; }
 
+    internal List<IGraphicsPipeline> Pipelines { get; } = [];
+
+    internal int DisposedPipelines { get; private set; }
+
     internal int Writes { get; private set; }
 
     internal int FailWrite { get; init; }
@@ -116,7 +120,9 @@ internal sealed class ProfilingDevice : IGraphicDevice
     public IGraphicsPipeline CreateGraphicsPipeline(GraphicsPipelineDesc desc)
     {
         PipelineCreations++;
-        return new Pipeline(desc);
+        var pipeline = new Pipeline(this, desc);
+        Pipelines.Add(pipeline);
+        return pipeline;
     }
 
     public IGraphicsComputePipeline CreateComputePipeline(ComputePipelineDesc desc) => throw new NotSupportedException();
@@ -167,12 +173,19 @@ internal sealed class ProfilingDevice : IGraphicDevice
         public void Dispose() => IsDisposed = true;
     }
 
-    private sealed class Pipeline(GraphicsPipelineDesc desc) : IGraphicsPipeline
+    private sealed class Pipeline(ProfilingDevice device, GraphicsPipelineDesc desc) : IGraphicsPipeline
     {
+        private bool _disposed;
+
         public GraphicsPipelineDesc Desc => desc;
 
         public void Dispose()
         {
+            if (!_disposed)
+            {
+                device.DisposedPipelines++;
+                _disposed = true;
+            }
         }
     }
 

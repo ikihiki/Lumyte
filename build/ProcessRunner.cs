@@ -5,7 +5,7 @@ namespace Lumyte.Build;
 
 internal static class ProcessRunner
 {
-    public static async Task<string> RunAsync(string tool, IEnumerable<string> arguments, string workingDirectory, IReadOnlyDictionary<string, string?>? environment = null, bool captureOutput = false)
+    public static async Task<string> RunAsync(string tool, IEnumerable<string> arguments, string workingDirectory, IReadOnlyDictionary<string, string?>? environment = null, bool captureOutput = false, bool includeStandardError = false)
     {
         var start = new ProcessStartInfo(tool)
         {
@@ -62,7 +62,7 @@ internal static class ProcessRunner
                 throw new InvalidOperationException($"{Path.GetFileName(tool)} failed with exit code {process.ExitCode}.{Environment.NewLine}{output}{errors}");
             }
 
-            return output.ToString();
+            return includeStandardError ? output.ToString() + errors : output.ToString();
         }
         finally
         {

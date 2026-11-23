@@ -3,7 +3,7 @@ using Lumyte.Graphics.Abstractions;
 
 namespace Lumyte.Graphics.Wgpu;
 
-internal sealed unsafe class WgpuSampler : IGraphicsSampler
+internal sealed unsafe class WgpuSampler : IGraphicsSampler, IGraphicsNativeOrigin
 {
     private readonly WgpuDevice _owner;
     private readonly WGPUSamplerImpl* _native;
@@ -32,6 +32,10 @@ internal sealed unsafe class WgpuSampler : IGraphicsSampler
         }
     }
 
+    IGraphicDevice IGraphicsNativeOrigin.Device => Owner;
+
+    object IGraphicsNativeOrigin.AllocationIdentity => this;
+
     public SamplerDesc Desc { get; }
 
     internal WGPUSamplerImpl* Native
@@ -44,6 +48,17 @@ internal sealed unsafe class WgpuSampler : IGraphicsSampler
     }
 
     internal WgpuDevice Owner => _owner;
+
+    void IGraphicsNativeOrigin.ValidateOrigin()
+    {
+        ObjectDisposedException.ThrowIf(Owner.Status == GraphicsDeviceStatus.Disposed, Owner);
+        if (Owner.Status == GraphicsDeviceStatus.Lost)
+        {
+            throw new GraphicsDeviceLostException(Owner.Loss!);
+        }
+
+        _ = Native;
+    }
 
     public void Dispose()
     {

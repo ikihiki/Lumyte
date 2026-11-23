@@ -3,7 +3,7 @@ using Silk.NET.Vulkan;
 
 namespace Lumyte.Graphics.Vulkan;
 
-internal sealed unsafe class VulkanSampler : IGraphicsSampler
+internal sealed unsafe class VulkanSampler : IGraphicsSampler, IGraphicsNativeOrigin
 {
     private readonly VulkanDevice _owner;
     private readonly Sampler _native;
@@ -44,6 +44,10 @@ internal sealed unsafe class VulkanSampler : IGraphicsSampler
         _native = native;
     }
 
+    IGraphicDevice IGraphicsNativeOrigin.Device => Owner;
+
+    object IGraphicsNativeOrigin.AllocationIdentity => this;
+
     public SamplerDesc Desc { get; }
 
     internal Sampler Native
@@ -56,6 +60,17 @@ internal sealed unsafe class VulkanSampler : IGraphicsSampler
     }
 
     internal VulkanDevice Owner => _owner;
+
+    void IGraphicsNativeOrigin.ValidateOrigin()
+    {
+        ObjectDisposedException.ThrowIf(Owner.Status == GraphicsDeviceStatus.Disposed, Owner);
+        if (Owner.Status == GraphicsDeviceStatus.Lost)
+        {
+            throw new GraphicsDeviceLostException(Owner.Loss!);
+        }
+
+        _ = Native;
+    }
 
     public void Dispose()
     {

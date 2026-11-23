@@ -13,6 +13,7 @@ public sealed class ResourceStageRuntimeTests
 {
     /// <summary>A parent uses the default dispatcher while its child uses the selected dispatcher and context.</summary>
     /// <returns>Completion of dependency construction and both dispatchers' cleanup.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task ParentAndChildUseTheirOwnSelectedRuntimeAsync()
     {
@@ -44,6 +45,7 @@ public sealed class ResourceStageRuntimeTests
 
     /// <summary>Bindings are frozen, and automatic runtime invalidation rebuilds and releases through the original dispatcher.</summary>
     /// <returns>Completion of two device generations and their exact cleanup routing.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task FrozenSelectionTracksDeviceChangesAndRetainsReleaseOwnershipAsync()
     {
@@ -93,6 +95,7 @@ public sealed class ResourceStageRuntimeTests
 
     /// <summary>The same provider selected and explicitly registered is subscribed only once.</summary>
     /// <returns>Completion of construction and provider subscription cleanup.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task ExplicitAndSelectedSameProviderAreRegisteredOnceAsync()
     {
@@ -115,6 +118,7 @@ public sealed class ResourceStageRuntimeTests
 
     /// <summary>A provider ID cannot refer to different explicit and selected service instances.</summary>
     /// <returns>Completion of the borrowed memory and execution services.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task DifferentProvidersWithTheSameIdAreRejectedAsync()
     {
@@ -138,6 +142,7 @@ public sealed class ResourceStageRuntimeTests
     /// <summary>Bindings must be initialized and select a known stage exactly once.</summary>
     /// <param name="configuration">The invalid configuration: unknown output, duplicate output or default binding.</param>
     /// <returns>Completion of the borrowed memory and execution services.</returns>
+    [Trait("Execution", "Integration")]
     [Theory]
     [InlineData("unknown")]
     [InlineData("duplicate")]
@@ -163,6 +168,7 @@ public sealed class ResourceStageRuntimeTests
 
     /// <summary>One manager resolves typed and factory environments once and preserves its shared default.</summary>
     /// <returns>Completion of the shared manager and its execution host.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task DependencyInjectionSelectsPerStageWithoutReplacingTheDefaultAsync()
     {

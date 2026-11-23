@@ -8,6 +8,7 @@ public sealed class FileResourceChangeSourceTests
 {
     /// <summary>The stream source alone supplies monitoring to the manager without independent watcher registration.</summary>
     /// <returns>Completion of native source-integrated reload and generation retention.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task FileSourceAutomaticallyReloadsItsOwnStreamsAsync()
     {

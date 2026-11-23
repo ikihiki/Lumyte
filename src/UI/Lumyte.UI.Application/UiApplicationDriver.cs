@@ -36,6 +36,8 @@ internal abstract class UiApplicationDriver : IAsyncDisposable
 
     public abstract ValueTask DisposeAsync();
 
+    internal virtual ValueTask<T> WithGraphicsAsync<T>(Func<Lumyte.Graphics.Abstractions.IGraphicDevice, ValueTask<T>> action) => throw new NotSupportedException("This driver does not expose graphics uploads.");
+
     internal virtual Lumyte.UI.Windowing.TextInput.IUiTextInputTargetResolver CreateTextTargets(UiApplication application) => new Lumyte.UI.Windowing.TextInput.UiPlatformTextInputTargetResolver(application.Windows, InputSource!, application.ResolveNative);
 
     internal virtual ValueTask<UiVisualSnapshot?> CaptureVisualAsync(DrawList2D commands, uint width, uint height, IDisposable reservation, IReadOnlyList<UiVisualSnapshot>? visuals = null)

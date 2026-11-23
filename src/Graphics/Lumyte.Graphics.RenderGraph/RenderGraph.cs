@@ -5,7 +5,7 @@ namespace Lumyte.Graphics.RenderGraph;
 
 /// <summary>Builds a single-queue render graph with explicit outputs and plan-owned temporary resources.</summary>
 /// <remarks>The caller manages thread synchronization, imported resource lifetime and submission.</remarks>
-public sealed class RenderGraph : IDisposable
+public sealed partial class RenderGraph : IDisposable
 {
     private readonly HashSet<object> _allocations = new(ReferenceEqualityComparer.Instance);
     private readonly List<RenderGraphResource> _resources = [];
@@ -21,6 +21,7 @@ public sealed class RenderGraph : IDisposable
     private bool _compiling;
     private bool _transferred;
     private bool _disposing;
+    private bool _appending;
 
     /// <summary>Initializes a new instance of the <see cref="RenderGraph"/> class.</summary>
     /// <param name="device">The same device used for recording; required for temporary allocations.</param>
@@ -47,7 +48,7 @@ public sealed class RenderGraph : IDisposable
     public IGraphicDevice? Device { get; }
 
     /// <summary>Gets a value indicating whether this graph accepts preparation, ownership and pass declarations.</summary>
-    public bool IsBuilding => !_closed && !_faulted && !_compiling;
+    public bool IsBuilding => !_closed && !_faulted && !_compiling && !_appending;
 
     internal GraphShaderResourceOwner? ShaderResourceOwner { get; set; }
 
@@ -388,7 +389,7 @@ public sealed class RenderGraph : IDisposable
     /// <remarks>Cleanup failure keeps the remaining owners for another Dispose call.</remarks>
     public void Dispose()
     {
-        if (_compiling || _creatingExtension != 0 || _disposing)
+        if (_compiling || _creatingExtension != 0 || _disposing || _appending)
         {
             throw new InvalidOperationException("Graph disposal cannot overlap compilation, extension creation or cleanup.");
         }
@@ -418,7 +419,7 @@ public sealed class RenderGraph : IDisposable
     internal void EnsureBuilding()
     {
         ObjectDisposedException.ThrowIf(_closed, this);
-        if (_faulted || _compiling)
+        if (_faulted || _compiling || _appending)
         {
             throw new InvalidOperationException("Graph preparation failed or compilation is already in progress.");
         }

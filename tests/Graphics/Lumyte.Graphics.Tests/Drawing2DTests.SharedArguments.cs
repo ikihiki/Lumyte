@@ -14,6 +14,7 @@ public sealed partial class Drawing2DTests
 {
     /// <summary>Checks depth one/three, reverse retirement and analytic mixed-pipeline pixels on Vulkan.</summary>
     /// <returns>The asynchronous GPU verification.</returns>
+    [Trait("Execution", "Gpu")]
     [GpuFact]
     public async Task VulkanSharedArgumentRetainedFramesAsync()
     {
@@ -32,6 +33,7 @@ public sealed partial class Drawing2DTests
 
     /// <summary>Checks the same retained ownership and output on the portable backend.</summary>
     /// <returns>The asynchronous GPU verification.</returns>
+    [Trait("Execution", "Gpu")]
     [GpuFact]
     public async Task WgpuSharedArgumentRetainedFramesAsync()
     {

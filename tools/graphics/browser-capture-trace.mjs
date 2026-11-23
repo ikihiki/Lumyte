@@ -85,6 +85,7 @@ export function createCaptureTraceReporter({ emit = value => console.log(JSON.st
         }
         if (bytes() > 256 * 1024) { delete summary.snapshot; summary.snapshotOmittedForOutputCap = true; }
         safelyEmit(summary);
+        return summary;
     }
     return { observe, observeGpu, capture, failure, get received() { return received; }, get invalid() { return invalid; }, get dropped() { return dropped; } };
 }

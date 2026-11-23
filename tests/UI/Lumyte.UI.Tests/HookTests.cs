@@ -125,6 +125,7 @@ public sealed class HookTests
 
     /// <summary>Checks separately built roots cannot borrow another thread's provider.</summary>
     /// <returns>The asynchronous verification.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task IndependentRootsRemainIsolatedAsync()
     {

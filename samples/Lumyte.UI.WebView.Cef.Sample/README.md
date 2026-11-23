@@ -1,0 +1,22 @@
+# Native UI with an optional browser fallback
+
+The default sample shows native UI and does not start a browser. The old in-process CefGlue120 adapter is removed. The optional backend is a separately built Rust/CEF156 process.
+
+```sh
+dotnet run --project samples/Lumyte.UI.WebView.Cef.Sample -c Release
+bash tools/setup/build-cef-helper.sh
+export LUMYTE_CEF_HELPER="$PWD/artifacts/cef-helper/target/debug/lumyte-cef-helper"
+dotnet run --project samples/Lumyte.UI.WebView.Cef.Sample -c Release -- --enable-experimental-cef
+```
+
+Keep the separate `lumyte-cef-supervisor` beside the helper or launcher. The explicit build script stages both; custom integrations may set `CefWebViewOptions.SupervisorExecutablePath` to an absolute supervisor path. Neither the browser backend nor the optional portal launcher requires Python. .NET communicates commands/state/small notices directly through helper pipes, while pixel bytes use fixed shared-memory slots; the CEF-free supervisor only owns process cleanup, while backend-local `Lumyte.Execution` workflows manage asynchronous I/O lifetime.
+
+Use an absolute helper path. If it is missing, crashes, hangs or cannot initialize sandbox, the session faults locally while the surrounding native controls remain available. Build, registration and normal UI startup do not initialize CEF. The backend has one window-owned document, finite startup/navigation deadlines and explicit cancellation. A matching helper negotiates primary-mouse, wheel, physical-key, committed-Unicode and main-frame expression capabilities; full IME, popups and explicit navigation/history commands remain unavailable.
+
+The enabled sample uses generated function components: MixedPage(initialUri) contains a native header, an interactive native counter and a nested BrowserPane(initialUri). The latter calls UseWebView("page", initialUri) and places its borrowed session inside an inset, clipped Panel. No component receives a window or browser-session argument; UseCefWebViews supplies the window context automatically. Clicking the counter rebuilds ordinary UI without recreating the browser. Unmounting a view does not dispose its window-owned session. The complete source is in BrowserSampleUi.cs. The title button uses EvaluateScriptAsync on that borrowed session and handles unavailable-script/errors without replacing native UI. Page-to-host messages remain disabled by default: explicitly configure CefWebViewOptions.AllowedMessageOrigins with the exact trusted HTTP(S) origin, including its nondefault port. The page uses window.lumyte.postMessage(value); a function component can declare onWebMessageReceived on WebView instead of adding an event subscription on every render. No Window/browser argument transfer or arbitrary .NET host object is required.
+
+The explicit build script stages an optional lumyte-cef-helper-isolated launcher beside the helper. Select that path instead only when the Linux session/portal workaround is needed; its dependencies and display must exist. It starts only an owned private bus/portal and does not modify the host user manager or desktop services. Missing setup remains a browser-local failure. See the native HELPER.md for the exact launcher contract.
+
+Sandbox remains enabled by default. To explicitly evaluate trusted local content without it, add `--allow-unsandboxed-cef --browser-uri=http://127.0.0.1:PORT/pattern` together with `--enable-experimental-cef`. The URI is mandatory in unsafe mode; no external sample page is silently opened. This is not network isolation, and a separate process does not protect against malicious pages without the sandbox.
+
+The product helper has passed a trusted unsandboxed loopback HTTP/pixel/resize/clean-exit trial. A trusted loopback page has additionally been captured inside the actual Desktop UI with adjacent native controls and text, software-Vulkan texture upload, parent clipping and product swapchain-image readback. That initial-composition evidence does not establish arbitrary-site compatibility, browser input, hardware performance or sandboxed acceptance. This host has not passed real sandboxed HTTP/paint/resize/close acceptance. The earlier sandbox-OFF temporary diagnostic by itself only qualified its isolated bus/portal environment; it was not a substitute for these product paths. The native helper is explicitly built, excluded from ordinary solution packaging and not a supported arbitrary-site browser.

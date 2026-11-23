@@ -62,6 +62,7 @@ public sealed class ParityTests
 
     /// <summary>Checks transfer, texture, sampler, argument, render, compute, indirect and semaphore parity.</summary>
     /// <returns>The asynchronous verification.</returns>
+    [Trait("Execution", "Gpu")]
     [AgilityFact]
     public async Task SharedVulkanExercisesAsync()
     {
@@ -81,6 +82,7 @@ public sealed class ParityTests
 
     /// <summary>Exercises partial compilation and state variants only on explicitly enabled hardware.</summary>
     /// <returns>The asynchronous verification.</returns>
+    [Trait("Execution", "Gpu")]
     [PartialProgramsFact]
     public async Task PreviewPartialProgramsAsync()
     {

@@ -14,6 +14,6 @@
   <Target Name="BuildLumyteDirect3D12Native" BeforeTargets="BeforeBuild" DependsOnTargets="_PrepareLumyteBuildInvocation" Condition="$([MSBuild]::IsOSPlatform('Windows')) and '$(DesignTimeBuild)' != 'true'">
     <Error Condition="'$(RuntimeIdentifier)' != '' and '$(RuntimeIdentifier)' != '$(NETCoreSdkRuntimeIdentifier)'" Text="Direct3D 12 source builds require the native SDK host architecture." />
     <Error Condition="'$(_LumyteAgilityArch)' == ''" Text="Agility SDK builds require a native Windows x64 or ARM64 SDK host." />
-    <Exec Command="$(_LumyteParleyBuildCommand) --target Direct3D12Native --root &quot;$(_LumyteParleyInvocationRoot).&quot; --repository-root &quot;$(_LumyteParleyRepositoryRoot).&quot; --configuration &quot;$(Configuration)&quot; --output &quot;$(LumyteDirect3D12Output)&quot; --agility-channel &quot;$(LumyteAgilityChannel)&quot; --agility-sdk-root &quot;$(PkgMicrosoft_Direct3D_D3D12)&quot;" WorkingDirectory="$(_LumyteParleyRepositoryRoot)" />
+    <Exec Command="$(_LumyteParleyBuildCommand) --target Native --native-backend direct3d12 --root &quot;$(_LumyteParleyInvocationRoot).&quot; --repository-root &quot;$(_LumyteParleyRepositoryRoot).&quot; --configuration &quot;$(Configuration)&quot; --output &quot;$(LumyteDirect3D12Output)&quot; --agility-channel &quot;$(LumyteAgilityChannel)&quot; --agility-sdk-root &quot;$(PkgMicrosoft_Direct3D_D3D12)&quot;" WorkingDirectory="$(_LumyteParleyRepositoryRoot)" />
   </Target>
 </Project>

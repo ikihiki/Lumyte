@@ -82,6 +82,38 @@ internal sealed class UiProposedTree
         return children.Contains(child);
     }
 
+    internal UiUseEnvironment? Environment(UiElement element)
+    {
+        var ancestors = new System.Collections.Generic.Stack<UiElement>();
+        for (UiElement? current = element; current is not null; current = Parent(current))
+        {
+            ancestors.Push(current);
+        }
+
+        UiUseEnvironment? environment = null;
+        while (ancestors.TryPop(out UiElement? current))
+        {
+            environment = UiUseEnvironment.Overlay(environment, Configuration(current).ProvidedContexts);
+        }
+
+        return environment;
+    }
+
+    internal bool Contains(UiElement element)
+    {
+        EnsureIndex();
+        return ReferenceEquals(element, _root) || _parents!.ContainsKey(element);
+    }
+
+    internal UiElement? Parent(UiElement element)
+    {
+        EnsureIndex();
+        return _parents!.GetValueOrDefault(element);
+    }
+
+    internal IReadOnlyList<UiElement>[] Slots(UiElement element) => _updates.TryGetValue(element, out (Widget Next, IReadOnlyList<UiElement>[] Slots) update)
+        ? update.Slots : element.Slots.Select(slot => (IReadOnlyList<UiElement>)slot).ToArray();
+
     internal Widget Configuration(UiElement element) => _updates.TryGetValue(element, out (Widget Next, IReadOnlyList<UiElement>[] Slots) update) ? update.Next : element.Widget;
 
     internal IEnumerable<UiElement> Children(UiElement element) => _updates.TryGetValue(element, out (Widget Next, IReadOnlyList<UiElement>[] Slots) update) ? update.Slots.SelectMany(slot => slot) : element.Children;

@@ -13,6 +13,7 @@ public sealed class NativeDeviceLossTests
 {
     /// <summary>Native WebGPU destruction delivers loss and fails submitted work without freeing callback storage early.</summary>
     /// <returns>Completion of native retirement confirmation.</returns>
+    [Trait("Execution", "Gpu")]
     [NativeGpuFact]
     public async Task NativeWebGpuLossInvalidatesWorkAndConfirmsRetirementAsync()
     {
@@ -42,6 +43,7 @@ public sealed class NativeDeviceLossTests
 
     /// <summary>An injected fatal result uses real Vulkan idle confirmation and preserves explicit child disposal.</summary>
     /// <returns>Completion of native retirement confirmation.</returns>
+    [Trait("Execution", "Gpu")]
     [NativeGpuFact]
     public async Task VulkanLossFailsPendingWorkAndRequiresRetirementAsync()
     {
@@ -63,6 +65,7 @@ public sealed class NativeDeviceLossTests
 
     /// <summary>Already released WebGPU resources remain idempotent while live resources still require retirement.</summary>
     /// <returns>Completion of native retirement confirmation.</returns>
+    [Trait("Execution", "Gpu")]
     [NativeGpuFact]
     public async Task NativeWebGpuRepeatedDisposalAfterLossIsIdempotentAsync()
     {
@@ -72,6 +75,7 @@ public sealed class NativeDeviceLossTests
 
     /// <summary>Already released Vulkan resources remain idempotent while live resources still require retirement.</summary>
     /// <returns>Completion of native retirement confirmation.</returns>
+    [Trait("Execution", "Gpu")]
     [NativeGpuFact]
     public async Task VulkanRepeatedDisposalAfterLossIsIdempotentAsync()
     {

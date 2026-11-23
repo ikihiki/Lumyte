@@ -14,6 +14,46 @@
 
 Mesh coverage factory は実際の record bounds から四頂点・二三角形を生成する Mesh ステージを使う。既存の Fragment evaluator が形状、paint、clip の相関した 4×4 sample と premultiplied display-linear 色を評価し、Canvas と準備結果の公開型は維持する。
 
+### 汎用 Stage への移行
+
+新規の構築では GRAPHICS-0040 の実 Stage/Then と構築済み IPipeline を使う。
+基準 4570fed4a973bef34b6fb07b3a6fca8a52af57eb の実装が既に完成した
+MeshEvaluateAndComposite2D、generic-mesh と
+共通 generic-fused-fragment を提供するため、本変更で第二の Mesh algorithm は作らない。
+これは規範 scene を読む quad endpoint であり、旧 record bounds emission と同じ実装だとは主張しない。
+旧 Mesh Slot、全 artifact と StandardDrawMesh の互換動作は残すが、汎用 Stage に
+PreparedRecordBatch2D や旧 renderer 全体を包まない。
+
+以下は GRAPHICS-0040 の commands、manifest、frame、views、targetPort、limits、
+samples、build と routes を明示した構築例の endpoint 差分である。
+
+~~~csharp
+var scene = g.Stage(CpuStages2D.Normalize(limits), commands, manifest, frame)
+    .Then(Transfers.Upload<SceneV1>());
+var deviceFrame = frame.Then(Transfers.Upload<FrameV1>());
+var output = g.Stage(MeshStages2D.EvaluateAndComposite(samples),
+    scene, views, deviceFrame, targetPort);
+using var pipeline = build.Build(g.Complete(output));
+using IRenderer2D renderer = new Renderer2D(device, pipeline, routes, policy);
+~~~
+
+同一 request と同一四入力のまま MeshStages2D を RasterStages2D に交換できる。
+独立 coverage/paint/clip と融合 endpoint は 16 相関 sample の command mean を
+SrcOver より先に計算し、indexed mesh の中心 coverage を sample に放送する。
+親 Graph の layer は同じ pipeline を segment ごとに借用し、別 Graph を内包しない。
+
+この PR 固有の範囲は旧 Mesh 機能の互換保持、汎用 artifact の feature/反射 limit/linkage
+事前検証、および concrete Mesh を使う Direct/親 Graph・layer・3 submission の
+不変 Upload identity/COW/source lease 回帰である。ROOT の cache、世代、予算と
+生命周期は再実装しない。ImmutableUploads は build 時 init-only の方針であり、
+共有 input は ShaderRead/CopyRead のみ、writer と target は準備ごとに独立する。
+整数 translation metadata は全 sample の評価位置から引き、mesh center 規則を保つ。
+
+Mesh を明示した汎用 build は feature、target、反射された workgroup/output/memory と
+一 group dispatch の上限を native allocation 前に検証する。欠けた Mesh artifact を
+raster に代替せず、Browser/Wgpu は非対応として拒否する。旧 Slot の明示した
+第二候補は互換専用の別契約であり、汎用 build の暗黙 fallback ではない。
+
 ### 利用者の変更前・変更後
 
 変更前は全 Slot に Standard factory を指定する。変更後は対応する十種類の Slot に Mesh factory と必要な容量を指定し、indexed mesh は明示した StandardDrawMesh に残す。次の抜粋は同じ FillRect Slot の置換であり、残り十 Slot と host、device、target、完了確認の手順は基準コードの構築契約を維持する。

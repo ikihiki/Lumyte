@@ -26,6 +26,7 @@ public sealed class ExplicitTransferBoundaryTests
 
     /// <summary>Vulkan observes mutations only at explicit CopyFrom boundaries, in both validation modes.</summary>
     /// <returns>The completed native readback checks.</returns>
+    [Trait("Execution", "Gpu")]
     [GpuFact]
     public async Task VulkanDeclarationsStayLiveUntilExplicitTransferAsync()
     {
@@ -42,6 +43,7 @@ public sealed class ExplicitTransferBoundaryTests
 
     /// <summary>Wgpu observes mutations only at explicit CopyFrom boundaries, in both validation modes.</summary>
     /// <returns>The completed native readback checks.</returns>
+    [Trait("Execution", "Gpu")]
     [GpuFact]
     public async Task WgpuDeclarationsStayLiveUntilExplicitTransferAsync()
     {

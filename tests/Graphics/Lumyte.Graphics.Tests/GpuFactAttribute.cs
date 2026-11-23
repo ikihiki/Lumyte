@@ -4,6 +4,9 @@ using Xunit;
 // cache concurrency tests still synchronize their own parallel worker tasks.
 [assembly: CollectionBehavior(DisableTestParallelization = true)]
 
+// The filtered CPU lane contains no native-device/callback cases; keep default and GPU runs serial.
+[assembly: System.Reflection.AssemblyMetadata("Lumyte.CpuMethodParallelism", "true")]
+
 namespace Lumyte.Graphics.Tests;
 
 /// <summary>Runs a real-device test only when the GPU test environment is explicitly enabled.</summary>

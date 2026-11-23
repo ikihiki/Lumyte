@@ -2,7 +2,7 @@ using Lumyte.Graphics.Abstractions;
 
 namespace Lumyte.Graphics.Vulkan;
 
-internal sealed unsafe partial class VulkanGraphicsPipeline : IGraphicsPipeline
+internal sealed unsafe partial class VulkanGraphicsPipeline : IGraphicsPipeline, IGraphicsNativeOrigin
 {
     private readonly VulkanDevice _owner;
     private readonly VulkanShader _vertex;
@@ -71,6 +71,10 @@ internal sealed unsafe partial class VulkanGraphicsPipeline : IGraphicsPipeline
         }
     }
 
+    IGraphicDevice IGraphicsNativeOrigin.Device => Owner;
+
+    object IGraphicsNativeOrigin.AllocationIdentity => this;
+
     public GraphicsPipelineDesc Desc { get; }
 
     internal ShaderTargetData? TaskData { get; }
@@ -86,6 +90,17 @@ internal sealed unsafe partial class VulkanGraphicsPipeline : IGraphicsPipeline
     internal ShaderTargetData VertexData { get; }
 
     internal ShaderTargetData? FragmentData { get; }
+
+    void IGraphicsNativeOrigin.ValidateOrigin()
+    {
+        ObjectDisposedException.ThrowIf(Owner.Status == GraphicsDeviceStatus.Disposed, Owner);
+        if (Owner.Status == GraphicsDeviceStatus.Lost)
+        {
+            throw new GraphicsDeviceLostException(Owner.Loss!);
+        }
+
+        ValidateAlive();
+    }
 
     public void Dispose()
     {

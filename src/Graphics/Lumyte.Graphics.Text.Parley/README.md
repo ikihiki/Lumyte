@@ -170,8 +170,8 @@ dotnet run --project build -c Release -- --target Test --project tests/Graphics/
 Parleyだけのnative成果物やtoolchain準備も同じ入口から実行できます。
 
 ```sh
-dotnet run --project build -c Release -- --target SetupParleyNative
-dotnet run --project build -c Release -- --target ParleyNative
+dotnet run --project build -c Release -- --target Setup --setup-tool parley
+dotnet run --project build -c Release -- --target Native --native-backend parley
 ```
 
 C#プロジェクトを直接`dotnet build`した場合も、`ParleyNative.targets`が共通runnerのleaf targetを呼びます。
@@ -208,7 +208,7 @@ CIでは全4環境の検証後にnative artifactを集め、Browserのpublish前
 他のライブラリだけをpackする場合は`--skip-parley-package`を使えます。
 
 このNuGetはnative用で、Browserの静的リンク用packageではありません。
-Browserではソースprojectを参照し、下記の`ParleyBrowser.targets`と共通runnerの`Publish`／`TestWasm`を使用します。
+Browserではソースprojectを参照し、下記の`ParleyBrowser.targets`と共通runnerの`Publish`／`Test --suite wasm`を使用します。
 native用managed出力とBrowser用のP/Invoke module名を混在させないでください。
 
 ### C ABIとBrowserへの接続
@@ -254,7 +254,7 @@ C#からnativeを通す回帰テストと、Rust shimのテストは次のよう
 
 ```sh
 dotnet run --project build -c Release -- --target Test --project tests/Graphics/Lumyte.Graphics.Text.Parley.Tests
-dotnet run --project build -c Release -- --target TestRust
+dotnet run --project build -c Release -- --target Test --suite rust
 ```
 
 toolchainやビルドtargetの引数は[ビルド手順](../../../build/README.md)を参照してください。

@@ -16,7 +16,18 @@ internal static class CollectionTemplateOwnership
     }
 
     internal static UiElementContent WithItemOwnership(this UiElementContent content, params Widget[] roots) =>
-        new(content.Content, content.Commit) { Reads = content.Reads, CollectionItemRoots = Array.AsReadOnly((Widget[])roots.Clone()) };
+        new(content.Content, content.Commit) { Reads = content.Reads, FreshRealizations = content.FreshRealizations, PreparationState = content.PreparationState, PrepareLayout = content.PrepareLayout, CollectionItemRoots = Array.AsReadOnly((Widget[])roots.Clone()) };
+
+    internal static UiElementContent WithFreshItemOwnership(this UiElementContent content, params Widget[] roots) =>
+        new(content.Content, content.Commit)
+        {
+            Reads = content.Reads,
+            CollectionItemRoots = Array.AsReadOnly((Widget[])roots.Clone()),
+            RequiresFreshDescendants = true,
+            FreshRealizations = content.FreshRealizations,
+            PreparationState = content.PreparationState,
+            PrepareLayout = content.PrepareLayout,
+        };
 
     internal static IEnumerable<Widget> GetDeclaredItemChildren(this Widget widget) => widget.ChildCollections.SelectMany(slot => slot);
 }

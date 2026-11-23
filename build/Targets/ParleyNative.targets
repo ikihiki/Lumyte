@@ -19,7 +19,7 @@
   </ItemGroup>
   <Target Name="BuildLumyteParleyNative" BeforeTargets="BeforeBuild" DependsOnTargets="_PrepareLumyteBuildInvocation" Condition="'$(LumyteBuildParleyNative)' == 'true' and '$(RuntimeIdentifier)' != 'browser-wasm' and '$(LumyteParleyBrowser)' != 'true' and '$(DesignTimeBuild)' != 'true'">
     <Error Condition="'$(RuntimeIdentifier)' != '' and '$(RuntimeIdentifier)' != '$(LumyteParleyHostRid)'" Text="Parley source builds target the current SDK host $(LumyteParleyHostRid), not $(RuntimeIdentifier). Supply a tested library for that runtime and set LumyteBuildParleyNative=false." />
-    <Exec Command="$(_LumyteParleyBuildCommand) --target ParleyNative --root &quot;$(_LumyteParleyInvocationRoot).&quot; --repository-root &quot;$(_LumyteParleyRepositoryRoot).&quot; --output &quot;$([MSBuild]::EnsureTrailingSlash('$(LumyteParleyNativeOutput)')).&quot; --toolchain &quot;$(LumyteParleyNativeToolchain)&quot;" WorkingDirectory="$(_LumyteParleyRepositoryRoot)" />
+    <Exec Command="$(_LumyteParleyBuildCommand) --target Native --native-backend parley --root &quot;$(_LumyteParleyInvocationRoot).&quot; --repository-root &quot;$(_LumyteParleyRepositoryRoot).&quot; --output &quot;$([MSBuild]::EnsureTrailingSlash('$(LumyteParleyNativeOutput)')).&quot; --toolchain &quot;$(LumyteParleyNativeToolchain)&quot;" WorkingDirectory="$(_LumyteParleyRepositoryRoot)" />
   </Target>
   <Target Name="StageLumyteParleyNativePackage" AfterTargets="BuildLumyteParleyNative" Condition="'$(DesignTimeBuild)' != 'true' and '$(RuntimeIdentifier)' != 'browser-wasm' and '$(LumyteParleyBrowser)' != 'true' and Exists('$(LumyteParleyNativePath)')">
     <Error Condition="'$(LumyteParleyPackageRid)' == ''" Text="The target runtime for Parley packaging was not identified." />

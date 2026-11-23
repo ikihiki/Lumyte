@@ -16,6 +16,7 @@ public sealed class ResourceManagerTests
 
     /// <summary>Typed transforms share one source and release build inputs without releasing the completed output.</summary>
     /// <returns>Completion of the pipeline and ownership checks.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task MultiStagePipelineReleasesBuildInputsAsync()
     {
@@ -37,6 +38,7 @@ public sealed class ResourceManagerTests
 
     /// <summary>Typed stages are passed directly without DI or pipeline wrappers and retain build dependency cleanup.</summary>
     /// <returns>Completion of manual construction, shared acquisition and release.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task ManualConstructionAcceptsTypedStagesDirectlyAsync()
     {
@@ -67,6 +69,7 @@ public sealed class ResourceManagerTests
 
     /// <summary>A resident diamond shares its leaf and releases every parent before the leaf.</summary>
     /// <returns>Completion of dependency sharing and release.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task ResidentDiamondSharesLeafAndTrimsParentsFirstAsync()
     {
@@ -98,6 +101,7 @@ public sealed class ResourceManagerTests
 
     /// <summary>A stage cannot claim a borrowed dependency as its separately owned output.</summary>
     /// <returns>Completion of rejected alias publication and the original owner's release.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task BorrowedDependencyCannotBecomeAnotherOwnedOutputAsync()
     {
@@ -116,6 +120,7 @@ public sealed class ResourceManagerTests
 
     /// <summary>Selectors and decode variants use independent outputs while sharing a normalized document input.</summary>
     /// <returns>Completion of document projection.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task DocumentProjectionsNormalizeInputAddressAsync()
     {
@@ -142,6 +147,7 @@ public sealed class ResourceManagerTests
 
     /// <summary>One cancelled caller leaves a shared asynchronous load running for the remaining caller.</summary>
     /// <returns>Completion of both callers.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task ConcurrentAcquireSharesBuildAndIsolatesCallerCancellationAsync()
     {
@@ -178,6 +184,7 @@ public sealed class ResourceManagerTests
 
     /// <summary>Dependencies between separately started builds fail with a cycle instead of deadlocking.</summary>
     /// <returns>Completion of both failed builds.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task IndependentBuildTasksDetectDynamicCycleAsync()
     {
@@ -212,6 +219,7 @@ public sealed class ResourceManagerTests
 
     /// <summary>A failed release keeps resident memory and dependencies until a successful retry.</summary>
     /// <returns>Completion of the failed and retried trim.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task ReleaseFailureRetainsMemoryAndDependenciesForRetryAsync()
     {
@@ -247,6 +255,7 @@ public sealed class ResourceManagerTests
 
     /// <summary>Repeated dependency requests share one value and promote its lifetime to resident.</summary>
     /// <returns>Completion of lifetime promotion and final release.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task RequiringBuildThenResidentPromotesOneSharedDependencyAsync()
     {
@@ -270,6 +279,7 @@ public sealed class ResourceManagerTests
 
     /// <summary>Failed build cleanup keeps its memory charged and does not repeat previously successful release work.</summary>
     /// <returns>Completion of failed publication, blocked rebuild and cleanup recovery.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task FailedBuildCleanupRetainsChargeAndRetriesOnlyUnfinishedWorkAsync()
     {
@@ -332,6 +342,7 @@ public sealed class ResourceManagerTests
 
     /// <summary>A frame pins concrete values while references follow reload and can be returned independently.</summary>
     /// <returns>Completion of frame acquisition, reload and independent ownership checks.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task ReferenceAcquiresStableFrameLeasesAcrossReloadAsync()
     {
@@ -360,6 +371,7 @@ public sealed class ResourceManagerTests
 
     /// <summary>Retention and pinning preserve independent logical and generation ownership.</summary>
     /// <returns>Completion of retention, pinning, reload and independent ownership checks.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task RetainAndPinPreserveReferenceAndLeaseOwnershipAsync()
     {
@@ -411,6 +423,7 @@ public sealed class ResourceManagerTests
 
     /// <summary>A handle resolves to an owning reference and its lease survives returning the last reference.</summary>
     /// <returns>Completion of handle acquisition and separate reference and lease ownership.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task ManagerResolvesHandlesToOwningReferencesAsync()
     {
@@ -436,6 +449,7 @@ public sealed class ResourceManagerTests
 
     /// <summary>A captured frame cannot resolve a resource loaded after that frame was opened.</summary>
     /// <returns>Completion of failed captured acquisition without changing the current reference.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task ReferenceRejectsValuesMissingFromCapturedFrameAsync()
     {
@@ -454,6 +468,7 @@ public sealed class ResourceManagerTests
 
     /// <summary>A handle is unmanaged and non-owning, and an expired generation cannot resolve after reuse.</summary>
     /// <returns>Completion of the handle ownership checks.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task HandlesAreUnmanagedAndRejectExpiredOrForeignOwnersAsync()
     {
@@ -493,6 +508,7 @@ public sealed class ResourceManagerTests
 
     /// <summary>Reload publishes all affected outputs together and captured resource snapshots keep the earlier map.</summary>
     /// <returns>Completion of atomic reload and old-generation ownership checks.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task ReloadPublishesAtomicallyAndKeepsOldLeasesAndSnapshotsAsync()
     {
@@ -553,6 +569,7 @@ public sealed class ResourceManagerTests
 
     /// <summary>A changed image rebuilds its parent while another scene and their shared geometry are reused.</summary>
     /// <returns>Completion of selective reload and unchanged notification checks.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task ReloadRebuildsOnlyChangedInputAndItsDependentsAsync()
     {
@@ -613,6 +630,7 @@ public sealed class ResourceManagerTests
 
     /// <summary>Failure in an affected parent preserves the previously published graph and version.</summary>
     /// <returns>Completion of the rejected reload.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task FailedReloadPreservesPublishedGraphAsync()
     {
@@ -641,6 +659,7 @@ public sealed class ResourceManagerTests
 
     /// <summary>A source change while a candidate is built rejects publication and retains the old graph.</summary>
     /// <returns>Completion of the conflicted reload.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task ReloadRejectsSourceRevisionChangedDuringConstructionAsync()
     {
@@ -677,6 +696,7 @@ public sealed class ResourceManagerTests
     /// <summary>Source provenance survives releasing a build input and still selects its parent for reload.</summary>
     /// <param name="rescan">Whether to recheck all tracked sources instead of a specific identifier.</param>
     /// <returns>Completion of reload after intermediate trimming.</returns>
+    [Trait("Execution", "Integration")]
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
@@ -705,6 +725,7 @@ public sealed class ResourceManagerTests
 
     /// <summary>Runtime invalidation propagates through resident edges while independent build results remain usable.</summary>
     /// <returns>Completion of runtime loss and recovery.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task RuntimeLossInvalidatesResidentsAndRebuildsExistingHandleAsync()
     {
@@ -751,6 +772,7 @@ public sealed class ResourceManagerTests
 
     /// <summary>Shutdown rejects live external owners without changing manager state, and succeeds after they leave.</summary>
     /// <returns>Completion of the shutdown retries.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task ShutdownRejectsReferencesLeasesAndSnapshotsAsync()
     {
@@ -772,6 +794,7 @@ public sealed class ResourceManagerTests
 
     /// <summary>All scopes share one manager, its source and pipelines until the application root is disposed.</summary>
     /// <returns>Completion of the shared manager and its application services.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task DependencyInjectionSharesManagerAcrossScopesAndOwnsServicesOnceAsync()
     {
@@ -820,6 +843,7 @@ public sealed class ResourceManagerTests
 
     /// <summary>Failed manager cleanup retains singleton services until a successful retry and root disposal.</summary>
     /// <returns>Completion of cleanup retry and application shutdown.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task DependencyInjectionRetainsServicesUntilCleanupRetryCompletesAsync()
     {

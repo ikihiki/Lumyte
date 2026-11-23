@@ -10,6 +10,7 @@ public sealed class HistoryTests
 {
     /// <summary>Checks Back/Forward recreate pages while preserving entries, window identity and copied arguments.</summary>
     /// <returns>The verification.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task HistoryRecreatesPagesAndOldHostsNeverFollowTheNewSurfaceAsync()
     {
@@ -44,6 +45,7 @@ public sealed class HistoryTests
 
     /// <summary>Checks trimming, forward truncation, Replace and empty history without factory calls.</summary>
     /// <returns>The verification.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task BoundedHistoryCommitsOnlySuccessfulOperationsAsync()
     {

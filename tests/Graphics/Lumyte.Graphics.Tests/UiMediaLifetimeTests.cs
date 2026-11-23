@@ -17,6 +17,7 @@ public sealed class UiMediaLifetimeTests
 {
     /// <summary>Runs media ownership, preparation and snapshot equivalence on Vulkan.</summary>
     /// <returns>The asynchronous verification.</returns>
+    [Trait("Execution", "Gpu")]
     [GpuFact]
     public async Task VulkanBorrowedMediaSurvivesUntilGpuCompletionAsync()
     {
@@ -26,6 +27,7 @@ public sealed class UiMediaLifetimeTests
 
     /// <summary>Runs media ownership, preparation and snapshot equivalence on wgpu.</summary>
     /// <returns>The asynchronous verification.</returns>
+    [Trait("Execution", "Gpu")]
     [GpuFact]
     public async Task WgpuBorrowedMediaSurvivesUntilGpuCompletionAsync()
     {

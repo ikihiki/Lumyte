@@ -4,7 +4,7 @@ using VkBuffer = Silk.NET.Vulkan.Buffer;
 
 namespace Lumyte.Graphics.Vulkan;
 
-internal sealed unsafe class VulkanBuffer<T> : IGraphicsBuffer<T>, IShaderRawBuffer, IVulkanShaderBuffer
+internal sealed unsafe class VulkanBuffer<T> : IGraphicsBuffer<T>, IShaderRawBuffer, IVulkanShaderBuffer, IGraphicsNativeOrigin
     where T : unmanaged
 {
     private readonly VulkanDevice _owner;
@@ -98,6 +98,10 @@ internal sealed unsafe class VulkanBuffer<T> : IGraphicsBuffer<T>, IShaderRawBuf
         }
     }
 
+    IGraphicDevice IGraphicsNativeOrigin.Device => Owner;
+
+    object IGraphicsNativeOrigin.AllocationIdentity => this;
+
     public object ShaderHandle => Native;
 
     public Type ElementType => typeof(T);
@@ -131,6 +135,17 @@ internal sealed unsafe class VulkanBuffer<T> : IGraphicsBuffer<T>, IShaderRawBuf
     }
 
     internal VulkanDevice Owner => _owner;
+
+    void IGraphicsNativeOrigin.ValidateOrigin()
+    {
+        ObjectDisposedException.ThrowIf(Owner.Status == GraphicsDeviceStatus.Disposed, Owner);
+        if (Owner.Status == GraphicsDeviceStatus.Lost)
+        {
+            throw new GraphicsDeviceLostException(Owner.Loss!);
+        }
+
+        ValidateByteRange(0, SizeInBytes);
+    }
 
     public BufferSlice<T> SliceElements(ulong offset, ulong count) => new(this, offset, count);
 

@@ -52,7 +52,7 @@ internal sealed class BrowserDriver(UiBrowserApplicationOptions options) : UiPla
         await JSHost.ImportAsync("Lumyte.UI.Application", new Uri(new Uri(href), options.ModulePath).AbsoluteUri, cancellationToken);
         _imported = true;
         _canvas = BrowserApplicationInterop.Canvas(options.CanvasId);
-        BrowserPlatform platform = await BrowserPlatform.CreateAsync(_canvas);
+        BrowserPlatform platform = await BrowserPlatform.CreateAsync(_canvas, ownWheelDefaults: options.OwnWheelDefaults);
         try
         {
             ITextInputService? text = null;

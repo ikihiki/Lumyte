@@ -4,11 +4,12 @@ using A = Ahjo.Wgpu;
 
 namespace Lumyte.Graphics.Wgpu;
 
-internal sealed class WgpuTexture : IGraphicsTexture
+internal sealed class WgpuTexture : IGraphicsTexture, IGraphicsNativeOrigin
 {
     private readonly WgpuDevice _owner;
     private readonly A.Texture _native;
     private readonly SurfaceFrameLifetime? _surfaceFrame;
+    private object? _allocationIdentity;
     private bool _disposed;
 
     internal WgpuTexture(WgpuDevice owner, TextureDesc desc)
@@ -52,6 +53,10 @@ internal sealed class WgpuTexture : IGraphicsTexture
         (_owner, Width, Height, MipLevels, ArrayLayers, Format, Usage, _native, _surfaceFrame) = (owner, desc.Width, desc.Height, 1, 1, desc.Format, desc.Usage, native, lifetime);
     }
 
+    IGraphicDevice IGraphicsNativeOrigin.Device => Owner;
+
+    unsafe object IGraphicsNativeOrigin.AllocationIdentity => _allocationIdentity ??= new NativeAllocationIdentity(Owner, (nint)_native.Handle);
+
     public uint Width { get; }
 
     public uint Height { get; }
@@ -88,6 +93,21 @@ internal sealed class WgpuTexture : IGraphicsTexture
         }
 
         return (Math.Max(1U, Width >> (int)mipLevel), Math.Max(1U, Height >> (int)mipLevel));
+    }
+
+    void IGraphicsNativeOrigin.ValidateOrigin()
+    {
+        ObjectDisposedException.ThrowIf(Owner.Status == GraphicsDeviceStatus.Disposed, Owner);
+        if (Owner.Status == GraphicsDeviceStatus.Lost)
+        {
+            throw new GraphicsDeviceLostException(Owner.Loss!);
+        }
+
+        _ = Native;
+        if (SurfaceFrame != null && SurfaceFrame.Status != SurfaceFrameStatus.Acquired)
+        {
+            throw new InvalidOperationException("The surface image lease is no longer acquired.");
+        }
     }
 
     public IGraphicsTextureView CreateView(TextureViewDesc? desc = null)
@@ -153,4 +173,6 @@ internal sealed class WgpuTexture : IGraphicsTexture
         _native.Dispose();
         _disposed = true;
     }
+
+    private sealed record NativeAllocationIdentity(WgpuDevice Device, nint Handle);
 }

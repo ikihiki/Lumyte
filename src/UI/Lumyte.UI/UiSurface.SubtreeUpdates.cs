@@ -20,6 +20,12 @@ public sealed partial class UiSurface
     {
         var dirty = new HashSet<UiElement>(_signalElements, ReferenceEqualityComparer.Instance);
         _signalElements.Clear();
+        if (dirty.Any(element => element.Widget.RequiresViewportPreparation) || CollectElements(_rootElement).Any(element => element.Widget.RequiresViewportPreparation))
+        {
+            _pendingViewportElements.UnionWith(dirty);
+            return;
+        }
+
         var plans = new List<RebuildPlan>();
         var covered = new HashSet<UiElement>(ReferenceEqualityComparer.Instance);
         RebuildPlan? leaves = null;
@@ -58,7 +64,7 @@ public sealed partial class UiSurface
                 {
                     if (RebuildPlan.CanBatchLeaf(element, next))
                     {
-                        prepared = RebuildPlan.PrepareLeaf(element, next, PrepareAnimationUpdate);
+                        prepared = RebuildPlan.PrepareLeaf(element, next, PrepareAnimationUpdate, _rootEnvironment);
                         if (prepared.Content is null && prepared.Next.ChildCollections.Count == 0)
                         {
                             if (leaves is null)
@@ -75,7 +81,7 @@ public sealed partial class UiSurface
                     }
 
                     leaves = null;
-                    var local = new RebuildPlan(element, next, true, _rootElement, _treeValidators, _sharedElements, PrepareAnimationUpdate, prepared);
+                    var local = new RebuildPlan(element, next, true, _rootElement, _treeValidators, _sharedElements, PrepareAnimationUpdate, prepared, _rootEnvironment);
                     prepared = null;
                     plans.Add(local);
                     covered.UnionWith(local.Updates.Select(update => update.Element));
@@ -95,11 +101,17 @@ public sealed partial class UiSurface
 
             using RebuildPlan? combined = plans.Count > 1 ? new(_rootElement, plans, _treeValidators, _sharedElements) : null;
             RebuildPlan plan = combined ?? plans[0];
+            if (plan.Updates.Any(update => update.Next.RequiresViewportPreparation))
+            {
+                _pendingViewportElements.UnionWith(dirty);
+                return;
+            }
+
             _applyingRebuild = true;
             try
             {
                 PrepareAnimationUpdates(plan);
-                plan.Prepare();
+                plan.Prepare(this);
                 PrepareSignalUpdates(plan);
                 if (!_isDisposed)
                 {

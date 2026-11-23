@@ -14,6 +14,7 @@ using static Lumyte.UI.Compose;
 namespace Lumyte.UI.Application.Tests;
 
 /// <summary>Checks standard EventSource profiling and retained resource lifecycle events.</summary>
+[Collection("Application profiling")]
 public sealed class ProfilingTests
 {
     /// <summary>Checks request/frame joins and repeated processing behind an asynchronous gate.</summary>
@@ -254,6 +255,7 @@ public sealed class ProfilingTests
 
     /// <summary>Checks the real host preserves supplied cancellation through a held driver request.</summary>
     /// <returns>The verification.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task ScreenshotHostReportsCancellationWithoutChangingDriverLifetimeAsync()
     {
@@ -379,6 +381,7 @@ public sealed class ProfilingTests
 
     /// <summary>Checks headless owner turns issue and finish real correlated frames.</summary>
     /// <returns>The verification.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task HeadlessFramesHaveMatchingControlEventsAsync()
     {
@@ -422,6 +425,7 @@ public sealed class ProfilingTests
 
     /// <summary>Checks observed work counters survive a later driver exception.</summary>
     /// <returns>The verification.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task DriverFailurePreservesPartialCountersAsync()
     {
@@ -444,6 +448,7 @@ public sealed class ProfilingTests
 
     /// <summary>Checks real presenter terminal counters, owner relation and confirmed retirement.</summary>
     /// <returns>The verification.</returns>
+    [Trait("Execution", "Gpu")]
     [GpuFact]
     public async Task PresenterTerminalCountersAndOwnerRelationAreUniqueAsync()
     {
@@ -473,6 +478,7 @@ public sealed class ProfilingTests
 
     /// <summary>Checks stages alone stay uncorrelated and reconnect reuses a host run without reusing frame IDs.</summary>
     /// <returns>The verification.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task HostReconnectPreservesRunAndRestoresCallerActivityAsync()
     {

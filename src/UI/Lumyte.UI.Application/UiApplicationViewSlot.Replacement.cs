@@ -61,7 +61,7 @@ public sealed partial class UiApplicationViewSlot
             {
                 slot._application.Owner.CheckOwner();
                 slot._application.ValidateEditors(root);
-                _candidate = new(slot._application, slot._window, root) { Suspended = true };
+                _candidate = new(slot._application, slot._window, root, slot.Context) { Suspended = true };
                 _candidate.Visuals.SuspendPublication();
                 _candidate.Host.Pause();
                 _candidate.Surface.SetSignalUpdatesEnabled(false);
@@ -75,6 +75,7 @@ public sealed partial class UiApplicationViewSlot
                 _candidate.Owner = _owner.Token;
                 _candidate.AttachPortals();
                 _candidate.Portals!.SetUpdatesEnabled(false);
+                _candidate.Dialogs!.SetUpdatesEnabled(false);
                 _surfaceId = _candidate.Surface.CaptureAutomationSnapshot().SurfaceId;
                 _inputVersion = _candidate.Surface.InputVersionForWindowing;
                 _signalRevision = _candidate.Surface.CommittedSignalRevision;
@@ -97,6 +98,7 @@ public sealed partial class UiApplicationViewSlot
 
                 _previous?.Host.Pause();
                 _previous?.Portals?.SetUpdatesEnabled(false);
+                _previous?.Dialogs?.SetUpdatesEnabled(false);
                 while (_previous?.Host.HasLease == true)
                 {
                     await slot._application.NextTurnAsync().AsTask().WaitAsync(cancellationToken);
@@ -278,6 +280,7 @@ public sealed partial class UiApplicationViewSlot
                     previous.Surface.SetSignalUpdatesEnabled(true);
                     previous.Surface.SetAnimationUpdatesEnabled(true);
                     previous.Portals?.SetUpdatesEnabled(true);
+                    previous.Dialogs?.SetUpdatesEnabled(true);
                     previous.Host.Resume();
                 }
 

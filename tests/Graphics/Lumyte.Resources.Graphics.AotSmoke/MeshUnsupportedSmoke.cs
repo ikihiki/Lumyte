@@ -1,8 +1,11 @@
+using Lumyte.Execution;
 using Lumyte.Graphics.Abstractions;
 using Lumyte.Graphics.Drawing2D;
 using Lumyte.Graphics.Drawing2D.Pipelines;
+using Lumyte.Graphics.Pipelines;
 using Lumyte.Graphics.Wgpu;
 using Lumyte.Mathematics.Colors;
+using Lumyte.Pipelines;
 using static Lumyte.Graphics.Drawing2D.Pipelines.DrawingCompose;
 
 namespace Lumyte.Resources.Graphics.AotSmoke;
@@ -12,6 +15,7 @@ internal static class MeshUnsupportedSmoke
     internal static async Task RunAsync()
     {
         using var device = WgpuDevice.Create();
+        RejectGenericMesh(device);
         using IGraphicsShader vertex = device.CreateShader(DrawingShaders2D.Vertex);
         using IGraphicsShader fragment = device.CreateShader(DrawingShaders2D.Fragment);
         using IGraphicsPipeline pipeline = device.CreateGraphicsPipeline(new() { VertexShader = vertex, FragmentShader = fragment });
@@ -33,6 +37,33 @@ internal static class MeshUnsupportedSmoke
         }
 
         throw new InvalidOperationException("Wgpu unexpectedly admitted a Mesh-only candidate.");
+    }
+
+    private static void RejectGenericMesh(IGraphicDevice device)
+    {
+        var runtime = new ExecutionRuntime([]);
+        runtime.PrepareOnCurrentHost(OwnerPlacement.Host, CpuExecutionMode.Cooperative, 1, new());
+        var graph = new PipelineGraph<RenderRequest2D>();
+        Port<Host<CommandsV1>> commands = graph.Stage(RenderFields2D.Commands(), graph.Input);
+        Port<Host<ResourceManifestV1>> manifest = graph.Stage(RenderFields2D.ResourceManifest(), graph.Input);
+        Port<Host<FrameV1>> frame = graph.Stage(RenderFields2D.Frame(), graph.Input);
+        Port<Device<SceneV1>> scene = graph.Stage(CpuStages2D.Normalize(new(16, 64, 64, 64)), commands, manifest, frame).Then(Transfers.Upload<SceneV1>());
+        Port<Device<FrameV1>> deviceFrame = frame.Then(Transfers.Upload<FrameV1>());
+        Port<Device<ResourceViewsV1>> views = graph.Stage(RenderFields2D.ResourceViews(), graph.Input);
+        Port<Device<TargetV1>> target = graph.Stage(RenderFields2D.Target(), graph.Input);
+        Port<Device<TargetWritesV1>> output = graph.Stage(MeshStages2D.EvaluateAndComposite(new(16, 1)), scene, views, deviceFrame, target);
+        using var build = new GraphicsPipelineBuildHost(runtime, device, GenericGpuArtifactProvider2D.CreateEmbedded(), new(64 * 1024 * 1024, 16 * 1024 * 1024, 16 * 1024 * 1024, 3));
+        try
+        {
+            using IPipeline<RenderRequest2D, Device<TargetWritesV1>> pipeline = build.Build(graph.Complete(output));
+        }
+        catch (NotSupportedException)
+        {
+            Console.WriteLine("Native AOT generic Mesh: unsupported Wgpu capability rejected at build; no fallback or submission.");
+            return;
+        }
+
+        throw new InvalidOperationException("Wgpu unexpectedly built a generic Mesh pipeline.");
     }
 
     private static Definitions.Renderer Configuration(bool resident = false) => Renderer(

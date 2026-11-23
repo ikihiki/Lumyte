@@ -10,6 +10,7 @@ public sealed class ThreadChunkTests
 
     /// <summary>Live allocations on one thread share adjacent slices and one physical charge.</summary>
     /// <returns>Completion of the allocation thread.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task SameThreadRentsShareChunkAsync()
     {
@@ -39,6 +40,7 @@ public sealed class ThreadChunkTests
 
     /// <summary>Different caller threads receive different chunks even when they share a scope.</summary>
     /// <returns>Completion of both caller threads.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task DifferentThreadsUseDifferentChunksAsync()
     {
@@ -57,6 +59,7 @@ public sealed class ThreadChunkTests
 
     /// <summary>Chunks are isolated by manager, budget pool and element type on one thread.</summary>
     /// <returns>Completion of the allocation thread.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task ManagerPoolAndElementTypeHaveSeparateChunksAsync()
     {
@@ -82,6 +85,7 @@ public sealed class ThreadChunkTests
 
     /// <summary>Disposing one scope leaves another scope's slice of the shared chunk alive.</summary>
     /// <returns>Completion of both scopes.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task SharedChunkLivesUntilLastScopeReturnsAsync()
     {
@@ -110,6 +114,7 @@ public sealed class ThreadChunkTests
 
     /// <summary>A return from another thread cannot rewind the owner thread's allocation cursor.</summary>
     /// <returns>Completion of the owner and return threads.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task RemoteReturnDoesNotReusePartiallyReleasedChunkAsync()
     {
@@ -140,6 +145,7 @@ public sealed class ThreadChunkTests
 
     /// <summary>A full chunk retains its charge while a rollover that exceeds the budget fails.</summary>
     /// <returns>Completion of the allocation thread.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task RolloverCannotExceedHardBudgetAsync()
     {
@@ -177,6 +183,7 @@ public sealed class ThreadChunkTests
 
     /// <summary>The last return releases a chunk immediately even when its owner thread remains alive.</summary>
     /// <returns>Completion of the owner thread.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task EmptyChunkIsReleasedBeforeNextRentAsync()
     {
@@ -196,6 +203,7 @@ public sealed class ThreadChunkTests
 
     /// <summary>Concurrent duplicate returns release each slice exactly once across thread boundaries.</summary>
     /// <returns>Completion of all returning threads.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task ConcurrentRemoteReturnsReleaseChunkOnceAsync()
     {
@@ -227,6 +235,7 @@ public sealed class ThreadChunkTests
 
     /// <summary>A final remote return racing another rent cannot retire the new slice's chunk.</summary>
     /// <returns>Completion of the owner and return threads.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task LastRemoteReturnCanRaceOwnerRentAsync()
     {
@@ -253,6 +262,7 @@ public sealed class ThreadChunkTests
 
     /// <summary>Competing threads cannot reserve chunks beyond the common pool budget.</summary>
     /// <returns>Completion of allocation and return threads.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task ConcurrentThreadChunksRespectHardBudgetAsync()
     {
@@ -283,6 +293,7 @@ public sealed class ThreadChunkTests
 
     /// <summary>Closing a scope during concurrent rents drains every admitted chunk.</summary>
     /// <returns>Completion of the scope close races.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task ConcurrentScopeCloseAndRentLeavesNoChargesAsync()
     {

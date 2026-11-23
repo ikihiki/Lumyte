@@ -19,6 +19,7 @@ public sealed class TextHostTests
 {
     /// <summary>Checks page publication waits for an old text session and starts the new editor only after explicit focus.</summary>
     /// <returns>The verification.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task NavigationDrainsThePreviousEditorBeforePublishingAsync()
     {

@@ -14,6 +14,7 @@ public sealed class WindowTests
 {
     /// <summary>Checks typed argument copying, per-window scopes and same-key declaration rebuilds.</summary>
     /// <returns>The verification.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task WindowFactoriesCreateIndependentScopesAndPreserveExistingInstancesAsync()
     {

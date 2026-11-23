@@ -123,6 +123,7 @@ public sealed class AnimationSourceEvaluationTests
     }
 
     /// <summary>Checks concurrent calls cannot observe cached values or dictionary mutations from one another.</summary>
+    [Trait("Execution", "Integration")]
     [Fact]
     public void ParallelSamplesUseIndependentContexts()
     {

@@ -13,6 +13,65 @@ namespace Lumyte.Maps.Session.Tests;
 /// <summary>Deterministic retain, reservation and generation ownership checks.</summary>
 public sealed class SessionTests
 {
+    /// <summary>Moving away never refunds a dispatched retain; invisible pending known tiles remain undispatched.</summary>
+    /// <returns>The finite-set terminal ownership checks.</returns>
+    [Fact]
+    public async Task VisibleDemandChangesKeepRetainReservationUntilTerminalAsync()
+    {
+        await using var memory = new MemoryManager();
+        var stage = new Stage();
+        await using var manager = new ResourceManager("visible-drain", new Source(), [stage], memory, new Runtime());
+        var tiles = new Tiles();
+        await using var map = new MapSession(manager, tiles, Style(), new() { SelectVisibleTiles = true, MaxCompletedTiles = 1 }, [new(1, 0, 0), new(1, 1, 0)]);
+        map.SetViewport(new(100, 100));
+        map.SetCamera(new(-90, 66.51326044311186, 1));
+        map.Advance();
+        Assert.Equal(1, map.InFlightTiles);
+        long reservation = map.ResidentCpuBytes;
+        map.SetCamera(new(90, 66.51326044311186, 1));
+        map.Advance();
+        Assert.Equal(1, map.InFlightTiles);
+        Assert.Equal(reservation, map.ResidentCpuBytes);
+        map.SetViewport(default);
+        map.Advance();
+        Assert.Equal(reservation, map.ResidentCpuBytes);
+        map.BeginStop();
+        Assert.False(map.IsStopped);
+        stage.Complete();
+        await map.DisposeAsync();
+        Assert.True(map.IsStopped);
+        Assert.Equal(0, map.ResidentCpuBytes);
+        Assert.Equal(1, stage.Builds);
+    }
+
+    /// <summary>The finite stage keeps a successful old demand as bounded adopted data without fetching an invisible pending tile.</summary>
+    /// <returns>The invisible terminal adoption checks.</returns>
+    [Fact]
+    public async Task SuccessfulInvisibleCompletionRemainsChargedUntilDisposalAsync()
+    {
+        await using var memory = new MemoryManager();
+        var stage = new Stage();
+        await using var manager = new ResourceManager("invisible-adoption", new Source(), [stage], memory, new Runtime());
+        await using var map = new MapSession(manager, new Tiles(), Style(), new() { SelectVisibleTiles = true, MaxCompletedTiles = 1 }, [new(1, 0, 0), new(1, 1, 0)]);
+        map.SetViewport(new(100, 100));
+        map.SetCamera(new(-90, 66.51326044311186, 1));
+        map.Advance();
+        map.SetCamera(new(90, 66.51326044311186, 1));
+        map.SetViewport(default);
+        stage.Complete();
+        await AdoptAsync(map);
+        Assert.Empty(map.VisibleTiles);
+        Assert.Equal(1, map.PublishedTiles);
+        Assert.Equal(128, map.ResidentCpuBytes);
+        Assert.Equal(0, map.InFlightTiles);
+        Assert.Equal(1, stage.Builds);
+        await manager.TrimAsync();
+        Assert.Equal(0, stage.Releases);
+        await map.DisposeAsync();
+        await manager.TrimAsync();
+        Assert.Equal(1, stage.Releases);
+    }
+
     /// <summary>Cancellation never abandons accepted retains or releases their reservations early.</summary>
     /// <returns>The lifetime checks.</returns>
     [Fact]
@@ -134,6 +193,7 @@ public sealed class SessionTests
 
     /// <summary>Executes real Vulkan drawing and readback for holes and ordered road passes.</summary>
     /// <returns>Actual GPU completion and analytic interior pixel checks.</returns>
+    [Trait("Execution", "Gpu")]
     [MapGpuFact]
     public async Task VulkanMapPixelsAsync()
     {

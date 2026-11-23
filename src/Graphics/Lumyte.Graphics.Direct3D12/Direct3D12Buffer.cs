@@ -2,7 +2,7 @@ using Lumyte.Graphics.Abstractions;
 
 namespace Lumyte.Graphics.Direct3D12;
 
-internal sealed unsafe class Direct3D12Buffer<T> : IGraphicsBuffer<T>, IShaderRawBuffer
+internal sealed unsafe class Direct3D12Buffer<T> : IGraphicsBuffer<T>, IShaderRawBuffer, IGraphicsNativeOrigin
     where T : unmanaged
 {
     private readonly nint _native;
@@ -15,6 +15,10 @@ internal sealed unsafe class Direct3D12Buffer<T> : IGraphicsBuffer<T>, IShaderRa
         (Owner, Layout, Count, SizeInBytes, Usage, Memory) = (owner, layout, desc.Count, size, desc.Usage, desc.Memory);
         owner.Check(NativeMethods.BufferCreate(owner.Native, size, Memory == MemoryPreference.Upload ? 1 : Memory == MemoryPreference.Readback ? 2 : 0, (Usage & BufferUsage.ShaderWrite) != 0 ? 1 : 0, out _native, out _gpuAddress));
     }
+
+    IGraphicDevice IGraphicsNativeOrigin.Device => Owner;
+
+    object IGraphicsNativeOrigin.AllocationIdentity => this;
 
     public Type ElementType => typeof(T);
 
@@ -58,6 +62,17 @@ internal sealed unsafe class Direct3D12Buffer<T> : IGraphicsBuffer<T>, IShaderRa
 
             return _native;
         }
+    }
+
+    void IGraphicsNativeOrigin.ValidateOrigin()
+    {
+        ObjectDisposedException.ThrowIf(Owner.Status == GraphicsDeviceStatus.Disposed, Owner);
+        if (Owner.Status == GraphicsDeviceStatus.Lost)
+        {
+            throw new GraphicsDeviceLostException(Owner.Loss!);
+        }
+
+        ValidateByteRange(0, SizeInBytes);
     }
 
     public BufferSlice<T> SliceElements(ulong offset, ulong count) => new(this, offset, count);

@@ -61,6 +61,13 @@ public static partial class Compose
             [ComposeParameter]
             public Action<double>? OnCommitted { get; set; }
 
+            internal CompositionTemplate<SliderThumbContext, Widget>? TrackTemplate { get; private set; }
+
+            internal CompositionTemplate<SliderThumbContext, Widget>? ThumbTemplate { get; private set; }
+
+            /// <inheritdoc/>
+            protected override bool RebuildsChildren => true;
+
             /// <inheritdoc/>
             protected override UiElement CreateElement() => new SliderElement(this);
 
@@ -73,6 +80,12 @@ public static partial class Compose
                     throw new ArgumentOutOfRangeException(nameof(Value));
                 }
             }
+
+            [ComposeSlot]
+            private static void Track(Slider target, CompositionTemplate<SliderThumbContext, Widget> template) => target.RegisterTemplateSlot(template, static (Slider next, CompositionTemplate<SliderThumbContext, Widget> value) => next.TrackTemplate = value);
+
+            [ComposeSlot]
+            private static void Thumb(Slider target, CompositionTemplate<SliderThumbContext, Widget> template) => target.RegisterTemplateSlot(template, static (Slider next, CompositionTemplate<SliderThumbContext, Widget> value) => next.ThumbTemplate = value);
         }
     }
 }

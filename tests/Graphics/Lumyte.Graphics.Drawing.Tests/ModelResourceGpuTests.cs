@@ -23,6 +23,7 @@ public sealed class ModelResourceGpuTests
 {
     /// <summary>Checks GPU-only rebuilding reuses CPU streams and leaves existing graph leases pinned.</summary>
     /// <returns>The asynchronous integration check.</returns>
+    [Trait("Execution", "Gpu")]
     [DrawingGpuFact]
     public async Task MeshDefinitionRebuildsAndPinsGenerationsAsync()
     {

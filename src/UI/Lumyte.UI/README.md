@@ -212,6 +212,10 @@ Read-only semantic extensions can override `AutomationValue` (null or finite
 0–1) and `IsAutomationIndeterminate` (default false). These getters must be pure;
 redacted boundaries do not evaluate them. Roles alone never add capabilities.
 
+## ホイール入力
+
+`UiWheelInput(Position, Delta)` は論理座標で hit-test して子から親へ通常の入力順で配送します。pointer capture と keyboard focus には転送しません。`UiInputContext.PointerPosition` と `IsInside` はホイールにも対応します。ホストは同じ acquisition の隣接した位置／ホイール記録のみ受け付け、DPI を入力へ再適用しません。popup/menu の遮蔽も維持します。`Delta` は論理 pixel（内容末尾が正）で、ホストは native wheel step を -40 倍して配送します。
+
 ## ScrollView
 
 ScrollViewは0〜1個の内容を有限viewportへ配置する。両軸の有限maxを要求し、内容にはscroll軸だけunboundedを渡す。

@@ -59,6 +59,9 @@ public static partial class Compose
                     throw new ArgumentOutOfRangeException(nameof(Value));
                 }
             }
+
+            [ComposeSlot]
+            private static void Background(NumericBox target, Lumyte.UI.Compose.Definitions.Widget[] children) => target.BackgroundChildren.Initialize(children);
         }
     }
 }

@@ -301,6 +301,7 @@ public sealed class ResourceRuntimeTests
 
     /// <summary>Scopes share one manager and default runtime while independent roots own separate endpoints.</summary>
     /// <returns>Completion of both providers and their resource managers.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task DependencyInjectionSharesPerProviderAndIsolatesIndependentHostsAsync()
     {

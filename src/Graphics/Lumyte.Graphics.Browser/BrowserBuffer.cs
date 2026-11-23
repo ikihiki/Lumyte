@@ -4,7 +4,7 @@ using Lumyte.Graphics.Abstractions;
 
 namespace Lumyte.Graphics.Browser;
 
-internal sealed class BrowserBuffer<T> : IGraphicsBuffer<T>, IShaderRawBuffer
+internal sealed class BrowserBuffer<T> : IGraphicsBuffer<T>, IShaderRawBuffer, IGraphicsNativeOrigin
     where T : unmanaged
 {
     private readonly BrowserDevice _owner;
@@ -25,6 +25,10 @@ internal sealed class BrowserBuffer<T> : IGraphicsBuffer<T>, IShaderRawBuffer
 
         _native = BrowserInterop.CreateBuffer(owner.Handle, size, (int)Usage, (int)Memory);
     }
+
+    IGraphicDevice IGraphicsNativeOrigin.Device => Owner;
+
+    object IGraphicsNativeOrigin.AllocationIdentity => this;
 
     public object ShaderHandle => Native;
 
@@ -59,6 +63,17 @@ internal sealed class BrowserBuffer<T> : IGraphicsBuffer<T>, IShaderRawBuffer
     }
 
     internal BrowserDevice Owner => _owner;
+
+    void IGraphicsNativeOrigin.ValidateOrigin()
+    {
+        ObjectDisposedException.ThrowIf(Owner.Status == GraphicsDeviceStatus.Disposed, Owner);
+        if (Owner.Status == GraphicsDeviceStatus.Lost)
+        {
+            throw new GraphicsDeviceLostException(Owner.Loss!);
+        }
+
+        ValidateByteRange(0, SizeInBytes);
+    }
 
     public BufferSlice<T> SliceElements(ulong offset, ulong count) => new(this, offset, count);
 

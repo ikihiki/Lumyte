@@ -15,6 +15,8 @@
     <ProjectReference Include="../../../src/UI/Lumyte.UI.TextEditing.Parley/Lumyte.UI.TextEditing.Parley.csproj" />
     <None Include="../../Graphics/Lumyte.Graphics.Text.Parley.Tests/Fonts/DejaVuSans.ttf" Link="Fonts/DejaVuSans.ttf" CopyToOutputDirectory="PreserveNewest" />
     <ProjectReference Include="../../../src/UI/Lumyte.UI.TextEditing/Lumyte.UI.TextEditing.csproj" />
+    <ProjectReference Include="../../../src/UI/Lumyte.UI.Controls/Lumyte.UI.Controls.csproj" />
+    <ProjectReference Include="../../../src/UI/Lumyte.UI.Collections/Lumyte.UI.Collections.csproj" />
     <ProjectReference Include="../../../src/Platform/Lumyte.Platform.TextInput.Abstractions/Lumyte.Platform.TextInput.Abstractions.csproj" />
   </ItemGroup>
 </Project>

@@ -9,6 +9,7 @@ public sealed class ClientTests
 {
     /// <summary>Checks discovery, strict catalog matching, heartbeat, normal input, observations, hash verification and capacity release.</summary>
     /// <returns>The asynchronous check.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task TypedClientCompletesGameSideOperationsAsync()
     {
@@ -31,6 +32,7 @@ public sealed class ClientTests
 
     /// <summary>Checks child metadata and PageFor submit through the same control sequence over the wire envelope.</summary>
     /// <returns>The asynchronous check.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task PopupPageSharesRootControlSequenceAsync()
     {
@@ -53,6 +55,7 @@ public sealed class ClientTests
 
     /// <summary>Checks lost admission retries identical envelope bytes and sequence rather than issuing a replacement click.</summary>
     /// <returns>The asynchronous check.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task LostAdmissionRetriesTheSameLogicalActionAsync()
     {
@@ -70,6 +73,7 @@ public sealed class ClientTests
 
     /// <summary>Checks unknown admission poisons input reuse and never chooses a new sequence or control automatically.</summary>
     /// <returns>The asynchronous check.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task LostAllAdmissionRepliesRemainOutcomeUnknownAsync()
     {
@@ -87,6 +91,7 @@ public sealed class ClientTests
 
     /// <summary>Checks an accepted action with an expired admission response cannot be mistaken for a later action.</summary>
     /// <returns>The asynchronous check.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task ExpiredAdmissionPreservesUnknownOutcomeAndBlocksFurtherInputAsync()
     {
@@ -106,6 +111,7 @@ public sealed class ClientTests
 
     /// <summary>Checks corrupted artifact bytes/hash never become successful output and observation pages reject input locally.</summary>
     /// <returns>The asynchronous check.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task BadHashAndObservationInputAreRejectedAsync()
     {
@@ -122,6 +128,7 @@ public sealed class ClientTests
 
     /// <summary>Checks a mismatched operation permission is rejected by catalog validation before any operation submission.</summary>
     /// <returns>The asynchronous check.</returns>
+    [Trait("Execution", "Integration")]
     [Fact]
     public async Task MismatchedCatalogIsNotAcceptedAsync()
     {

@@ -1,6 +1,7 @@
 using Lumyte.Graphics.Abstractions;
 using Lumyte.Graphics.Drawing2D.Pipelines;
 using Lumyte.Graphics.Drawing2D.RenderGraph;
+using Lumyte.Graphics.Pipelines;
 using Lumyte.Graphics.Shared;
 using Lumyte.Mathematics.Colors;
 using Xunit;
@@ -51,6 +52,39 @@ public sealed class MeshCoverageTests
         Assert.False(service.Supports(caps with { MeshShaderLimits = caps.MeshShaderLimits! with { MaxOutputMemoryBytes = 1 } }));
         Assert.False(service.Supports(caps with { MeshShaderLimits = caps.MeshShaderLimits! with { Workgroup = caps.MeshShaderLimits.Workgroup with { MaxInvocations = 0 } } }));
         Assert.Equal(0, device.ShaderCreations);
+        Assert.Equal(0, device.NativeBuffers);
+    }
+
+    /// <summary>Generic mesh rejects unsupported features and reflected limits before any native allocation.</summary>
+    [Fact]
+    public void GenericMeshArtifactPreflightRejectsBeforeAllocations()
+    {
+        DeviceCaps supported = SupportedCaps();
+        var device = new ProfilingDevice { Caps = supported };
+        var provider = GenericGpuArtifactProvider2D.CreateEmbedded();
+        var key = new StageArtifactKey(typeof(MeshEvaluateAndComposite2D), 1, 0);
+        _ = provider.Describe(key, device);
+        DeviceCaps[] unsupported =
+        [
+            supported with { Features = GraphicsFeatures.None },
+            supported with { MeshShaderLimits = null },
+            supported with { ShaderTarget = ShaderTarget.Wgsl },
+            supported with { MeshShaderLimits = supported.MeshShaderLimits! with { MaxOutputVertices = 3 } },
+            supported with { MeshShaderLimits = supported.MeshShaderLimits! with { MaxOutputMemoryBytes = 1 } },
+            supported with { MeshShaderLimits = supported.MeshShaderLimits! with { Workgroup = supported.MeshShaderLimits.Workgroup with { MaxInvocations = 0 } } },
+            supported with { MeshShaderLimits = supported.MeshShaderLimits! with { Workgroup = supported.MeshShaderLimits.Workgroup with { MaxTotalGroupCount = 0 } } },
+        ];
+        foreach (DeviceCaps caps in unsupported)
+        {
+            var unsupportedDevice = new ProfilingDevice { Caps = caps };
+            Assert.Throws<NotSupportedException>(() => provider.Describe(key, unsupportedDevice));
+            Assert.Equal(0, unsupportedDevice.ShaderCreations);
+            Assert.Equal(0, unsupportedDevice.MeshPipelineCreations);
+            Assert.Equal(0, unsupportedDevice.NativeBuffers);
+        }
+
+        Assert.Equal(0, device.ShaderCreations);
+        Assert.Equal(0, device.MeshPipelineCreations);
         Assert.Equal(0, device.NativeBuffers);
     }
 

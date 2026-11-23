@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using Lumyte.StateMachines;
 using Lumyte.Worlds;
 using Xunit;
@@ -81,6 +82,166 @@ public sealed class StateWorldTests
         Assert.Throws<ArgumentException>(() => new StateMachines.Benchmark.Machines.StateFailureBenchmarks { Phase = "invalid" }.Setup());
     }
 
+    /// <summary>Overlapping listeners attribute identical transitions only to their own fixture calls.</summary>
+    [Fact]
+    public void OverlappingDiagnosticFixturesCountOnlyOwnCalls()
+    {
+        var first = new StateMachines.Benchmark.Machines.StateFailureBenchmarks { Phase = "diagnostic" };
+        var second = new StateMachines.Benchmark.Machines.StateFailureBenchmarks { Phase = "diagnostic" };
+        first.Setup();
+        second.Setup();
+        try
+        {
+            Assert.True(first.Recover());
+            Assert.True(second.Recover());
+            Assert.Equal(new[] { 1, 1 }, new[] { first.CompletedCount, second.CompletedCount });
+            Assert.Equal(new[] { 1, 1, 1, 1 }, new[] { first.SampledCount, first.MatchedActivityCount, second.SampledCount, second.MatchedActivityCount });
+            first.Setup();
+            Assert.True(first.Recover());
+            Assert.Equal(new[] { 1, 1, 1, 1 }, new[] { first.SampledCount, first.MatchedActivityCount, second.SampledCount, second.MatchedActivityCount });
+            first.Cleanup();
+            Assert.True(second.Recover());
+            Assert.True(first.Recover());
+            Assert.Equal(new[] { 1, 1, 2, 2 }, new[] { first.SampledCount, first.MatchedActivityCount, second.SampledCount, second.MatchedActivityCount });
+        }
+        finally
+        {
+            first.Cleanup();
+            second.Cleanup();
+        }
+    }
+
+    /// <summary>Real unrelated activities remain observable without polluting fixture sampling or matching counts.</summary>
+    [Fact]
+    public void UnrelatedMachinesDoNotPolluteDiagnosticCounts()
+    {
+        int owner = Environment.CurrentManagedThreadId;
+        int stopped = 0;
+        using var observer = new ActivityListener
+        {
+            ShouldListenTo = source => source.Name == StateMachineDiagnostics.ActivitySourceName,
+            Sample = (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllData,
+            ActivityStopped = _ =>
+            {
+                if (Environment.CurrentManagedThreadId == owner)
+                {
+                    stopped++;
+                }
+            },
+        };
+        ActivitySource.AddActivityListener(observer);
+        var benchmark = new StateMachines.Benchmark.Machines.StateFailureBenchmarks { Phase = "diagnostic" };
+        benchmark.Setup();
+        try
+        {
+            FireDiagnosticNoise("noise", 7);
+            FireDiagnosticNoise("self", 0);
+            Assert.True(benchmark.Recover());
+            Assert.Equal(3, stopped);
+            Assert.Equal(1, benchmark.CompletedCount);
+            Assert.Equal(new[] { 1, 1 }, new[] { benchmark.SampledCount, benchmark.MatchedActivityCount });
+        }
+        finally
+        {
+            benchmark.Cleanup();
+        }
+    }
+
+    /// <summary>Nested fixture calls and matching-tag noise stay independent even with an earlier observer.</summary>
+    [Fact]
+    public void NestedDiagnosticFixturesKeepIndependentObservations()
+    {
+        int owner = Environment.CurrentManagedThreadId;
+        bool nest = false;
+        var outer = new StateMachines.Benchmark.Machines.StateFailureBenchmarks { Phase = "diagnostic" };
+        var inner = new StateMachines.Benchmark.Machines.StateFailureBenchmarks { Phase = "diagnostic" };
+        using var observer = new ActivityListener
+        {
+            ShouldListenTo = source => source.Name == StateMachineDiagnostics.ActivitySourceName,
+            Sample = (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllData,
+            ActivityStarted = _ =>
+            {
+                if (Environment.CurrentManagedThreadId == owner && nest)
+                {
+                    nest = false;
+                    Assert.True(inner.Recover());
+                    FireDiagnosticNoise("self", 0);
+                }
+            },
+        };
+        ActivitySource.AddActivityListener(observer);
+        outer.Setup();
+        inner.Setup();
+        try
+        {
+            nest = true;
+            Assert.True(outer.Recover());
+            Assert.False(nest);
+            Assert.Equal(new[] { 1, 1 }, new[] { outer.CompletedCount, inner.CompletedCount });
+            Assert.Equal(new[] { 1, 1, 1, 1 }, new[] { outer.SampledCount, outer.MatchedActivityCount, inner.SampledCount, inner.MatchedActivityCount });
+        }
+        finally
+        {
+            outer.Cleanup();
+            inner.Cleanup();
+        }
+    }
+
+    /// <summary>Every eligible same-parent sibling is sampled instead of capping a call at one observation.</summary>
+    [Fact]
+    public void EligibleSiblingActivityIsNotSuppressed()
+    {
+        int owner = Environment.CurrentManagedThreadId;
+        Activity? parent = Activity.Current;
+        bool emitSibling = false;
+        using var observer = new ActivityListener
+        {
+            ShouldListenTo = source => source.Name == StateMachineDiagnostics.ActivitySourceName,
+            Sample = (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllData,
+            ActivityStopped = activity =>
+            {
+                if (Environment.CurrentManagedThreadId != owner || !emitSibling || activity.OperationName != "StateMachine.Fire")
+                {
+                    return;
+                }
+
+                emitSibling = false;
+                Activity? previous = Activity.Current;
+                Activity.Current = parent;
+                try
+                {
+                    using Activity? sibling = StateMachineDiagnostics.Activities.StartActivity("StateMachine.Fire", ActivityKind.Internal);
+                    Assert.NotNull(sibling);
+                    Assert.Equal(parent?.Id, sibling.ParentId);
+                    sibling.SetTag("state_machine.transitioned", true);
+                    sibling.SetTag("state_machine.target", "self");
+                    sibling.SetTag("state_machine.trigger", "0");
+                }
+                finally
+                {
+                    Activity.Current = previous;
+                }
+            },
+        };
+        ActivitySource.AddActivityListener(observer);
+        var benchmark = new StateMachines.Benchmark.Machines.StateFailureBenchmarks { Phase = "diagnostic" };
+        benchmark.Setup();
+        try
+        {
+            emitSibling = true;
+            Assert.True(benchmark.Recover());
+            Assert.False(emitSibling);
+            Assert.Same(parent, Activity.Current);
+            Assert.Equal(1, benchmark.CompletedCount);
+            Assert.Equal(2, benchmark.SampledCount);
+            Assert.Equal(1, benchmark.MatchedActivityCount);
+        }
+        finally
+        {
+            benchmark.Cleanup();
+        }
+    }
+
     /// <summary>Trigger input order cannot override transition priority or affect other instances.</summary>
     [Fact]
     public void PriorityWinsOverInputOrder()
@@ -117,5 +278,13 @@ public sealed class StateWorldTests
         Assert.Empty(manager.Worlds);
         Assert.Empty(manager.Stack.Worlds);
         Assert.Throws<ObjectDisposedException>(() => manager.RequestDestroy(world));
+    }
+
+    private static void FireDiagnosticNoise(string name, int trigger)
+    {
+        var state = new State<int>(name);
+        var builder = new StateMachineBuilder<int, int>(state);
+        builder.AddTransition(new Transition<int, int>(state, state, trigger));
+        Assert.True(builder.Build(0).Fire(trigger));
     }
 }

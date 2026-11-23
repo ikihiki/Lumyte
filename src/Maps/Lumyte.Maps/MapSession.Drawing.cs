@@ -19,7 +19,8 @@ public sealed partial class MapSession
                 return;
             }
 
-            ValidateRecordingBudget();
+            List<DrawItem> items = GetDrawItems();
+            ValidateRecordingBudget(items);
             canvas.Save();
             try
             {
@@ -27,9 +28,10 @@ public sealed partial class MapSession
                 canvas.FillRect(new(0, 0, _viewport.X, _viewport.Y), _style.Background);
                 foreach (MapStyleLayer paint in _style.Layers)
                 {
-                    foreach (Entry entry in _entries)
+                    foreach (DrawItem item in items)
                     {
-                        if (!TryPlacement(entry, out Placement placement, out int copies))
+                        Entry entry = item.Entry;
+                        if (!TryPlacement(item, out Placement placement, out int copies))
                         {
                             continue;
                         }
@@ -37,11 +39,11 @@ public sealed partial class MapSession
                         for (int copy = 0; copy < copies; copy++)
                         {
                             (double cameraX, double cameraY) = Camera.Project();
-                            double count = 1 << entry.Id.Zoom;
-                            double tileX = entry.Id.X + ((placement.First + copy) * count);
+                            double count = 1 << item.Owner.Zoom;
+                            double tileX = item.Owner.X + ((placement.First + copy) * count);
                             double left = (((tileX / count) - cameraX) * placement.World) + (_viewport.X / 2.0);
                             double right = ((((tileX + 1) / count) - cameraX) * placement.World) + (_viewport.X / 2.0);
-                            double bottom = ((((entry.Id.Y + 1) / count) - cameraY) * placement.World) + (_viewport.Y / 2.0);
+                            double bottom = ((((item.Owner.Y + 1) / count) - cameraY) * placement.World) + (_viewport.Y / 2.0);
                             canvas.Save();
                             try
                             {
@@ -60,7 +62,12 @@ public sealed partial class MapSession
                                             continue;
                                         }
 
-                                        Path2D geometry = BuildPath(feature, layer.Extent, left, placement);
+                                        double sourceCount = 1 << entry.Id.Zoom;
+                                        double sourceX = entry.Id.X + ((placement.First + copy) * sourceCount);
+                                        double sourceLeft = (((sourceX / sourceCount) - cameraX) * placement.World) + (_viewport.X / 2.0);
+                                        double sourceTop = (((entry.Id.Y / sourceCount) - cameraY) * placement.World) + (_viewport.Y / 2.0);
+                                        Placement sourcePlacement = new(sourceLeft, sourceTop, placement.World / sourceCount, placement.World, 0);
+                                        Path2D geometry = BuildPath(feature, layer.Extent, sourceLeft, sourcePlacement);
                                         if (paint.Stroke is { } stroke)
                                         {
                                             canvas.StrokePath(geometry, paint.Color, stroke);
@@ -122,26 +129,55 @@ public sealed partial class MapSession
         return builder.Build();
     }
 
-    private bool TryPlacement(Entry entry, out Placement placement, out int copies)
+    private List<DrawItem> GetDrawItems()
+    {
+        if (!_spatial)
+        {
+            return _entries.Select(entry => new DrawItem(entry, entry.Id)).ToList();
+        }
+
+        var result = new List<DrawItem>();
+        foreach (MapTileId owner in SelectVisible(out _))
+        {
+            MapTileId source = owner;
+            for (int level = 0; level <= _options.MaxFallbackDepth && source.Zoom >= _tiles.MinZoom; level++)
+            {
+                Entry? entry = _entries.FirstOrDefault(entry => entry.Id == source && !entry.Retiring
+                    && entry.Lease is not null && IsCurrent(entry));
+                if (entry is not null)
+                {
+                    result.Add(new(entry, owner));
+                    break;
+                }
+
+                source = new(source.Zoom - 1, source.X / 2, source.Y / 2);
+            }
+        }
+
+        return result;
+    }
+
+    private bool TryPlacement(DrawItem item, out Placement placement, out int copies)
     {
         placement = default;
         copies = 0;
-        if (entry.Lease is null)
+        Entry entry = item.Entry;
+        if (entry.Lease is null || (_spatial ? !IsCurrent(entry) : _options.SelectVisibleTiles && entry.Id.Zoom != SourceZoom))
         {
             return false;
         }
 
         (double cameraX, double cameraY) = Camera.Project();
         double world = 512 * Math.Pow(2, Camera.Zoom);
-        double count = 1 << entry.Id.Zoom;
+        double count = 1 << item.Owner.Zoom;
         double size = world / count;
-        double top = (((entry.Id.Y / count) - cameraY) * world) + (_viewport.Y / 2.0);
+        double top = (((item.Owner.Y / count) - cameraY) * world) + (_viewport.Y / 2.0);
         if (top >= _viewport.Y || top + size <= 0)
         {
             return false;
         }
 
-        double left = (((entry.Id.X / count) - cameraX) * world) + (_viewport.X / 2.0);
+        double left = (((item.Owner.X / count) - cameraX) * world) + (_viewport.X / 2.0);
         double first = Math.Floor((-size - left) / world) + 1;
         double last = Math.Ceiling((_viewport.X - left) / world) - 1;
         double total = last - first + 1;
@@ -160,14 +196,15 @@ public sealed partial class MapSession
         return true;
     }
 
-    private void ValidateRecordingBudget()
+    private void ValidateRecordingBudget(List<DrawItem> items)
     {
         long remaining = _options.MaxRecordingCpuBytes;
         foreach (MapStyleLayer paint in _style.Layers)
         {
-            foreach (Entry entry in _entries)
+            foreach (DrawItem item in items)
             {
-                if (!TryPlacement(entry, out _, out int copies))
+                Entry entry = item.Entry;
+                if (!TryPlacement(item, out _, out int copies))
                 {
                     continue;
                 }
@@ -207,6 +244,8 @@ public sealed partial class MapSession
             }
         }
     }
+
+    private readonly record struct DrawItem(Entry Entry, MapTileId Owner);
 
     private readonly record struct Placement(double Left, double Top, double Size, double World, double First);
 }

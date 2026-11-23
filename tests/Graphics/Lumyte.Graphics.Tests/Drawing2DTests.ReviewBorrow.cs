@@ -13,6 +13,7 @@ public sealed partial class Drawing2DTests
 {
     /// <summary>Checks the Vulkan layer compositor retains a live Graph borrow.</summary>
     /// <returns>The asynchronous pixel check.</returns>
+    [Trait("Execution", "Gpu")]
     [GpuFact]
     public async Task VulkanReviewLayerBorrowAsync()
     {
@@ -22,6 +23,7 @@ public sealed partial class Drawing2DTests
 
     /// <summary>Checks the Vulkan backdrop snapshot and replacement retain a live Graph borrow.</summary>
     /// <returns>The asynchronous pixel check.</returns>
+    [Trait("Execution", "Gpu")]
     [GpuFact]
     public async Task VulkanReviewBackdropBorrowAsync()
     {
@@ -31,6 +33,7 @@ public sealed partial class Drawing2DTests
 
     /// <summary>Checks the native wgpu layer compositor retains a live Graph borrow.</summary>
     /// <returns>The asynchronous pixel check.</returns>
+    [Trait("Execution", "Gpu")]
     [GpuFact]
     public async Task WgpuReviewLayerBorrowAsync()
     {
@@ -40,6 +43,7 @@ public sealed partial class Drawing2DTests
 
     /// <summary>Checks the native wgpu backdrop compositor retains a live Graph borrow.</summary>
     /// <returns>The asynchronous pixel check.</returns>
+    [Trait("Execution", "Gpu")]
     [GpuFact]
     public async Task WgpuReviewBackdropBorrowAsync()
     {

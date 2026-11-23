@@ -4,11 +4,12 @@ using Lumyte.Graphics.Abstractions;
 
 namespace Lumyte.Graphics.Drawing2D;
 
-internal sealed class RetainedBatchRun2D(IReadOnlyList<IPreparedCommandBatch2D> batches, bool selectedInternalRecords, IDisposable? compositionUse = null) : IRetainedCommandBatch2D, IRetainedMemory2D, IPreparedWorkingBudget2D
+internal sealed class RetainedBatchRun2D(IReadOnlyList<IPreparedCommandBatch2D> batches, bool selectedInternalRecords, IDisposable? compositionUse = null, IDisposable? imageResources = null) : IRetainedCommandBatch2D, IRetainedMemory2D, IPreparedWorkingBudget2D, IPreparedImmutableUploads2D
 {
     private int _remaining = batches.Count;
     private List<IPreparedCommandBatch2D>? _failedCleanup;
     private IDisposable? _compositionUse = compositionUse;
+    private IDisposable? _imageResources = imageResources;
 
     public bool HasStableOwners => batches.All(batch => batch is IRetainedMemory2D { HasStableOwners: true });
 
@@ -80,6 +81,8 @@ internal sealed class RetainedBatchRun2D(IReadOnlyList<IPreparedCommandBatch2D> 
             throw new AggregateException("Batch cleanup failed; incomplete batches remain owned for retry.", failures);
         }
 
+        _imageResources?.Dispose();
+        _imageResources = null;
         _compositionUse?.Dispose();
         _compositionUse = null;
 
@@ -94,6 +97,14 @@ internal sealed class RetainedBatchRun2D(IReadOnlyList<IPreparedCommandBatch2D> 
                 (_failedCleanup ??= []).Add(batch);
                 (failures ??= []).Add(failure);
             }
+        }
+    }
+
+    public void RetireImmutableUploads(IGraphicsSubmission submission)
+    {
+        foreach (IPreparedImmutableUploads2D batch in batches.OfType<IPreparedImmutableUploads2D>())
+        {
+            batch.RetireImmutableUploads(submission);
         }
     }
 

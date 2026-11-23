@@ -2,7 +2,7 @@ using Lumyte.Graphics.Abstractions;
 
 namespace Lumyte.Graphics.Drawing2D.Tests;
 
-internal sealed class ProfilingCommands : IGraphicsCommandBuffer
+internal class ProfilingCommands : IGraphicsCommandBuffer
 {
     public CommandBufferState State { get; private set; } = CommandBufferState.Recording;
 

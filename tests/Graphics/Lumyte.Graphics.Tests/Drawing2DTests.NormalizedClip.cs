@@ -12,6 +12,7 @@ public sealed partial class Drawing2DTests
 {
     /// <summary>Vulkan reads every packed mask lane and preserves correlated shape/paint samples.</summary>
     /// <returns>The asynchronous checks.</returns>
+    [Trait("Execution", "Gpu")]
     [GpuFact]
     public async Task VulkanNormalizedClipSamplesAsync()
     {
@@ -21,6 +22,7 @@ public sealed partial class Drawing2DTests
 
     /// <summary>Wgpu reads every packed mask lane and preserves correlated shape/paint samples.</summary>
     /// <returns>The asynchronous checks.</returns>
+    [Trait("Execution", "Gpu")]
     [GpuFact]
     public async Task WgpuNormalizedClipSamplesAsync()
     {
@@ -30,6 +32,7 @@ public sealed partial class Drawing2DTests
 
     /// <summary>Vulkan preserves transparency at each folded singular transform.</summary>
     /// <returns>The asynchronous GPU checks.</returns>
+    [Trait("Execution", "Gpu")]
     [GpuFact]
     public async Task VulkanSingularFoldedClipPaintAsync()
     {
@@ -39,6 +42,7 @@ public sealed partial class Drawing2DTests
 
     /// <summary>Wgpu preserves transparency at each folded singular transform.</summary>
     /// <returns>The asynchronous GPU checks.</returns>
+    [Trait("Execution", "Gpu")]
     [GpuFact]
     public async Task WgpuSingularFoldedClipPaintAsync()
     {
@@ -73,6 +77,7 @@ public sealed partial class Drawing2DTests
 
     private static async Task CheckNormalizedClipSamplesAsync(IGraphicDevice device, bool meshCoverage = false)
     {
+        using var reuse = new SerialDrawingResources(device);
         static Path2D Triangle(float size)
         {
             var path = new PathBuilder2D();
