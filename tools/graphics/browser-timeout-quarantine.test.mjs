@@ -302,18 +302,20 @@ test("CPU process report not required; host vendor not assumed", () => {
     assert.equal(classify(input).status, "inconclusive-known-timeout");
 });
 
-async function runProductionCatch(value, { artifact = true } = {}) {
+async function runProductionCatch(value, { artifact = true, nativeDiagnostics } = {}) {
     const { readFile } = await import("node:fs/promises");
     const source = await readFile(new URL("../../samples/Lumyte.UI.Transitions.Browser.Sample/verify-browser.mjs", import.meta.url), "utf8");
     const start = source.lastIndexOf("} catch (failure) {") + "} catch (failure) {".length;
     const body = source.slice(start, source.indexOf("} finally {", start));
     const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;
-    const keys = ["failure", "flightRecorder", "traceCapture", "traceGpu", "captureTrace", "command", "sequential", "sameContent", "stage", "pngIndex", "traceStage", "errors", "process", "console", "BrowserEvaluationFailure", "shouldIgnoreKnownBrowserTimeout", "classifyBrowserTimeoutQuarantine"];
+    const keys = ["failure", "nativeRecorder", "nativeEnabled", "nativeReport", "flightRecorder", "traceCapture", "traceGpu", "captureTrace", "command", "sequential", "sameContent", "stage", "pngIndex", "traceStage", "errors", "process", "console", "BrowserEvaluationFailure", "shouldIgnoreKnownBrowserTimeout", "classifyBrowserTimeoutQuarantine"];
     const output = []; let finalized = false;
     const recorder = { finish: async () => { finalized = true; }, markQuarantined: async (policy, eligible) => {
         assert.equal(finalized, true); return artifact && eligible() ? { ...policy, occurrences: 1 } : undefined;
     } };
-    const args = [value.failure, recorder, true, true, { failure: async () => value.evidence },
+    const args = [value.failure, nativeDiagnostics?.recorder, nativeDiagnostics?.enabled ?? false,
+        nativeDiagnostics?.report ?? (() => assert.fail("Disabled native reporter must not run")),
+        recorder, true, true, { failure: async () => value.evidence },
         async () => ({ result: { value: value.audit } }), value.sequential, value.sameContent, value.stage, value.pngIndex,
         value.captureStage, value.errors, { env: value.environment },
         { error: () => {}, warn: text => output.push(text), log: text => output.push(JSON.parse(text)) },
@@ -338,6 +340,45 @@ for (const kind of ["pixel", "device-loss", "missing-artifact", "expiry", "missi
         await assert.rejects(runProductionCatch(c, { artifact: kind !== "missing-artifact" }), error => error === c.failure);
     });
 }
+
+test("production catch preserves quarantine with native diagnostics enabled", async () => {
+    const events = [];
+    const snapshot = { owned: true };
+    const output = await runProductionCatch(candidate(), { nativeDiagnostics: {
+        enabled: true,
+        recorder: { event: name => events.push(name), snapshot: () => snapshot },
+        report: (phase, value) => { assert.equal(value, snapshot); events.push(phase); },
+    } });
+    assert.deepEqual(events, ["failure-observed", "before-cleanup-failure"]);
+    assert.match(output[0], /::warning/);
+    assert.equal(output[1].status, "inconclusive-known-timeout");
+    assert.equal(output[1].remainingAssertionsExecuted, false);
+});
+test("production catch preserves original fatal error with native diagnostics enabled", async () => {
+    const c = candidate();
+    c.failure = new assert.AssertionError({ message: "pixel mismatch" });
+    const events = [];
+    const snapshot = { owned: true };
+    await assert.rejects(runProductionCatch(c, { nativeDiagnostics: {
+        enabled: true,
+        recorder: { event: name => events.push(name), snapshot: () => snapshot },
+        report: (phase, value) => { assert.equal(value, snapshot); events.push(phase); },
+    } }), error => error === c.failure);
+    assert.deepEqual(events, ["failure-observed", "before-cleanup-failure"]);
+});
+test("production catch does not report disabled native diagnostics", async () => {
+    let reports = 0;
+    await runProductionCatch(candidate(), { nativeDiagnostics: { enabled: false, report: () => reports++ } });
+    assert.equal(reports, 0);
+});
+test("production catch tolerates an absent optional native recorder", async () => {
+    const reports = [];
+    const output = await runProductionCatch(candidate(), { nativeDiagnostics: {
+        enabled: true, report: (phase, value) => reports.push([phase, value]),
+    } });
+    assert.deepEqual(reports, [["before-cleanup-failure", undefined]]);
+    assert.equal(output[1].status, "inconclusive-known-timeout");
+});
 
 for (const path of ["requests", "terminalFrames", "openStages"]) {
     for (const malformed of [null, {}, { data: {} }]) {
