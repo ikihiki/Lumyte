@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Privileged CI source acquisition only; no mirror retries or trust/policy changes."""
+import argparse
 import os
 import fnmatch
 from pathlib import Path
@@ -49,14 +50,14 @@ def rewrite(text, deb822=False, hosts=None):
     return ''.join(output)
 
 
-def source_paths(run, include_config=False):
+def source_paths(run, include_config=False, apt_options=()):
     keys = {'SourceList': 'Dir::Etc::sourcelist/f', 'SourceParts': 'Dir::Etc::sourceparts/d',
             'Preferences': 'Dir::Etc::preferences/f', 'PreferenceParts': 'Dir::Etc::preferencesparts/d',
             'BinaryPreferences': 'Binary::apt-get::Dir::Etc::preferences', 'BinaryPreferenceParts': 'Binary::apt-get::Dir::Etc::preferencesparts',
             'Root': 'RootDir', 'BinaryDir': 'Binary::apt-get::Dir', 'BinaryEtc': 'Binary::apt-get::Dir::Etc',
             'BinaryList': 'Binary::apt-get::Dir::Etc::sourcelist',
             'BinaryParts': 'Binary::apt-get::Dir::Etc::sourceparts', 'BinaryRoot': 'Binary::apt-get::RootDir'}
-    command = ['apt-config', 'shell']
+    command = ['apt-config', *apt_options, 'shell']
     for key, value in keys.items():
         command += [key, value]
     result = run(command, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
@@ -161,9 +162,9 @@ def validate_origin_pins(config, hosts):
                 raise ValueError('mirror-dependent-origin-pin')
 
 
-def install(packages, run=subprocess.run):
+def install(packages, run=subprocess.run, apt_options=()):
     # setup-os.sh gates this helper to privileged GitHub Actions Ubuntu/x64.
-    (source_list, source_parts), config = source_paths(run, include_config=True)
+    (source_list, source_parts), config = source_paths(run, include_config=True, apt_options=apt_options)
     with tempfile.TemporaryDirectory(prefix='lumyte-ci-apt-') as directory:
         changed, main, parts, hosts = prepare(source_list, source_parts, Path(directory))
         if changed:
@@ -176,14 +177,18 @@ def install(packages, run=subprocess.run):
             pass
         options = ['-o', 'Dir::Etc::sourcelist=' + str(main), '-o', 'Dir::Etc::sourceparts=' + str(parts)] if changed else []
         # Native config still supplies all keys, pins, proxies, TLS and version policy.
-        run(['apt-get', 'update', '-o', 'APT::Update::Error-Mode=any', *options], check=True)
-        run(['apt-get', 'install', '-y', '--no-install-recommends', *options, *packages], check=True,
+        run(['apt-get', 'update', *apt_options, '-o', 'APT::Update::Error-Mode=any', *options], check=True)
+        run(['apt-get', 'install', '-y', '--no-install-recommends', *apt_options, *options, *packages], check=True,
             env={**os.environ, 'DEBIAN_FRONTEND': 'noninteractive'})
 
 
 if __name__ == '__main__':
     try:
-        install(sys.argv[1:])
+        parser = argparse.ArgumentParser(description=__doc__)
+        parser.add_argument('-o', '--option', action='append', default=[])
+        parser.add_argument('packages', nargs='+')
+        args = parser.parse_args()
+        install(args.packages, apt_options=[token for option in args.option for token in ('-o', option)])
     except (OSError, ValueError, KeyError, UnicodeError, subprocess.SubprocessError):
         print('CI APT source acquisition failed; source configuration or APT operation could not be completed safely.', file=sys.stderr)
         sys.exit(1)
