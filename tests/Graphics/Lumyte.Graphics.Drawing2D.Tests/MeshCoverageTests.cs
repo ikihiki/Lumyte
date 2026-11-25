@@ -594,6 +594,98 @@ public sealed class MeshCoverageTests
         Assert.Equal(0, device.MeshPipelineCreations);
     }
 
+    /// <summary>Selection and preparation share immutable requirements across kinds and repeated frames.</summary>
+    /// <returns>The real typed routing regression.</returns>
+    [Fact]
+    public async Task SharedAdmissionLoadsEachArtifactOnlyOnceAsync()
+    {
+        var device = new ProfilingDevice { Caps = SupportedCaps() };
+        int loads = 0;
+        using var service = new MeshCoverageService2D(device, new(32, 4 * 1024 * 1024, 0), name =>
+        {
+            Interlocked.Increment(ref loads);
+            return ShaderArtifact.LoadEmbedded(typeof(DrawingShaders2D).Assembly, name);
+        });
+        Assert.Equal(0, loads);
+        Assert.False(service.Supports(device.Caps with { Features = GraphicsFeatures.None }));
+        Assert.False(service.Supports(device.Caps with { ShaderTarget = ShaderTarget.Wgsl }));
+        Assert.False(service.Supports(device.Caps with { MeshShaderLimits = null }));
+        Assert.Equal(0, loads);
+        var processor = new MeshCoverageProcessor2D(service);
+        IFillRectRenderer2D rect = SlotRouting2D.FillRect(new SlotCandidate2D<FillRectCommand2D, IFillRectRenderer2D>(processor));
+        IFillCircleRenderer2D circle = SlotRouting2D.FillCircle(new SlotCandidate2D<FillCircleCommand2D, IFillCircleRenderer2D>(processor));
+        using var resources = new DrawingResourceState2D(device, pipelineMode: true);
+        using var plan = new DrawingArgumentPlan2D(device);
+        var context = new RenderPreparationContext2D(device, new() { Description = new() { Width = 32, Height = 32, Format = TextureFormat.Rgba16Float, Usage = TextureUsage.RenderAttachment } }, resources, plan);
+        var state = new DrawingState2D(System.Numerics.Matrix3x2.Identity, ClipStack2D.Empty);
+        var paint = PaintGraph2D.Solid(new SRgba<float>(1, 0, 0, 1));
+        for (int frame = 0; frame < 2; frame++)
+        {
+            for (int group = 0; group < 3; group++)
+            {
+                using IPreparedCommandBatch2D first = await rect.PrepareAsync(context, new FillRectCommand2D[] { new(new(1, 1, 8, 8), paint, state) });
+                using IPreparedCommandBatch2D second = await circle.PrepareAsync(context, new FillCircleCommand2D[] { new(new(8, 8), 4, paint, state) });
+            }
+        }
+
+        Assert.Equal(7, loads);
+        Assert.False(service.Supports(device.Caps with { MeshShaderLimits = device.Caps.MeshShaderLimits! with { MaxOutputVertices = 3 } }));
+        Assert.Equal(7, loads);
+        Assert.False(processor.CanPrepare(context, new FillRectCommand2D[33]));
+        Assert.Equal(7, loads);
+    }
+
+    /// <summary>Concurrent admissions publish one complete scalar snapshot per target and service.</summary>
+    [Fact]
+    public void ConcurrentAdmissionKeepsTargetAndServiceIdentity()
+    {
+        var device = new ProfilingDevice { Caps = SupportedCaps() };
+        int loads = 0;
+        ShaderArtifact Load(string name)
+        {
+            Interlocked.Increment(ref loads);
+            return ShaderArtifact.LoadEmbedded(typeof(DrawingShaders2D).Assembly, name);
+        }
+
+        using var service = new MeshCoverageService2D(device, new(32, 4 * 1024 * 1024, 0), Load);
+        Parallel.For(0, 32, _ => Assert.True(service.Supports(device.Caps)));
+        Assert.Equal(7, loads);
+        Assert.True(service.Supports(device.Caps with { ShaderTarget = ShaderTarget.Dxil }));
+        Assert.Equal(14, loads);
+        Assert.True(service.Supports(device.Caps));
+        Assert.Equal(14, loads);
+        using var independent = new MeshCoverageService2D(device, new(32, 4 * 1024 * 1024, 0), Load);
+        Assert.True(independent.Supports(device.Caps));
+        Assert.Equal(21, loads);
+        Assert.Equal(0, device.NativeBuffers);
+        Assert.Equal(0, device.ShaderCreations);
+    }
+
+    /// <summary>Failed artifact acquisition never publishes partial requirements or permanently caches an exception.</summary>
+    [Fact]
+    public void FailedRequirementsAcquisitionCanRetry()
+    {
+        var device = new ProfilingDevice { Caps = SupportedCaps() };
+        int loads = 0;
+        using var service = new MeshCoverageService2D(device, new(32, 4 * 1024 * 1024, 0), name =>
+        {
+            if (Interlocked.Increment(ref loads) == 3)
+            {
+                throw new InvalidOperationException("Transient artifact acquisition failure.");
+            }
+
+            return ShaderArtifact.LoadEmbedded(typeof(DrawingShaders2D).Assembly, name);
+        });
+        Assert.Throws<InvalidOperationException>(() => service.Supports(device.Caps));
+        Assert.Equal(3, loads);
+        Assert.True(service.Supports(device.Caps));
+        Assert.Equal(10, loads);
+        Assert.True(service.Supports(device.Caps));
+        Assert.Equal(10, loads);
+        Assert.Equal(0, device.NativeBuffers);
+        Assert.Equal(0, device.ShaderCreations);
+    }
+
     private static DrawList2D Content(int variant)
     {
         var canvas = new Canvas2D();
