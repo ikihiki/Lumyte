@@ -105,9 +105,56 @@ public sealed partial class GenericGpuNativeTests
         Assert.Throws<InvalidOperationException>(() => ComputeStages2D.Coverage(new(16, 1)).Factory.Describe(descriptions));
     }
 
-    private static byte[] Render(bool fused, int scenario, bool mesh = false)
+    /// <summary>Changes only coverage producer and explicit upload while preserving downstream stages.</summary>
+    /// <param name="scenario">The unchanged native canonical corpus scenario.</param>
+    [GenericGpuNativeTheory]
+    [Trait("Execution", "Gpu")]
+    [InlineData(0)]
+    [InlineData(1)]
+    [InlineData(2)]
+    [InlineData(3)]
+    [InlineData(4)]
+    [InlineData(5)]
+    [InlineData(6)]
+    [InlineData(7)]
+    [InlineData(8)]
+    [InlineData(9)]
+    [InlineData(10)]
+    [InlineData(11)]
+    [InlineData(12)]
+    [InlineData(13)]
+    [InlineData(14)]
+    [InlineData(15)]
+    [InlineData(16)]
+    [InlineData(17)]
+    [InlineData(18)]
+    [InlineData(19)]
+    [InlineData(20)]
+    [InlineData(21)]
+    [InlineData(22)]
+    [InlineData(23)]
+    public void CpuSparseCoverageSubstitutesComputeWithSameDownstreamPixels(int scenario)
+        => Assert.Equal(Render(false, scenario), Render(false, scenario, cpuSparse: true));
+
+    /// <summary>Checks inclusive rounded, half-open rectangle and strict circle pixels on both coverage producers.</summary>
+    [GenericGpuNativeFact]
+    [Trait("Execution", "Gpu")]
+    public void CpuAndGpuCanonicalBoundaryPixelsKeepNineFourOneSamples()
     {
-        uint width = scenario == 23 ? 2u : 1u;
+        foreach (bool cpu in new[] { false, true })
+        {
+            byte[] pixels = Render(false, 24, cpuSparse: cpu);
+            float[] expected = [9f / 16, 4f / 16, 1f / 16];
+            for (int x = 0; x < 3; x++)
+            {
+                Assert.Equal(expected[x], (float)BitConverter.UInt16BitsToHalf(BitConverter.ToUInt16(pixels, (x * 8) + 6)));
+            }
+        }
+    }
+
+    private static byte[] Render(bool fused, int scenario, bool mesh = false, bool cpuSparse = false)
+    {
+        uint width = scenario == 24 ? 3u : scenario == 23 ? 2u : 1u;
         IGraphicDevice device = CreateDevice();
         using var nativeOwner = (IDisposable)device;
         var runtime = new ExecutionRuntime([]);
@@ -116,8 +163,10 @@ public sealed partial class GenericGpuNativeTests
         try
         {
             var graph = new PipelineGraph<RenderRequest2D>();
-            Port<Device<SceneV1>> scene = graph.Stage(new CanonicalProducer(), graph.Input).Then(Transfers.Upload<SceneV1>());
-            Port<Device<FrameV1>> frame = graph.Stage(RenderFields2D.Frame(), graph.Input).Then(Transfers.Upload<FrameV1>());
+            Port<Host<SceneV1>> hostScene = graph.Stage(new CanonicalProducer(), graph.Input);
+            Port<Device<SceneV1>> scene = hostScene.Then(Transfers.Upload<SceneV1>());
+            Port<Host<FrameV1>> hostFrame = graph.Stage(RenderFields2D.Frame(), graph.Input);
+            Port<Device<FrameV1>> frame = hostFrame.Then(Transfers.Upload<FrameV1>());
             Port<Device<ResourceViewsV1>> views = graph.Stage(RenderFields2D.ResourceViews(), graph.Input);
             Port<Device<TargetV1>> target = graph.Stage(RenderFields2D.Target(), graph.Input);
             var samples = new SamplePolicy2D(16, 1);
@@ -132,10 +181,12 @@ public sealed partial class GenericGpuNativeTests
             }
             else
             {
-                Port<Device<Coverage16V1>> coverage = graph.Stage(ComputeStages2D.Coverage(samples), scene, frame);
-                Port<Device<Paint16V1>> paint = graph.Stage(ComputeStages2D.Paint(samples), scene, views, frame);
-                Port<Device<Clip16V1>> clip = graph.Stage(ComputeStages2D.Clip(samples), scene, frame);
-                output = graph.Stage(RasterStages2D.Compose(samples), scene, coverage, paint, clip, target);
+                Port<Device<Coverage16V1>> coverage = cpuSparse
+                    ? graph.Stage(new CpuSparseCoverage2D(samples, 256L * 1024 * 1024), hostScene, hostFrame).Then(Transfers.Upload<Coverage16V1>(UploadRetention.Fresh))
+                    : graph.Stage(ComputeStages2D.PagedCoverage(samples, new GenericPagingLimits2D()), scene, frame);
+                Port<Device<Paint16V1>> paint = graph.Stage(ComputeStages2D.PagedPaint(samples, new GenericPagingLimits2D()), scene, views, frame);
+                Port<Device<Clip16V1>> clip = graph.Stage(ComputeStages2D.PagedClip(samples, new GenericPagingLimits2D()), scene, frame);
+                output = graph.Stage(RasterStages2D.PagedCompose(samples, new GenericPagingLimits2D()), scene, coverage, paint, clip, target);
             }
 
             var policy = new GraphicsPipelinePolicy(512L * 1024 * 1024, 64L * 1024 * 1024, 128L * 1024 * 1024, 3);
@@ -158,7 +209,13 @@ public sealed partial class GenericGpuNativeTests
             }
 
             using var resources = new NativeCorpusResources(device, runtime);
-            if (scenario == 23)
+            if (scenario == 24)
+            {
+                canvas.FillRoundedRect(new(.125f, .125f, .5f, .5f), 0, new SRgba<float>(1, 0, 0, 1));
+                canvas.FillRect(new(1.125f, .125f, .5f, .5f), new SRgba<float>(1, 0, 0, 1));
+                canvas.FillCircle(new(2.375f, .375f), .25f, new SRgba<float>(1, 0, 0, 1));
+            }
+            else if (scenario == 23)
             {
                 canvas.ClipRect(new(0, 0, 1, 1));
                 canvas.FillRect(new(0, 0, 2, 1), new SRgba<float>(1, 0, 0, 1));
@@ -206,7 +263,13 @@ public sealed partial class GenericGpuNativeTests
 
     private static IGraphicDevice CreateDevice()
     {
-        Type type = System.Reflection.Assembly.Load("Lumyte.Graphics.Vulkan").GetType("Lumyte.Graphics.Vulkan.VulkanDevice", true)!;
+        string backend = Environment.GetEnvironmentVariable("LUMYTE_GENERIC_GPU_BACKEND") ?? "Vulkan";
+        if (backend is not ("Vulkan" or "Wgpu"))
+        {
+            throw new InvalidOperationException("Explicit native backend must be Vulkan or Wgpu.");
+        }
+
+        Type type = System.Reflection.Assembly.Load("Lumyte.Graphics." + backend).GetType("Lumyte.Graphics." + backend + "." + backend + "Device", true)!;
         System.Reflection.MethodInfo factory = type.GetMethods(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static).Single(method => method.Name == "Create" && method.GetParameters().All(parameter => parameter.HasDefaultValue));
         return (IGraphicDevice)factory.Invoke(null, factory.GetParameters().Select(parameter => parameter.DefaultValue).ToArray())!;
     }

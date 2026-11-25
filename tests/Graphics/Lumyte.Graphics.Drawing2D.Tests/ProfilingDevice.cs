@@ -1,3 +1,5 @@
+using System.Numerics;
+using System.Runtime.InteropServices;
 using Lumyte.Graphics.Abstractions;
 
 namespace Lumyte.Graphics.Drawing2D.Tests;
@@ -34,6 +36,12 @@ internal sealed class ProfilingDevice : IGraphicDevice
     internal List<DrawingInstruction> Instructions { get; } = [];
 
     internal List<DrawRecord2D> Records { get; } = [];
+
+    internal bool CaptureSparsePayload { get; init; }
+
+    internal List<Vector4[]> NumericUploads { get; } = [];
+
+    internal List<DrawDirectoryEntry2D[]> DirectoryUploads { get; } = [];
 
     internal List<ShaderValueSnapshot> ShaderValues { get; } = [];
 
@@ -310,7 +318,15 @@ internal sealed class ProfilingDevice : IGraphicDevice
 
         public BufferSlice<T> SliceElements(ulong offset, ulong count) => new(this, offset, count);
 
-        public void CopyFrom(ReadOnlySpan<T> source) => device.Copy((long)Layout.GetSizeInBytes((ulong)source.Length));
+        public void CopyFrom(ReadOnlySpan<T> source)
+        {
+            if (device.CaptureSparsePayload && typeof(T) == typeof(Vector4))
+            {
+                device.NumericUploads.Add(MemoryMarshal.Cast<T, Vector4>(source).ToArray());
+            }
+
+            device.Copy((long)Layout.GetSizeInBytes((ulong)source.Length));
+        }
 
         public void CopyTo(Span<T> destination) => throw new NotSupportedException();
 
@@ -352,6 +368,11 @@ internal sealed class ProfilingDevice : IGraphicDevice
         {
             device.Copy(checked(source.Length * (long)ShaderElementStrideInBytes));
             device.ShaderUploads.Add((typeof(T), Count, elementOffset, source.Length));
+            if (device.CaptureSparsePayload && typeof(T) == typeof(DrawDirectoryEntry2D))
+            {
+                device.DirectoryUploads.Add(source.ToArray().Cast<DrawDirectoryEntry2D>().ToArray());
+            }
+
             if (typeof(T) == typeof(DrawingInstruction))
             {
                 device.InstructionUploads.Add((Count, elementOffset, source.Length));

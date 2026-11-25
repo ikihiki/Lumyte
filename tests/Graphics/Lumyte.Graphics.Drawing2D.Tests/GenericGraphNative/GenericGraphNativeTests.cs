@@ -17,15 +17,26 @@ public sealed class GenericGraphNativeTests
 {
     /// <summary>Checks every pixel twice with the same pipeline and immutable layered recording.</summary>
     /// <param name="scenario">Flat, finite layer, nested group opacity, or repeated identity backdrop.</param>
+    /// <param name="cpuSparse">Whether coverage uses the CPU row-mask stage and explicit upload.</param>
     [GenericGpuNativeTheory]
     [Trait("Execution", "Gpu")]
     [InlineData(0)]
     [InlineData(1)]
     [InlineData(2)]
     [InlineData(3)]
-    public void DirectInjectedGraphPreservesPixelsAndReusesPipeline(int scenario)
+    [InlineData(0, true)]
+    [InlineData(1, true)]
+    [InlineData(2, true)]
+    [InlineData(3, true)]
+    public void DirectInjectedGraphPreservesPixelsAndReusesPipeline(int scenario, bool cpuSparse = false)
     {
-        Type type = System.Reflection.Assembly.Load("Lumyte.Graphics.Vulkan").GetType("Lumyte.Graphics.Vulkan.VulkanDevice", true)!;
+        string backend = Environment.GetEnvironmentVariable("LUMYTE_GENERIC_GPU_BACKEND") ?? "Vulkan";
+        if (backend is not ("Vulkan" or "Wgpu"))
+        {
+            throw new InvalidOperationException("Explicit native backend must be Vulkan or Wgpu.");
+        }
+
+        Type type = System.Reflection.Assembly.Load("Lumyte.Graphics." + backend).GetType("Lumyte.Graphics." + backend + "." + backend + "Device", true)!;
         System.Reflection.MethodInfo factory = type.GetMethods().Single(m => m.Name == "Create" && m.IsStatic && m.GetParameters().All(p => p.HasDefaultValue));
         var device = (IGraphicDevice)factory.Invoke(null, factory.GetParameters().Select(p => p.DefaultValue).ToArray())!;
         using var nativeOwner = (IDisposable)device;
@@ -36,11 +47,26 @@ public sealed class GenericGraphNativeTests
         {
             var requests = new List<RenderRequest2D>();
             var pipelineGraph = new PipelineGraph<RenderRequest2D>();
-            Port<Device<SceneV1>> scene = pipelineGraph.Stage(new CanonicalProducer(requests), pipelineGraph.Input).Then(Transfers.Upload<SceneV1>());
-            Port<Device<FrameV1>> frame = pipelineGraph.Stage(RenderFields2D.Frame(), pipelineGraph.Input).Then(Transfers.Upload<FrameV1>());
+            Port<Host<SceneV1>> hostScene = pipelineGraph.Stage(new CanonicalProducer(requests), pipelineGraph.Input);
+            Port<Device<SceneV1>> scene = hostScene.Then(Transfers.Upload<SceneV1>());
+            Port<Host<FrameV1>> hostFrame = pipelineGraph.Stage(RenderFields2D.Frame(), pipelineGraph.Input);
+            Port<Device<FrameV1>> frame = hostFrame.Then(Transfers.Upload<FrameV1>());
             Port<Device<ResourceViewsV1>> views = pipelineGraph.Stage(RenderFields2D.ResourceViews(), pipelineGraph.Input);
             Port<Device<TargetV1>> target = pipelineGraph.Stage(RenderFields2D.Target(), pipelineGraph.Input);
-            Port<Device<TargetWritesV1>> output = pipelineGraph.Stage(RasterStages2D.EvaluateAndComposite(new(16, 1)), scene, views, frame, target);
+            Port<Device<TargetWritesV1>> output;
+            if (cpuSparse)
+            {
+                var samples = new SamplePolicy2D(16, 1);
+                Port<Device<Coverage16V1>> coverage = pipelineGraph.Stage(new CpuSparseCoverage2D(samples, 256L * 1024 * 1024), hostScene, hostFrame).Then(Transfers.Upload<Coverage16V1>(UploadRetention.Fresh));
+                Port<Device<Paint16V1>> paint = pipelineGraph.Stage(ComputeStages2D.PagedPaint(samples, new GenericPagingLimits2D()), scene, views, frame);
+                Port<Device<Clip16V1>> clip = pipelineGraph.Stage(ComputeStages2D.PagedClip(samples, new GenericPagingLimits2D()), scene, frame);
+                output = pipelineGraph.Stage(RasterStages2D.PagedCompose(samples, new GenericPagingLimits2D()), scene, coverage, paint, clip, target);
+            }
+            else
+            {
+                output = pipelineGraph.Stage(RasterStages2D.EvaluateAndComposite(new(16, 1)), scene, views, frame, target);
+            }
+
             var policy = new GraphicsPipelinePolicy(512L * 1024 * 1024, 64L * 1024 * 1024, 128L * 1024 * 1024, 3);
             using var build = new GraphicsPipelineBuildHost(runtime, device, GenericGpuArtifactProvider2D.CreateEmbedded(), policy);
             using IPipeline<RenderRequest2D, Device<TargetWritesV1>> pipeline = build.Build(pipelineGraph.Complete(output));
@@ -94,7 +120,7 @@ public sealed class GenericGraphNativeTests
         {
             var requests = new List<RenderRequest2D>();
             var g = new PipelineGraph<RenderRequest2D>();
-            Port<Device<SceneV1>> scene = g.Stage(new CanonicalProducer(requests), g.Input).Then(Transfers.Upload<SceneV1>()).Then(Transfers.Download<SceneV1>()).Then(Transfers.Upload<SceneV1>());
+            Port<Device<SceneV1>> scene = g.Stage(new CanonicalProducer(requests), g.Input).Then(Transfers.Upload<SceneV1>()).Then(Transfers.Download<SceneV1>()).Then(Transfers.Upload<SceneV1>(UploadRetention.Fresh));
             Port<Device<FrameV1>> frame = g.Stage(RenderFields2D.Frame(), g.Input).Then(Transfers.Upload<FrameV1>());
             Port<Device<ResourceViewsV1>> views = g.Stage(RenderFields2D.ResourceViews(), g.Input);
             Port<Device<TargetV1>> targetPort = g.Stage(RenderFields2D.Target(), g.Input);

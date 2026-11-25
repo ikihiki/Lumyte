@@ -114,6 +114,103 @@ public sealed partial class GenericGpuNativeTests
         }
     }
 
+    /// <summary>Retains real immutable upload chunks across three overlapping generic frames, placement and COW edits.</summary>
+    /// <param name="viaGraph">Whether each frame is borrowed into the existing parent Graph.</param>
+    [GenericGpuNativeTheory]
+    [InlineData(false)]
+    [InlineData(true)]
+    [Trait("Execution", "Gpu")]
+    public void SparseCoverageRetainsThreeIndependentVersionsUntilCompletion(bool viaGraph)
+    {
+        IGraphicDevice device = CreateDevice();
+        using var deviceOwner = (IDisposable)device;
+        var runtime = new ExecutionRuntime([]);
+        runtime.PrepareOnCurrentHost(OwnerPlacement.Host, CpuExecutionMode.Cooperative, 1, new ExecutionOptions());
+        Pump(runtime, runtime.StartAsync().AsTask());
+        try
+        {
+            var observations = new RetentionInputs();
+            var graph = new PipelineGraph<RenderRequest2D>();
+            Port<Host<CommandsV1>> commands = graph.Stage(RenderFields2D.Commands(), graph.Input);
+            Port<Host<ResourceManifestV1>> manifest = graph.Stage(RenderFields2D.ResourceManifest(), graph.Input);
+            Port<Host<FrameV1>> hostFrame = graph.Stage(RenderFields2D.Frame(), graph.Input);
+            Port<Host<SceneV1>> hostScene = graph.Stage(CpuStages2D.Normalize(new(16, 64, 64, 64)), commands, manifest, hostFrame);
+            Port<Device<SceneV1>> scenePort = hostScene.Then(Transfers.Upload<SceneV1>());
+            Port<Device<FrameV1>> framePort = graph.Stage(RenderFields2D.Frame(), graph.Input).Then(Transfers.Upload<FrameV1>());
+            Port<Device<ResourceViewsV1>> views = graph.Stage(RenderFields2D.ResourceViews(), graph.Input);
+            Port<Device<TargetV1>> target = graph.Stage(RenderFields2D.Target(), graph.Input);
+            var samples = new SamplePolicy2D(16, 1);
+            Port<Device<Coverage16V1>> coverage = graph.Stage(observations, hostScene, hostFrame).Then(Transfers.Upload<Coverage16V1>(UploadRetention.Fresh));
+            Port<Device<Paint16V1>> paint = graph.Stage(ComputeStages2D.PagedPaint(samples, new GenericPagingLimits2D()), scenePort, views, framePort);
+            Port<Device<Clip16V1>> clip = graph.Stage(ComputeStages2D.PagedClip(samples, new GenericPagingLimits2D()), scenePort, framePort);
+            Port<Device<TargetWritesV1>> output = graph.Stage(RasterStages2D.PagedCompose(samples, new GenericPagingLimits2D()), scenePort, coverage, paint, clip, target);
+
+            PipelineDefinition<RenderRequest2D, Device<TargetWritesV1>> definition = graph.Complete(output);
+            var policy = new GraphicsPipelinePolicy(512L * 1024 * 1024, 16 * 1024 * 1024, 16 * 1024 * 1024, 3)
+            {
+                ImmutableUploads = new(1024 * 1024, 128, 256),
+            };
+            using var build = new GraphicsPipelineBuildHost(runtime, device, Artifacts(), policy);
+            using IPipeline<RenderRequest2D, Device<TargetWritesV1>> pipeline = build.Build(definition);
+            using var renderer = new Renderer2D(device, pipeline, new(true, true, true, true, true, true, true, true, true, true, true), new(policy, DrawingArgumentTableMode.Auto, new() { EnableResidentInstances = true, MaxCachedBytes = 1024 * 1024 }));
+            ImmutableUploadCache cache = ((IGraphicsPipelineInfo)pipeline).ImmutableUploads!;
+            using var scene = new DrawingScene2D();
+            DrawingNodeId2D node = scene.Insert(scene.Root, 0, RetentionContent(false));
+            using DrawingSnapshot2D original = scene.CaptureSnapshot();
+            using var warm = new RetentionSlot(device, renderer, original, runtime, 0, viaGraph, observeNative: true);
+            Assert.All(cache.Snapshot().Completed, completed => Assert.False(completed));
+            warm.Submit(device);
+            Assert.Throws<InvalidOperationException>(() => warm.Frame.Retire());
+            Assert.All(cache.Snapshot().Completed, completed => Assert.False(completed));
+            warm.Complete(runtime);
+            (long Created, long Hits, long Bytes, object[] Owners, bool[] Completed) initialized = cache.Snapshot();
+            Assert.NotEmpty(initialized.Owners);
+            Assert.All(initialized.Completed, completed => Assert.True(completed));
+            Assert.Equal(3, initialized.Created);
+            Assert.Equal(3, initialized.Owners.Length);
+
+            using var old = new RetentionSlot(device, renderer, original, runtime, 0, viaGraph, observeNative: true);
+            scene.SetTransform(node, Matrix3x2.CreateTranslation(3, 1));
+            using DrawingSnapshot2D moved = scene.CaptureSnapshot();
+            using var next = new RetentionSlot(device, renderer, moved, runtime, 1, viaGraph, observeNative: true);
+            Assert.Equal(3, cache.Snapshot().Created);
+            Assert.Equal(initialized.Owners.Length, cache.Snapshot().Owners.Length);
+            Assert.All(cache.Snapshot().Owners, owner => Assert.Contains(owner, initialized.Owners));
+            Assert.Equal(initialized.Hits + 6, cache.Snapshot().Hits);
+            scene.ReplaceContent(node, RetentionContent(true));
+            using DrawingSnapshot2D changed = scene.CaptureSnapshot();
+            using var replacement = new RetentionSlot(device, renderer, changed, runtime, 2, viaGraph, observeNative: true);
+            (long Created, long Hits, long Bytes, object[] Owners, bool[] Completed) edited = cache.Snapshot();
+            Assert.Equal(4, edited.Created);
+            Assert.Equal(4, edited.Owners.Length);
+            Assert.Equal(initialized.Hits + 8, edited.Hits);
+            observations.AssertVersions();
+            Assert.All(initialized.Owners, owner => Assert.Contains(owner, edited.Owners));
+            original.Dispose();
+            moved.Dispose();
+            changed.Dispose();
+            scene.Dispose();
+            old.Submit(device);
+            next.Submit(device);
+            replacement.Submit(device);
+            Assert.Equal(3, renderer.RetentionStatistics.ActiveFrames);
+            Assert.Contains(warm.Copies, copy => initialized.Owners.Contains(copy.Destination));
+            Assert.DoesNotContain(old.Copies, copy => initialized.Owners.Contains(copy.Destination));
+            Assert.DoesNotContain(next.Copies, copy => initialized.Owners.Contains(copy.Destination));
+            Assert.True(replacement.Copies.Count(copy => edited.Owners.Contains(copy.Destination)) < warm.Copies.Count(copy => initialized.Owners.Contains(copy.Destination)));
+            replacement.Complete(runtime);
+            old.Complete(runtime);
+            next.Complete(runtime);
+            AssertFreshNativeCopies(warm, old, next, replacement, initialized.Owners, edited.Owners, observations);
+            Assert.Equal(0, renderer.RetentionStatistics.ActiveFrames);
+            Assert.All(cache.Snapshot().Completed, completed => Assert.True(completed));
+        }
+        finally
+        {
+            Pump(runtime, runtime.StopAsync().AsTask());
+        }
+    }
+
     private static DrawList2D RetentionContent(bool green)
     {
         var canvas = new Canvas2D();
@@ -131,14 +228,16 @@ public sealed partial class GenericGpuNativeTests
         private readonly uint _pitch;
         private readonly int _version;
         private readonly bool _viaGraph;
+        private readonly bool _observeNative;
         private IGraphicsSubmission? _submission;
         private bool _retired;
         private CompiledRenderGraph? _graphPlan;
 
-        internal RetentionSlot(IGraphicDevice device, Renderer2D renderer, DrawingSnapshot2D source, ExecutionRuntime runtime, int version, bool viaGraph)
+        internal RetentionSlot(IGraphicDevice device, Renderer2D renderer, DrawingSnapshot2D source, ExecutionRuntime runtime, int version, bool viaGraph, bool observeNative = false)
         {
             _version = version;
             _viaGraph = viaGraph;
+            _observeNative = observeNative;
             _texture = device.CreateTexture(new() { Width = 16, Height = 16, Format = TextureFormat.Rgba8Srgb, Usage = TextureUsage.RenderAttachment | TextureUsage.CopySource });
             _view = _texture.CreateView();
             uint alignment = device.GetTextureCopyLayout(TextureFormat.Rgba8Srgb).BytesPerRowAlignment;
@@ -154,6 +253,8 @@ public sealed partial class GenericGpuNativeTests
 
         internal List<(object Destination, ulong Bytes)> Copies { get; } = [];
 
+        internal List<RetentionNativeCopy> NativeCopies { get; } = [];
+
         public void Dispose()
         {
             if (!_retired)
@@ -167,6 +268,11 @@ public sealed partial class GenericGpuNativeTests
                 Frame.Dispose();
             }
 
+            foreach (RetentionNativeCopy copy in NativeCopies)
+            {
+                copy.Dispose();
+            }
+
             _submission?.Dispose();
             _commands.Dispose();
             _readback.Dispose();
@@ -178,7 +284,7 @@ public sealed partial class GenericGpuNativeTests
         {
             var color = new BarrierScope(PipelineStage.ColorOutput, ResourceAccess.ColorRead | ResourceAccess.ColorWrite);
             _commands.Barrier(new TextureBarrierDesc { Texture = _texture, Range = new(0, 1, 0, 1), BeforeState = TextureState.Undefined, AfterState = TextureState.ColorAttachment, Before = default, After = color });
-            var observed = new UploadObservationCommands(_commands, Copies);
+            var observed = new UploadObservationCommands(_commands, Copies, _observeNative ? NativeCopies : null);
             if (_viaGraph)
             {
                 using var graph = new Lumyte.Graphics.RenderGraph.RenderGraph(device);
@@ -206,6 +312,11 @@ public sealed partial class GenericGpuNativeTests
         internal void Complete(ExecutionRuntime runtime)
         {
             Pump(runtime, _submission!.WaitAsync().AsTask());
+            foreach (RetentionNativeCopy copy in NativeCopies)
+            {
+                copy.Complete(runtime);
+            }
+
             _commands.Dispose();
             _graphPlan?.Dispose();
             Frame.Retire();
@@ -214,6 +325,7 @@ public sealed partial class GenericGpuNativeTests
             byte[] bytes = new byte[_readback.Count];
             _readback.CopyTo(bytes);
             _readback.Unmap();
+            RetentionEvidence($"pixels-{_version}-{_viaGraph}-{Guid.NewGuid():N}.rgba", bytes);
             for (uint y = 0; y < 16; y++)
             {
                 for (uint x = 0; x < 16; x++)

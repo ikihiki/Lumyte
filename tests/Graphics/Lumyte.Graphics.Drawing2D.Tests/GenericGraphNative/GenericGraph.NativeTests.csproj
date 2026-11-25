@@ -15,5 +15,6 @@
     <PackageReference Include="xunit.runner.visualstudio" Version="3.1.1" PrivateAssets="all" />
     <ProjectReference Include="../../../../src/Graphics/Lumyte.Graphics.Drawing2D.RenderGraph/Lumyte.Graphics.Drawing2D.RenderGraph.csproj" />
     <ProjectReference Include="../../../../src/Graphics/Lumyte.Graphics.Vulkan/Lumyte.Graphics.Vulkan.csproj" />
+    <ProjectReference Include="../../../../src/Graphics/Lumyte.Graphics.Wgpu/Lumyte.Graphics.Wgpu.csproj" />
   </ItemGroup>
 </Project>

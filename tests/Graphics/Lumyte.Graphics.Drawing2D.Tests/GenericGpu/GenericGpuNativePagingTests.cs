@@ -60,13 +60,29 @@ public sealed partial class GenericGpuNativeTests
         }
     }
 
+    /// <summary>Real sparse row masks feed identical paged consumers over the complete two-page scene.</summary>
+    /// <param name="wgpu">Selects native Wgpu.</param>
+    /// <param name="graphMode">Selects parent Graph.</param>
+    [GenericGpuNativeTheory]
+    [Trait("Execution", "Gpu")]
+    [InlineData(false, false)]
+    [InlineData(false, true)]
+    [InlineData(true, false)]
+    [InlineData(true, true)]
+    public void SparsePagedScenePreservesEveryPixel(bool wgpu, bool graphMode)
+    {
+        byte[] expected = RenderPagingFixture(wgpu, graphMode, false, paged: true, bounded: true);
+        byte[] actual = RenderPagingFixture(wgpu, graphMode, false, paged: true, bounded: true, sparse: true);
+        Assert.Equal(expected, actual);
+    }
+
     /// <summary>The unchanged whole-range source binding genuinely fails the enforcing native wrapper.</summary>
     [GenericGpuNativeFact]
     [Trait("Execution", "Gpu")]
     public void WholeRangeLegacyFailsActual64KiBRegistration()
         => Assert.Throws<NotSupportedException>(() => RenderPagingFixture(false, false, false, paged: false, bounded: true));
 
-    private static byte[] RenderPagingFixture(bool wgpu, bool graphMode, bool cpuCoverage, bool paged, bool bounded)
+    private static byte[] RenderPagingFixture(bool wgpu, bool graphMode, bool cpuCoverage, bool paged, bool bounded, bool sparse = false)
     {
         IGraphicDevice raw = wgpu ? Lumyte.Graphics.Wgpu.WgpuDevice.Create() : CreateDevice();
         using var rawOwner = (IDisposable)raw;
@@ -78,13 +94,15 @@ public sealed partial class GenericGpuNativeTests
         try
         {
             var g = new PipelineGraph<RenderRequest2D>();
-            Port<Device<SceneV1>> scene = g.Stage(new PagingCanonicalProducer(), g.Input).Then(Transfers.Upload<SceneV1>());
+            Port<Host<SceneV1>> hostScene = g.Stage(new PagingCanonicalProducer(), g.Input);
+            Port<Host<FrameV1>> hostFrame = g.Stage(RenderFields2D.Frame(), g.Input);
+            Port<Device<SceneV1>> scene = hostScene.Then(Transfers.Upload<SceneV1>());
             Port<Device<FrameV1>> frame = g.Stage(RenderFields2D.Frame(), g.Input).Then(Transfers.Upload<FrameV1>());
             Port<Device<ResourceViewsV1>> views = g.Stage(RenderFields2D.ResourceViews(), g.Input);
             Port<Device<TargetV1>> targetPort = g.Stage(RenderFields2D.Target(), g.Input);
             var samples = new SamplePolicy2D(16, 1);
             var limits = new GenericPagingLimits2D();
-            Port<Device<Coverage16V1>> coverage = cpuCoverage ? g.Stage(new PagingCpuCoverage(), g.Input).Then(Transfers.Upload<Coverage16V1>(UploadRetention.Fresh)) : paged ? g.Stage(ComputeStages2D.PagedCoverage(samples, limits), scene, frame) : g.Stage(ComputeStages2D.Coverage(samples), scene, frame);
+            Port<Device<Coverage16V1>> coverage = sparse ? g.Stage(new CpuSparseCoverage2D(samples, 256L * 1024 * 1024), hostScene, hostFrame).Then(Transfers.Upload<Coverage16V1>(UploadRetention.Fresh)) : cpuCoverage ? g.Stage(new PagingCpuCoverage(), g.Input).Then(Transfers.Upload<Coverage16V1>(UploadRetention.Fresh)) : paged ? g.Stage(ComputeStages2D.PagedCoverage(samples, limits), scene, frame) : g.Stage(ComputeStages2D.Coverage(samples), scene, frame);
             Port<Device<Paint16V1>> paint = paged ? g.Stage(ComputeStages2D.PagedPaint(samples, limits), scene, views, frame) : g.Stage(ComputeStages2D.Paint(samples), scene, views, frame);
             Port<Device<Clip16V1>> clip = paged ? g.Stage(ComputeStages2D.PagedClip(samples, limits), scene, frame) : g.Stage(ComputeStages2D.Clip(samples), scene, frame);
             Port<Device<TargetWritesV1>> output = paged ? g.Stage(RasterStages2D.PagedCompose(samples, limits), scene, coverage, paint, clip, targetPort) : g.Stage(RasterStages2D.Compose(samples), scene, coverage, paint, clip, targetPort);

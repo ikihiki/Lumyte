@@ -14,6 +14,12 @@ internal static class Program
 {
     private static void Main(string[] args)
     {
+        if (args.Contains("--sparse-wgpu", StringComparer.Ordinal))
+        {
+            SparseSmoke.RunAsync().GetAwaiter().GetResult();
+            return;
+        }
+
         if (args.Contains("--generic-resident-wgpu", StringComparer.Ordinal))
         {
             ResidentSmoke.RunGeneric();
