@@ -14,7 +14,10 @@ internal static class PagedGpuPreparation2D
         var graphics = (GraphicsStageRequirements)original.Extensions[0];
         long perWindowHost = 4096 + (resources ? 2L * (GenericGpuPreparation2D.MaxResources + 1) * 128 : 0);
         long extraDevice = checked(limits.MaxWindows * ((2L * limits.MaxScenePages * 16) + (resources ? GenericGpuPreparation2D.ResourceBytes : 0)));
-        return new(checked(65536 + (limits.MaxWindows * perWindowHost)), [new GraphicsStageRequirements(domain, checked(graphics.MaxDeviceBytes + extraDevice), graphics.Artifacts, graphics.InputAccesses)]);
+        return new(checked(65536 + (limits.MaxWindows * perWindowHost)), [new GraphicsStageRequirements(domain, checked(graphics.MaxDeviceBytes + extraDevice), graphics.Artifacts, graphics.InputAccesses)])
+        {
+            OutputMaxElements = original.OutputMaxElements,
+        };
     }
 
     internal static IArgumentTable Table(GraphicsStagePreparationContext gpu, int textureCount = 0, int samplerCount = 0)
