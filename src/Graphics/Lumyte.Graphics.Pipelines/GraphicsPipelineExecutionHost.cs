@@ -123,6 +123,11 @@ public sealed class GraphicsPipelineExecutionHost : IDisposable
 
             await execution.State.Preparation.ConfigureAwait(false);
             cancellationToken.ThrowIfCancellationRequested();
+            await _context.InvokeAsync(() =>
+            {
+                run.PublishImmutableUploads();
+                return ValueTask.CompletedTask;
+            }).ConfigureAwait(false);
             execution.Complete();
             _execution = null;
         }

@@ -6,6 +6,7 @@
   </PropertyGroup>
   <ItemGroup>
     <InternalsVisibleTo Include="Lumyte.Graphics.Pipelines.Tests" />
+    <InternalsVisibleTo Include="Lumyte.Graphics.Drawing2D.GenericGpu.NativeTests" />
     <ProjectReference Include="../../Core/Lumyte.Pipelines/Lumyte.Pipelines.csproj" />
     <ProjectReference Include="../Lumyte.Graphics.Abstractions/Lumyte.Graphics.Abstractions.csproj" />
   </ItemGroup>

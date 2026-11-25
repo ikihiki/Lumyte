@@ -1,8 +1,10 @@
 using Lumyte.Graphics.Abstractions;
 using Lumyte.Graphics.Drawing2D;
 using Lumyte.Graphics.Drawing2D.DependencyInjection;
+using Lumyte.Graphics.Drawing2D.Pipelines;
 using Lumyte.Mathematics.Colors;
 using Microsoft.Extensions.DependencyInjection;
+using static Lumyte.Graphics.Drawing2D.Pipelines.DrawingCompose;
 
 namespace Lumyte.UI.Application;
 
@@ -11,14 +13,14 @@ internal sealed partial class UiHostPresenter : IDisposable
     private readonly IGraphicDevice _device;
     private readonly SRgba<float> _background;
     private readonly UiIntermediateTexturePool _intermediates;
-    private readonly Renderer2D _renderer;
+    private readonly IRenderer2D _renderer;
     private readonly IGraphicsPipeline _pipeline;
     private readonly IGraphicsSampler _sampler;
     private readonly Stack<IDisposable> _resources = [];
     private readonly List<Frame> _frames = [];
     private TextureFormat? _intermediate;
 
-    internal UiHostPresenter(IGraphicDevice device, SRgba<float> background, int maximumFrames = 3)
+    internal UiHostPresenter(IGraphicDevice device, SRgba<float> background, int maximumFrames = 3, DrawingRetentionOptions2D? retentionOptions = null)
     {
         _device = device;
         _background = UiColorPolicy.Unit(background, nameof(background));
@@ -29,7 +31,14 @@ internal sealed partial class UiHostPresenter : IDisposable
             services.UseGraphics2D();
             ServiceProvider provider = Own(services.BuildServiceProvider());
             IServiceScope scope = Own(provider.CreateScope());
-            _renderer = Own(new Renderer2D(device, scope.ServiceProvider.GetRequiredService<DrawingCommandRenderers2D>(), retentionOptions: new() { MaxFramesInFlight = maximumFrames }));
+            if (retentionOptions is not null && retentionOptions.MaxFramesInFlight != maximumFrames)
+            {
+                throw new ArgumentException("Drawing retention must use the presenter frame limit.", nameof(retentionOptions));
+            }
+
+            _renderer = Own(retentionOptions is null
+                ? new Renderer2D(device, scope.ServiceProvider.GetRequiredService<DrawingCommandRenderers2D>(), retentionOptions: new() { MaxFramesInFlight = maximumFrames })
+                : CreateConfiguredRenderer(retentionOptions));
             IGraphicsShader vertex = Own(device.CreateShader(ShaderArtifact.LoadEmbedded(typeof(UiHostPresenter).Assembly, "Lumyte.UI.Application.present-vertex.lshader")));
             IGraphicsShader fragment = Own(device.CreateShader(ShaderArtifact.LoadEmbedded(typeof(UiHostPresenter).Assembly, "Lumyte.UI.Application.present-fragment.lshader")));
             _pipeline = Own(device.CreateGraphicsPipeline(new() { VertexShader = vertex, FragmentShader = fragment }));
@@ -533,6 +542,27 @@ internal sealed partial class UiHostPresenter : IDisposable
         {
             profile?.Counter(15, _frames.Count);
         }
+    }
+
+    private IRenderer2D CreateConfiguredRenderer(DrawingRetentionOptions2D policy)
+    {
+        IGraphicsShader vertex = Own(_device.CreateShader(DrawingShaders2D.Vertex));
+        IGraphicsShader fragment = Own(_device.CreateShader(DrawingShaders2D.Fragment));
+        IGraphicsPipeline pipeline = Own(_device.CreateGraphicsPipeline(new() { VertexShader = vertex, FragmentShader = fragment }));
+        var resources = new DrawingResources2D(_device, pipeline);
+        using RendererBuildHost2D host = Renderer(argumentTables: DrawingArgumentTableMode.Auto, retention: policy)[
+            Renderer.FillRect()[StandardFillRect()],
+            Renderer.FillRoundedRect()[StandardFillRoundedRect()],
+            Renderer.FillCircle()[StandardFillCircle()],
+            Renderer.DrawLine()[StandardDrawLine()],
+            Renderer.FillPath()[StandardFillPath()],
+            Renderer.StrokePath()[StandardStrokePath()],
+            Renderer.DrawImage()[StandardDrawImage()],
+            Renderer.DrawCoverageMask()[StandardDrawCoverageMask()],
+            Renderer.DrawDistanceField()[StandardDrawDistanceField()],
+            Renderer.DrawMesh()[StandardDrawMesh()],
+            Renderer.DrawPaintGraph()[StandardDrawPaintGraph()]].CreateHost();
+        return host.BuildRenderer(_device, resources, null, null);
     }
 
     private T Own<T>(T resource)

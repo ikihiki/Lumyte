@@ -9,7 +9,8 @@ export function installCaptureDiagnosticsRequest(target = globalThis) { target._
 
 export function createCaptureTraceReporter({ emit = value => console.log(JSON.stringify(value)), maxRecords = 256, historyLimit = 32 } = {}) {
     let received = 0, invalid = 0, dropped = 0;
-    const records = [], recent = [], gpu = [], captures = [];
+    const records = [], recent = [], gpu = [], captures = [], critical = [];
+    let criticalDropped = 0;
     const safelyEmit = value => { try { emit(value); } catch {} };
     function retain(buffer, value, limit) {
         buffer.push(value);
@@ -47,6 +48,14 @@ export function createCaptureTraceReporter({ emit = value => console.log(JSON.st
             const event = { method: value.method, status: value.status, elapsedMs: value.elapsedMs };
             if (Number.isSafeInteger(value.id)) event.id = value.id;
             if (Number.isFinite(value.atMs)) event.atMs = value.atMs;
+            for (const key of ["deviceId", "queueId", "submitSequence", "regularDropped"]) if (Number.isSafeInteger(value[key]) && value[key] >= 0) event[key] = value[key];
+            if (typeof value.reason === "string") event.reason = value.reason.slice(0, 80);
+            if (value.critical === true) {
+                event.critical = true;
+                if (value.criticalTruncated === true) event.criticalTruncated = true;
+                critical.push({ ...context, event });
+                if (critical.length > 16) { critical.shift(); criticalDropped++; }
+            }
             if (value.truncated === true) event.truncated = true;
             retain(gpu, { ...context, event }, maxRecords);
         } catch { invalid++; }
@@ -57,7 +66,7 @@ export function createCaptureTraceReporter({ emit = value => console.log(JSON.st
         let status = "unavailable", snapshot;
         try {
             if (typeof command === "function") {
-                const result = await command("Runtime.evaluate", { expression: "globalThis.lumyteApplicationProbe?.GetCaptureDiagnostics?.()", returnByValue: true, awaitPromise: false }, 2000);
+                const result = await command("Runtime.evaluate", { expression: "(() => { const host = globalThis.lumyteApplicationProbe?.GetCaptureDiagnostics?.(); const browserGpuCritical = globalThis.__lumyteBrowserGpuCritical; if (!browserGpuCritical) return host; try { return JSON.stringify({ ...(typeof host === 'string' ? JSON.parse(host) : {}), browserGpuCritical }); } catch { return host; } })()", returnByValue: true, awaitPromise: false }, 2000);
                 const value = result?.result?.value;
                 if (result?.exceptionDetails) status = "export-error";
                 else if (typeof value !== "string") status = "not-enabled";
@@ -66,9 +75,17 @@ export function createCaptureTraceReporter({ emit = value => console.log(JSON.st
             }
         } catch { status = "snapshot-query-failed"; }
         // The only stdout path. Already-received buffers survive a hung/closed Browser.
-        const report = { check: "browser-capture-failure", ...context, status, received, invalid, dropped, records: [...records], gpu: [...gpu], captures: [...captures], recent: [...recent], ...(snapshot === undefined ? {} : { snapshot }) };
-        safelyEmit(report);
-        return report;
+        const summary = { check: "browser-capture-failure", ...context, status, received, invalid, dropped, criticalDropped, critical: [...critical], clockCorrelation: "UI request/frame IDs are authoritative; JS/Node/proc clocks are separate observations, not arbitrary frame assignments.", records: [...records], gpu: [...gpu], captures: [...captures], recent: [...recent], ...(snapshot === undefined ? {} : { snapshot }) };
+        const outputDropped = { records: 0, recent: 0, gpu: 0, captures: 0 };
+        summary.outputDropped = outputDropped;
+        const bytes = () => Buffer.byteLength(JSON.stringify(summary));
+        // Keep authoritative snapshot + protected terminal ring; discard oldest ordinary history first.
+        for (const name of ["records", "recent", "gpu", "captures"]) {
+            while (bytes() > 256 * 1024 && summary[name].length) { summary[name].shift(); outputDropped[name]++; }
+        }
+        if (bytes() > 256 * 1024) { delete summary.snapshot; summary.snapshotOmittedForOutputCap = true; }
+        safelyEmit(summary);
+        return summary;
     }
     return { observe, observeGpu, capture, failure, get received() { return received; }, get invalid() { return invalid; }, get dropped() { return dropped; } };
 }

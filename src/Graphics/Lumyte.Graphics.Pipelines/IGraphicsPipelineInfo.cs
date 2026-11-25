@@ -5,6 +5,9 @@ namespace Lumyte.Graphics.Pipelines;
 /// <summary>Exposes only the trusted originating graphics build identity.</summary>
 internal interface IGraphicsPipelineInfo
 {
+    /// <summary>Gets the build-local immutable storage owner for internal binding and acceptance tests.</summary>
+    ImmutableUploadCache? ImmutableUploads { get; }
+
     /// <summary>Gets the borrowed native device.</summary>
     IGraphicDevice Device { get; }
 

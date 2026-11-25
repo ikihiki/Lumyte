@@ -10,7 +10,7 @@ internal partial record struct GenericFusedArguments2D : IShaderArguments
 
     public GenericFusedArguments2D(GenericArguments2D arguments)
     {
-        _data = new() { Width = arguments.Width, Height = arguments.Height, Commands = arguments.Commands, CommandIndex = arguments.CommandIndex };
+        _data = new() { Width = arguments.Width, Height = arguments.Height, Commands = arguments.Commands, CommandIndex = arguments.CommandIndex, TranslationX = arguments.TranslationX, TranslationY = arguments.TranslationY };
         Scene = arguments.Scene;
         Resources = arguments.Resources;
     }
@@ -27,6 +27,10 @@ internal partial record struct GenericFusedArguments2D : IShaderArguments
 
     public partial uint CommandIndex { get; set; }
 
+    public partial float TranslationX { get; set; }
+
+    public partial float TranslationY { get; set; }
+
     [StructLayout(LayoutKind.Sequential, Pack = 4)]
     private struct TransferData
     {
@@ -36,5 +40,7 @@ internal partial record struct GenericFusedArguments2D : IShaderArguments
         public uint Height;
         public uint Commands;
         public uint CommandIndex;
+        public float TranslationX;
+        public float TranslationY;
     }
 }

@@ -10,6 +10,7 @@ public sealed class GraphicsPipelineRecordPlan : IDisposable
     private int _graphClaim;
     private IGraphicsCommandBuffer? _commands;
     private bool _recorded;
+    private bool _recordSucceeded;
 
     internal GraphicsPipelineRecordPlan(GraphicsResultState state, IGraphicsOwnerContext context)
     {
@@ -42,6 +43,25 @@ public sealed class GraphicsPipelineRecordPlan : IDisposable
             _recorded = true;
             _commands = commands;
             _state.Run.Record(commands);
+            _recordSucceeded = true;
+        }
+    }
+
+    /// <summary>Publishes immutable uploads only after the recorded submission completed and its command memory was disposed.</summary>
+    /// <remarks>The caller supplies the actual receipt from submitting this plan's recorded command, not an unrelated completed submission. Unknown acceptance never qualifies.</remarks>
+    /// <param name="submission">The actual successful submission containing this plan's command.</param>
+    public void RetireImmutableUploads(IGraphicsSubmission submission)
+    {
+        ArgumentNullException.ThrowIfNull(submission);
+        lock (_gate)
+        {
+            ObjectDisposedException.ThrowIf(_state is null, this);
+            if (!_recordSucceeded || _commands?.State != CommandBufferState.Disposed || submission.Status != SubmissionStatus.Completed || _state.Run.Device.Status != GraphicsDeviceStatus.Ready)
+            {
+                throw new InvalidOperationException("Immutable publication requires successful recording, actual completion, disposed command memory and the ready originating generation.");
+            }
+
+            _state.Run.PublishImmutableUploads();
         }
     }
 
@@ -67,6 +87,15 @@ public sealed class GraphicsPipelineRecordPlan : IDisposable
 
             _state.Dispose();
             _state = null;
+        }
+    }
+
+    internal KeyValuePair<object, long> CaptureWorkingReservation()
+    {
+        lock (_gate)
+        {
+            ObjectDisposedException.ThrowIf(_state is null, this);
+            return new(_state.Run, _state.Run.ReservedWorkingBytes);
         }
     }
 

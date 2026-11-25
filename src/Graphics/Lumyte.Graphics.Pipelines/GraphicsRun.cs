@@ -2,7 +2,7 @@ using Lumyte.Graphics.Abstractions;
 
 namespace Lumyte.Graphics.Pipelines;
 
-internal sealed class GraphicsRun(IGraphicDevice device, GraphicsDeviceGeneration generation, GraphicsPipelinePolicy policy, int[]? nodeEpochs = null, GraphicsScratchBudget? sharedBudget = null) : IDisposable
+internal sealed class GraphicsRun(IGraphicDevice device, GraphicsDeviceGeneration generation, GraphicsPipelinePolicy policy, int[]? nodeEpochs = null, GraphicsScratchBudget? sharedBudget = null, ImmutableUploadCache? immutableUploads = null) : IDisposable
 {
     private readonly object _gate = new();
     private readonly GraphicsPipelinePolicy _policy = policy;
@@ -18,6 +18,7 @@ internal sealed class GraphicsRun(IGraphicDevice device, GraphicsDeviceGeneratio
     private readonly SortedDictionary<int, Action> _publications = [];
     private readonly List<Action<Exception>> _abortReadbacks = [];
     private readonly List<Action> _recordValidations = [];
+    private readonly List<Action> _immutablePublications = [];
     private long _scratch;
     private long _transfer;
     private bool _disposed;
@@ -32,7 +33,20 @@ internal sealed class GraphicsRun(IGraphicDevice device, GraphicsDeviceGeneratio
 
     internal bool HasReadbacks => _readbacks.Count != 0;
 
+    internal long ReservedWorkingBytes
+    {
+        get
+        {
+            lock (_gate)
+            {
+                return _scratch;
+            }
+        }
+    }
+
     internal Func<int, ValueTask>? BeforeReadbackMap { get; set; }
+
+    internal ImmutableUploadCache? ImmutableUploads => immutableUploads;
 
     public void Dispose()
     {
@@ -57,6 +71,7 @@ internal sealed class GraphicsRun(IGraphicDevice device, GraphicsDeviceGeneratio
                 throw new AggregateException(errors);
             }
 
+            _immutablePublications.Clear();
             _records.Clear();
             _readbacks.Clear();
             _publications.Clear();
@@ -67,6 +82,28 @@ internal sealed class GraphicsRun(IGraphicDevice device, GraphicsDeviceGeneratio
             _budget.Release(_scratch);
             _scratch = 0;
             _disposed = true;
+        }
+    }
+
+    internal void OnImmutableCompletion(Action publish)
+    {
+        lock (_gate)
+        {
+            _immutablePublications.Add(publish);
+        }
+    }
+
+    internal void PublishImmutableUploads()
+    {
+        lock (_gate)
+        {
+            Validate();
+            foreach (Action publish in _immutablePublications)
+            {
+                publish();
+            }
+
+            _immutablePublications.Clear();
         }
     }
 

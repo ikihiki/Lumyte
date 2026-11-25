@@ -53,6 +53,9 @@ public sealed partial class Renderer2D(IGraphicDevice device, DrawingCommandRend
     DrawingCommandRenderers2D IGraphRendererSource2D.CommandRenderers => _renderers;
 
     /// <inheritdoc/>
+    long IGraphRendererSource2D.MaxWorkingBytes => _retained.MaxWorkingBytes;
+
+    /// <inheritdoc/>
     Pipelines.PipelineBinding2D? IGraphRendererSource2D.PipelineBinding => _pipelineBinding;
 
     /// <inheritdoc/>
@@ -111,8 +114,11 @@ public sealed partial class Renderer2D(IGraphicDevice device, DrawingCommandRend
                 _retained.RetryCleanup();
                 var plan = new DrawingArgumentPlan2D(_device) { ArgumentTableMode = ArgumentTableMode };
                 using IDisposable planOwner = _resources.CleanupOwner(plan);
+                using IDisposable workingBytesUse = plan.HoldWorkingBytesSources();
                 var context = new RenderPreparationContext2D(_device, info with { LoadOp = AttachmentLoadOp.Load }, _resources, plan)
                 {
+                    MaxWorkingBytes = _retained.MaxWorkingBytes,
+                    EnforceWorkingBudget = _pipelineBinding is not null,
                     SourceBinding = _pipelineBinding is null ? null : new Pipelines.RenderSourceBinding2D(_device, target.View, _pipelineBinding.RecordContext),
                 };
                 int index = 0;
@@ -123,6 +129,7 @@ public sealed partial class Renderer2D(IGraphicDevice device, DrawingCommandRend
                         while (index < list.Commands.Count)
                         {
                             cancellationToken.ThrowIfCancellationRequested();
+                            context.SetWorkingBytesSource(() => checked(DrawingWorkingBudget2D.OwnedBytes(batches, context.ArgumentPlan) + (_pipelineBinding is null ? 0 : context.ArgumentPlan.EstimatedBytes)));
                             IPreparedCommandBatch2D batch = _pipelineBinding is not null
                                 ? await _pipelineBinding.PrepareAsync(context, TakePipelineCommands(list, ref index, list.Commands.Count), cancellationToken).ConfigureAwait(false)
                                 : IsBuiltinRenderer(list.Commands[index]) && context.RecordResources() is not null
@@ -144,6 +151,10 @@ public sealed partial class Renderer2D(IGraphicDevice device, DrawingCommandRend
                                 };
                             ArgumentNullException.ThrowIfNull(batch);
                             batches.Add(batch);
+                            if (batch is IPreparedWorkingBudget2D { EnforcesWorkingBudget: true })
+                            {
+                                plan.EnableWorkingReferenceBudget();
+                            }
                         }
 
                         build?.Success();
@@ -159,8 +170,23 @@ public sealed partial class Renderer2D(IGraphicDevice device, DrawingCommandRend
                     }
                 }
 
+                bool enforceWorkingBudget = plan.WorkingReferencesEnabled || batches.OfType<IPreparedWorkingBudget2D>().Any(batch => batch.EnforcesWorkingBudget);
+                if (enforceWorkingBudget)
+                {
+                    plan.EnableWorkingReferenceBudget();
+                }
+
+                if (enforceWorkingBudget && DrawingWorkingBudget2D.OwnedBytes(batches) > _retained.MaxWorkingBytes)
+                {
+                    throw new NotSupportedException("Combined prepared owners exceed MaxWorkingBytes before upload.");
+                }
+
                 await plan.SealAsync(cancellationToken).ConfigureAwait(false);
                 cancellationToken.ThrowIfCancellationRequested();
+                if (enforceWorkingBudget && DrawingWorkingBudget2D.OwnedBytes(batches) > _retained.MaxWorkingBytes)
+                {
+                    throw new NotSupportedException("Materialized prepared owners exceed MaxWorkingBytes.");
+                }
 
                 // CleanupUse transfers failed cleanup to the resource state and is idempotent.
                 // Finish fallible cleanup before moving the composition lease into a published owner.

@@ -24,7 +24,20 @@ internal sealed partial class PipelineBinding2D
 
             PipelineSnapshotBudget2D.Use snapshot = _snapshots.Acquire();
             owners.Add(snapshot);
-            PipelineResult<Device<TargetWritesV1>> result = await _pipeline.PrepareAsync(new RenderRequest2D(context, commands, snapshot.Reserve), token).ConfigureAwait(false);
+            long snapshotBytes = 0;
+            void ReserveSnapshot(long bytes)
+            {
+                long next = checked(snapshotBytes + bytes);
+                DrawingWorkingBudget2D.ValidateCumulative(context.OtherWorkingBytes, next, context.MaxWorkingBytes);
+                snapshot.Reserve(bytes);
+                snapshotBytes = next;
+            }
+
+            var request = new RenderRequest2D(context, commands, ReserveSnapshot)
+            {
+                PreparationByteLimit = checked(context.MaxWorkingBytes - context.OtherWorkingBytes - snapshotBytes),
+            };
+            PipelineResult<Device<TargetWritesV1>> result = await _pipeline.PrepareAsync(request, token).ConfigureAwait(false);
             owners.Add(result);
             result.AddRecordValidation(context.ValidateResources);
             if (target.LoadOp == AttachmentLoadOp.Clear)

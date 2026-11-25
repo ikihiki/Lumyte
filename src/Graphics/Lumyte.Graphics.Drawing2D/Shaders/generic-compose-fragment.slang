@@ -7,6 +7,7 @@ struct GenericComposeArguments2D {
  GpuBufferRef<float4> Paint;
  GpuBufferRef<float> Clip;
  uint Width; uint Height; uint Commands; uint CommandIndex;
+ float TranslationX; float TranslationY;
 };
 ConstantBuffer<GenericComposeArguments2D> arguments;
 #if !GENERIC_RESOURCES

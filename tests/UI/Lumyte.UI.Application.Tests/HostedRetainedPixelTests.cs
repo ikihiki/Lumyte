@@ -1,6 +1,7 @@
 using System.Numerics;
 using Lumyte.Graphics.Abstractions;
 using Lumyte.Graphics.Drawing2D;
+using Lumyte.Graphics.Drawing2D.Pipelines;
 using Lumyte.Graphics.Tests;
 using Lumyte.Graphics.Wgpu;
 using Lumyte.Mathematics.Colors;
@@ -20,7 +21,7 @@ public sealed class HostedRetainedPixelTests
     public async Task WgpuCandidateAndVisualLayersUseRetainedFramesAsync()
     {
         using var device = WgpuDevice.Create();
-        using var presenter = new UiHostPresenter(device, default);
+        using var presenter = new UiHostPresenter(device, default, retentionOptions: DrawingCompose.RetentionGpuLimits(maxFramesInFlight: 3, maxCachedAssets: 512, maxCachedBytes: 64 * 1024 * 1024, maxWorkingBytes: 256 * 1024 * 1024));
         using var surface = new UiSurface(Rectangle(fill: new SRgba<float>(1, 0, 0, 1)));
         surface.SetViewport(new(16, 16));
         using UiDrawingScene2D retained = surface.CreateDrawingScene();
@@ -48,7 +49,7 @@ public sealed class HostedRetainedPixelTests
     public async Task WgpuHostedRetainedMatchesDirectPixelsAsync()
     {
         using var device = WgpuDevice.Create();
-        using var renderer = new Renderer2D(device, DrawingCommandRenderers2D.CreateDefault());
+        using var renderer = new Renderer2D(device, DrawingCommandRenderers2D.CreateDefault(), retentionOptions: DrawingCompose.RetentionGpuLimits(maxFramesInFlight: 3, maxCachedAssets: 512, maxCachedBytes: 64 * 1024 * 1024, maxWorkingBytes: 256 * 1024 * 1024));
         using var directRenderer = new Renderer2D(device, DrawingCommandRenderers2D.CreateDefault());
         using var surface = new UiSurface(Panel()[Rectangle(width: 14, height: 12, fill: new SRgba<float>(1, 0, 0, 1)), Rectangle(width: 9, height: 18, fill: new SRgba<float>(0, 0, 1, 0.5f))]);
         using var overlay = new UiSurface(Rectangle(fill: new SRgba<float>(0, 1, 0, 0.5f)));

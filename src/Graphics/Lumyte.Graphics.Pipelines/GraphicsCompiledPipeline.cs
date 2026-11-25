@@ -8,10 +8,13 @@ internal sealed class GraphicsCompiledPipeline<TInput, TOutput>(CompiledPipeline
     private readonly object _gate = new();
     private readonly GraphicsPipelinePolicy _policy = policy;
     private readonly GraphicsScratchBudget _scratchBudget = new(policy.MaxScratchBytes);
+    private readonly ImmutableUploadCache? _immutableUploads = policy.ImmutableUploads is { } retention ? new(retention) : null;
     private readonly List<IDisposable> _artifacts = [.. artifacts];
     private readonly List<GraphicsRun> _cleanup = [];
     private int _uses;
     private bool _disposed;
+
+    public ImmutableUploadCache? ImmutableUploads => _immutableUploads;
 
     public IGraphicDevice Device => device;
 
@@ -62,13 +65,20 @@ internal sealed class GraphicsCompiledPipeline<TInput, TOutput>(CompiledPipeline
 
     public async ValueTask<PipelineResult<TOutput>> PrepareAsync(TInput input, CancellationToken cancellationToken = default)
     {
+        GraphicsPipelinePolicy runPolicy = _policy;
+        if (input is IGraphicsPreparationBudget admission)
+        {
+            ArgumentOutOfRangeException.ThrowIfNegative(admission.MaxPreparationBytes);
+            runPolicy = new(Math.Min(_policy.MaxScratchBytes, admission.MaxPreparationBytes), _policy.MaxTransferBytes, _policy.MaxReadbackBytes, _policy.MaxEpochs);
+        }
+
         lock (_gate)
         {
             ObjectDisposedException.ThrowIf(_disposed, this);
             _uses++;
         }
 
-        var run = new GraphicsRun(device, generation, _policy, nodeEpochs, _scratchBudget);
+        var run = new GraphicsRun(device, generation, runPolicy, nodeEpochs, _scratchBudget, _immutableUploads);
         try
         {
             Task<PipelineResult<TOutput>> preparation = CompleteCoreAsync();
@@ -143,6 +153,7 @@ internal sealed class GraphicsCompiledPipeline<TInput, TOutput>(CompiledPipeline
 
     private void Cleanup()
     {
+        _immutableUploads?.Dispose();
         for (int i = _artifacts.Count - 1; i >= 0; i--)
         {
             _artifacts[i].Dispose();

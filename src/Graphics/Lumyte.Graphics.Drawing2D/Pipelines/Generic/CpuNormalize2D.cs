@@ -93,6 +93,16 @@ public sealed class CpuNormalize2D : IStage<Host<CommandsV1>, Host<ResourceManif
             }
         }
 
+        foreach (string key in new[] { "translationX", "translationY" })
+        {
+            object av = a.Metadata.TryGetValue(key, out object? ax) ? ax : 0f;
+            object bv = b.Metadata.TryGetValue(key, out object? bx) ? bx : 0f;
+            if (!Equals(av, bv))
+            {
+                throw new InvalidOperationException("Retained placement property mismatch.");
+            }
+        }
+
         if (!a.Metadata.TryGetValue("samples", out object? samples) || !Equals(samples, 16) || !a.Metadata.TryGetValue("gridVersion", out object? grid) || !Equals(grid, 1))
         {
             throw new InvalidOperationException("Noncanonical sample grid.");

@@ -69,6 +69,12 @@ internal sealed class DeviceStorage<TElement>(BufferSlice<TElement> slice) : IDe
                 After = new BarrierScope(PipelineStage.Copy, ResourceAccess.CopyRead),
             });
             record.Commands.CopyBuffer(_slice, readback.SliceElements(0, readback.Count));
+            record.Commands.Barrier(new BufferBarrierDesc<TElement>
+            {
+                Buffer = readback.SliceElements(0, readback.Count),
+                Before = new BarrierScope(PipelineStage.Copy, ResourceAccess.CopyWrite),
+                After = new BarrierScope(PipelineStage.Host, ResourceAccess.HostRead),
+            });
         });
         run.RegisterReadback(
             context.Node,

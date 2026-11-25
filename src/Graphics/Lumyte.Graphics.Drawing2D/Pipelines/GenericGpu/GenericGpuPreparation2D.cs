@@ -66,7 +66,11 @@ internal static class GenericGpuPreparation2D
         }
 
         StageInputAccess[] accesses = Enumerable.Range(0, inputs.Extents.Count).Select(i => new StageInputAccess(i, i == targetIndex ? ResourceAccess.ColorRead | ResourceAccess.ColorWrite : ResourceAccess.ShaderRead)).ToArray();
-        return new(65536, [new GraphicsStageRequirements(domain, checked((count * outputStride) + (resources ? ResourceBytes : 0)), targetIndex >= 0 ? [Key<T>(), GraphCompositionArtifact2D.Key] : [Key<T>()], accesses)]);
+        return new(65536, [new GraphicsStageRequirements(domain, checked((count * outputStride) + (resources ? ResourceBytes : 0)), targetIndex >= 0 ? [Key<T>(), GraphCompositionArtifact2D.Key] : [Key<T>()], accesses)])
+        {
+            // Sample producers use the same finite count as runtime admission; target writes are one dependency token.
+            OutputMaxElements = targetIndex >= 0 ? 1 : count,
+        };
     }
 
     internal static GenericArguments2D Arguments(SchemaExtent extent, IArgumentTable table, BufferSlice<Vector4> scene) => new()
@@ -75,6 +79,8 @@ internal static class GenericGpuPreparation2D
         Width = Convert.ToUInt32(extent.Metadata["width"]),
         Height = Convert.ToUInt32(extent.Metadata["height"]),
         Commands = Convert.ToUInt32(extent.Metadata["commandCount"]),
+        TranslationX = extent.Metadata.TryGetValue("translationX", out object? x) ? Convert.ToSingle(x) : 0,
+        TranslationY = extent.Metadata.TryGetValue("translationY", out object? y) ? Convert.ToSingle(y) : 0,
     };
 
     internal static IArgumentTable Table(GraphicsStagePreparationContext gpu, int textureCount = 0, int samplerCount = 0)

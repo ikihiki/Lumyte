@@ -36,14 +36,28 @@ public sealed partial class Renderer2D
         try
         {
             serial = await binding.AcquirePreparationAsync(token).ConfigureAwait(false);
+
+            // Admit transform/clip capture before generic request materialization.
+            long captureBytes = ResidentSceneBudget2D.ValidateCapture(source, _retained.MaxWorkingBytes, token);
             imageResources = ImageResourceRegistry2D.Retain(source.Entries.Select(entry => entry.Content));
             _retained.BindStorageOwner(_resources);
             frame = _retained.AcquireFrame();
+            Vector2 translation = default;
+            if (_retained.ResidentInstancesEnabled && source.Entries.Count != 0)
+            {
+                DrawingSceneEntry2D first = source.Entries[0];
+                Vector2 candidate = new(first.Transform.M31, first.Transform.M32);
+                if (source.Entries.All(entry => CanTranslateResident(entry, info) && entry.Transform.M31 == candidate.X && entry.Transform.M32 == candidate.Y))
+                {
+                    translation = candidate;
+                }
+            }
+
             var commands = new List<DrawingCommand2D>();
             foreach (DrawingSceneEntry2D entry in source.Entries)
             {
                 token.ThrowIfCancellationRequested();
-                DrawList2D transformed = TransformPages(entry.Content.RetainedPages.Pages, entry.Transform, entry.Clips);
+                DrawList2D transformed = TransformPages(entry.Content.RetainedPages.Pages, entry.Transform * Matrix3x2.CreateTranslation(-translation), entry.Clips);
                 commands.AddRange(transformed.Commands);
             }
 
@@ -53,6 +67,10 @@ public sealed partial class Renderer2D
             using IDisposable argumentOwner = _resources.CleanupOwner(arguments);
             var context = new RenderPreparationContext2D(_device, info, _resources, arguments)
             {
+                MaxWorkingBytes = _retained.MaxWorkingBytes,
+                OtherWorkingBytes = checked(captureBytes + arguments.EstimatedBytes),
+                EnforceWorkingBudget = true,
+                RetainedTranslation = translation,
                 SourceBinding = new RenderSourceBinding2D(_device, target.View, binding.RecordContext),
             };
             composition = _resources.RetainComposition();

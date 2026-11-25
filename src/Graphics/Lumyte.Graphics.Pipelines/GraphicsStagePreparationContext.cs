@@ -12,6 +12,9 @@ public sealed class GraphicsStagePreparationContext
     private readonly GraphicsStageRequirements? _requirements;
     private readonly GraphicsStageBuildContext _build;
     private long _outputBytes;
+    private bool _preflight;
+    private long _scratchCredit;
+    private long _transferCredit;
 
     internal GraphicsStagePreparationContext(GraphicsRun run, StagePreparationContext scope, int node, GraphicsStageRequirements? requirements, GraphicsStageBuildContext build)
     {
@@ -50,7 +53,7 @@ public sealed class GraphicsStagePreparationContext
         }
 
         _outputBytes = total;
-        return _scope.PublishPlatform(new Device<TSchema>(new DeviceValue(_run, TSchema.Descriptor, extent, _node)));
+        return _scope.PublishPlatform(new Device<TSchema>(new DeviceValue(_run, TSchema.Descriptor, extent, _node, ReserveScratch)));
     }
 
     /// <summary>Gets the native bindings of an admitted input or this invocation's output.</summary>
@@ -190,10 +193,10 @@ public sealed class GraphicsStagePreparationContext
         }
 
         _scope.ReservePlatformHost(256);
-        _run.ReserveScratch(bytes);
+        ReserveScratch(bytes);
         if (memory == MemoryPreference.Upload)
         {
-            _run.ReserveTransfer(bytes);
+            ReserveTransfer(bytes);
         }
 
         ShaderArtifact shader = artifact.Compute?.Desc.ComputeShader.Artifact ?? artifact.Graphics?.Desc.FragmentShader?.Artifact ??
@@ -203,6 +206,25 @@ public sealed class GraphicsStagePreparationContext
         _outputBytes = next;
         return buffer;
     }
+
+    // One finite invocation-owned credit, consumed only by this stage's normal allocation paths.
+    // Reserving the complete peak prevents a later window from failing after earlier native allocations.
+    internal void PreflightAllocations(long scratchBytes, long transferBytes)
+    {
+        RequireGpuOperation();
+        if (_preflight || _outputBytes != 0 || scratchBytes < 0 || transferBytes < 0 || transferBytes > scratchBytes || scratchBytes > _requirements!.MaxDeviceBytes)
+        {
+            throw new InvalidOperationException("Aggregate stage allocation admission must precede all native allocation and fit its declaration.");
+        }
+
+        _run.ReserveScratch(scratchBytes);
+        _run.ReserveTransfer(transferBytes);
+        _scratchCredit = scratchBytes;
+        _transferCredit = transferBytes;
+        _preflight = true;
+    }
+
+    internal void ReserveNativeScratch(long bytes) => ReserveScratch(bytes);
 
     internal ValueLease<Device<TSchema>> BindExternalTextures<TSchema>(IReadOnlyList<IGraphicsTextureView> views, SchemaExtent extent, IReadOnlyList<IGraphicsSampler>? samplers = null)
         where TSchema : ISchema
@@ -234,6 +256,38 @@ public sealed class GraphicsStagePreparationContext
 
         _run.Validate();
         return device;
+    }
+
+    private void ReserveScratch(long bytes)
+    {
+        if (!_preflight)
+        {
+            _run.ReserveScratch(bytes);
+            return;
+        }
+
+        if (bytes < 0 || bytes > _scratchCredit)
+        {
+            throw new InvalidOperationException("Native allocation exceeds the preflight stage scratch credit.");
+        }
+
+        _scratchCredit -= bytes;
+    }
+
+    private void ReserveTransfer(long bytes)
+    {
+        if (!_preflight)
+        {
+            _run.ReserveTransfer(bytes);
+            return;
+        }
+
+        if (bytes < 0 || bytes > _transferCredit)
+        {
+            throw new InvalidOperationException("Native upload exceeds the preflight stage transfer credit.");
+        }
+
+        _transferCredit -= bytes;
     }
 
     private void RequireGpuOperation()

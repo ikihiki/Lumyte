@@ -12,6 +12,14 @@ public static class Transfers
         where TSchema : ISchema
         => new();
 
+    /// <summary>Creates an explicit host-to-device transfer with fixed source retention eligibility.</summary>
+    /// <typeparam name="TSchema">The canonical schema.</typeparam>
+    /// <param name="retention">Source eligibility or fresh invocation-derived storage.</param>
+    /// <returns>The immutable upload declaration.</returns>
+    public static Upload<TSchema> Upload<TSchema>(UploadRetention retention)
+        where TSchema : ISchema
+        => new(retention);
+
     /// <summary>Creates an explicit device-to-host transfer declaration.</summary>
     /// <typeparam name="TSchema">The canonical schema.</typeparam>
     /// <returns>The immutable download declaration.</returns>

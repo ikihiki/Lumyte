@@ -25,6 +25,8 @@ public sealed class PreparedDraw2D : IDisposable
         _compositionUse = compositionUse;
     }
 
+    internal bool ClearsTarget => _target.LoadOp == AttachmentLoadOp.Clear;
+
     /// <summary>Records once into a command buffer, outside an active pass, without submitting.</summary>
     /// <param name="commands">The borrowed graphics command buffer.</param>
     public void Record(IGraphicsCommandBuffer commands)
@@ -80,6 +82,27 @@ public sealed class PreparedDraw2D : IDisposable
         {
             profile?.Failure(error);
             throw;
+        }
+    }
+
+    internal void RetireImmutableUploads(IGraphicsSubmission submission)
+    {
+        foreach (IPreparedImmutableUploads2D batch in _batches.OfType<IPreparedImmutableUploads2D>())
+        {
+            batch.RetireImmutableUploads(submission);
+        }
+    }
+
+    internal void DeclareGraphResources(IDrawingResourceDeclarations2D declarations, IGraphicsTexture texture)
+    {
+        if (!ReferenceEquals(texture, _target.View.Texture))
+        {
+            throw new ArgumentException("The graph target must be the prepared frame's borrowed allocation.", nameof(texture));
+        }
+
+        foreach (IPreparedCommandBatch2D batch in _batches)
+        {
+            batch.DeclareResources(declarations);
         }
     }
 

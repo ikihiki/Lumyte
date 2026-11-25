@@ -1,4 +1,4 @@
-import { createBrowserProcessRecorder } from "./browser-process-recorder.mjs";
+import { createBrowserProcessRecorder } from "./browser-flight-process-recorder.mjs";
 import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { resolve, join } from "node:path";
 

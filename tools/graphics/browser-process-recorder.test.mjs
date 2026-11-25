@@ -1,101 +1,98 @@
-import test from "node:test";
 import assert from "node:assert/strict";
-import { EventEmitter } from "node:events";
-import { createBrowserProcessRecorder, parseProcessStat } from "./browser-process-recorder.mjs";
-function fixture({ perf = false, rewritten = false, hanging = false } = {}) {
-    let start = "100";
-    const row = (parent, id) => "1 (name with ) spaces) " + ["S", parent, 0, 0, 0, 0, 0, 0, 0, 0, 0, 12, 3, 0, 0, 0, 0, 4, 0, id].join(" ");
-    const paths = [];
-    const read = async path => {
-        paths.push(path);
-        if (path === "/proc/100/stat") return row(1, start);
-        if (path === "/proc/101/stat") return row(100, "200");
-        if (path === "/proc/102/stat") return row(999, "300");
-        if (path.endsWith("/children")) return path.includes("/100/") ? "101 102" : "";
-        if (path.endsWith("/cmdline")) return rewritten ? "chrome --type=gpu-process --private-argument=hidden\0" : "chrome\0--type=gpu-process\0do-not-record-private-argument";
-        if (path.endsWith("/schedstat")) return "1000 2000 3";
-        throw new Error("missing");
-    };
-    const list = async path => path.endsWith("/task") ? [path.split("/")[2]] : [];
-    const children = [], signals = [];
-    let groupAlive = hanging;
-    const launch = (binary, args, options) => {
-        assert.equal(options.detached, true);
-        const child = new EventEmitter(); child.stderr = new EventEmitter(); child.exitCode = null; child.signalCode = null;
-        child.kill = signal => { child.signalCode = signal; child.emit("exit", null); };
-        children.push({ binary, args, child });
-        if (hanging) { child.pid = 5678; return child; }
-        queueMicrotask(() => { child.stderr.emit("data", Buffer.from("permission denied")); child.exitCode = 1; child.emit("exit", 1); });
-        return child;
-    };
-    const recorder = createBrowserProcessRecorder({ browserPid: 100, platform: "linux", read, list, link: async () => "/chrome", launch,
-        environment: perf ? { LUMYTE_BROWSER_PERF: "/perf" } : {}, intervalMs: 1000000, maxSamples: 2, stopGraceMs: 5,
-        signalGroup: (pid, signal) => {
-            assert.equal(pid, 5678); signals.push(signal);
-            if (signal === "SIGINT") { const child = children[0].child; child.exitCode = 0; child.emit("exit", 0); }
-            if (signal === "SIGKILL") groupAlive = false;
-        } });
-    return { recorder, paths, children, signals, groupAlive: () => groupAlive, reuse() { start = "101"; } };
+import test from "node:test";
+import { readFile } from "node:fs/promises";
+import { createBrowserProcessRecorder, createBoundedBrowserStderr, emitBrowserNative, parseProcessStat } from "./browser-process-recorder.mjs";
+
+function stat(pid, ppid, start = String(pid), threads = 1) {
+    const fields = Array(22).fill("0");
+    Object.assign(fields, { 0: "S", 1: String(ppid), 11: "123", 12: "4", 17: String(threads), 19: start, 21: "25" });
+    return pid + " (name with ) parentheses) " + fields.join(" ");
 }
-test("stat parser handles parentheses and identifies kernel fields", () => {
-    const f = parseProcessStat("1 (a ) b) " + ["S", 9, 0, 0, 0, 0, 0, 0, 0, 0, 0, 12, 3, 0, 0, 0, 0, 4, 0, "123"].join(" "));
-    assert.equal(f.ppid, 9); assert.equal(f.userTicks, 12); assert.equal(f.startTicks, "123");
-});
-test("only verified descendants are sampled, history is bounded, raw arguments are not retained", async () => {
-    const f = fixture(); await f.recorder.start(); await f.recorder.sample(); await f.recorder.sample();
-    const result = await f.recorder.finish();
-    assert.equal(result.samples.length, 2); assert.equal(result.dropped, 1);
-    assert.deepEqual(result.samples[0].processes.map(x => x.pid), [101]);
-    assert.equal(result.samples[0].processes[0].runqueueWaitNs, "2000");
-    assert.equal(JSON.stringify(result).includes("private-argument"), false);
-    assert.equal(f.paths.includes("/proc/102/cmdline"), false);
-    assert.equal(result.nativeStatus, "unavailable-no-configured-tool");
-});
-test("browser PID reuse stops ownership discovery without following the new process", async () => {
-    const f = fixture(); await f.recorder.start(); f.reuse(); await f.recorder.sample();
-    const result = await f.recorder.finish(); assert.equal(result.unavailable, "browser-exited-or-pid-reused");
-});
-test("native sampling is PID-scoped, bounded and reports permission denial", async () => {
-    const f = fixture({ perf: true }); await f.recorder.start();
-    const result = await f.recorder.finish();
-    assert.equal(f.children[0].binary, "timeout");
-    assert.deepEqual(f.children[0].args.slice(-2), ["-p", "101"]);
-    assert.equal(f.children[0].args.includes("-a"), false);
-    assert.equal(result.nativeStatus, "unavailable-permission-or-recording-error");
-    assert.equal(result.nativeBytes, 0);
-});
-test("unsupported platforms leave a truthful unavailable result", async () => {
-    const r = createBrowserProcessRecorder({ browserPid: 100, platform: "win32" });
-    await r.start(); const result = await r.finish(); assert.equal(result.unavailable, "unsupported-platform-or-pid");
-});
+function fixture({ children = [200], foreign = [], platform = "linux" } = {}) {
+    const paths = [], calls = [], state = { rootStart: "100", fail: false, pause: null, memory: 0 };
+    let timer, tick = 0, canceled = 0;
+    const metadata = pid => ({ ppid: pid === 100 ? 1 : pid === 999 ? 1 : 100, start: pid === 100 ? state.rootStart : String(pid) });
+    async function read(path) {
+        paths.push(path);
+        if (state.pause) await state.pause;
+        if (state.fail) throw new Error("permission denied");
+        if (path === "/sys/fs/cgroup/test/memory.events") return "oom " + state.memory + "\noom_kill 0\nsecret not-a-counter\n";
+        const pid = Number(path.split('/')[2]), item = metadata(pid);
+        if (path.endsWith('/children')) return pid === 100 ? children.join(' ') : '';
+        if (path.endsWith('/stat')) return stat(pid, item.ppid, item.start);
+        if (path.endsWith('/status')) return "Uid:\t" + Array(4).fill(foreign.includes(pid) ? 43 : 42).join('\t') + "\nVmHWM:\t100 kB\n";
+        if (path.endsWith('/cgroup')) return "0::/test\n";
+        if (path.endsWith('/comm')) return pid === 200 ? "CrGpuMain\n" : "chrome\n";
+        if (path.endsWith('/schedstat')) return "10 20 3\n";
+        throw new Error("unexpected path " + path);
+    }
+    const recorder = createBrowserProcessRecorder({ browserPid: 100, uid: 42, platform, read,
+        link: async path => { paths.push(path); return "/owned/chrome"; },
+        list: async (path, limit) => { calls.push({ path, limit }); return [path.split('/')[2]]; }, now: () => ++tick,
+        schedule: (callback, ms) => { assert.equal(ms, 1000); timer = callback; return { unref() {} }; }, unschedule: () => canceled++ });
+    return { recorder, paths, calls, state, fire: () => timer?.(), canceled: () => canceled };
+}
 
-test("Chrome rewritten process titles still identify owned GPU processes", async () => {
- const f = fixture({ rewritten: true }); await f.recorder.start(); const result = await f.recorder.finish();
- assert.equal(result.samples[0].processes[0].type, "gpu-process");
- assert.equal(JSON.stringify(result).includes("hidden"), false);
+test("stat parser preserves64bit ticks and handles parenthesized names", () => {
+    const parsed = parseProcessStat(stat(100, 1, "999999999999999999"));
+    assert.equal(parsed.startTicks, "999999999999999999"); assert.equal(parsed.userTicks, "123");
+    assert.throws(() => parseProcessStat("invalid"));
 });
-
-test("cleanup kills the entire owned group even when timeout exits before perf", async () => {
- const f = fixture({ perf: true, hanging: true }); await f.recorder.start();
- await f.recorder.finish();
- assert.deepEqual(f.signals, ["SIGINT", "SIGKILL"]);
- assert.equal(f.groupAlive(), false);
+test("only same-UID/executable descendants; no argv, environment or broad system scan", async () => {
+    const f = fixture({ children: [300, 999, 200], foreign: [300] }); await f.recorder.start();
+    const result = await f.recorder.stop();
+    assert.deepEqual(result.samples[0].processes.map(row => row.pid), [100, 200]);
+    assert.equal(result.samples[0].processes[1].role, "gpu-thread-observed");
+    assert.ok(f.paths.every(path => !/cmdline|environ|\/fd|maps|cookie|journal/.test(path)));
+    assert.equal(result.root.uid, 42); assert.equal(f.canceled(), 1);
 });
-
-test("CI perf discovery follows version-directory symlinks", { skip: process.platform !== "linux" }, async () => {
- const { mkdtemp, mkdir, writeFile, symlink, rm, readFile } = await import("node:fs/promises");
- const { tmpdir } = await import("node:os");
- const { join } = await import("node:path");
- const { execFileSync } = await import("node:child_process");
- const root = await mkdtemp(join(tmpdir(), "lumyte-perf-layout-"));
- try {
-  const actual = join(root, "linux-tools-version"), links = join(root, "linux-tools");
-  await mkdir(actual); await mkdir(links);
-  await writeFile(join(actual, "perf"), "#!/bin/sh\nexit 0\n", { mode: 0o700 });
-  await symlink(actual, join(links, "version-generic"));
-  assert.equal(execFileSync("find", [links, "-type", "f", "-name", "perf", "-executable"], { encoding: "utf8" }), "");
-  assert.match(execFileSync("find", ["-L", links, "-type", "f", "-name", "perf", "-executable"], { encoding: "utf8" }), /version-generic\/perf/);
-  const workflow = await readFile(new URL("../../.github/workflows/composition.yml", import.meta.url), "utf8");
-  assert.match(workflow, /find -L \/usr\/lib\/linux-tools -type f/);
- } finally { await rm(root, { recursive: true, force: true }); }
+test("reused root PID halts sampling and does not follow its new descendants", async () => {
+    const f = fixture(); await f.recorder.start(); const before = f.recorder.snapshot().samples.length;
+    f.state.rootStart = "reused"; await f.recorder.sample();
+    assert.equal(f.recorder.snapshot().samples.length, before);
+    assert.equal(f.recorder.snapshot().unavailable, "owned-proc-unavailable-or-identity-changed"); await f.recorder.stop();
+});
+test("nonLinux and deniedproc stay explicitly unavailable without launching anything", async () => {
+    const a = fixture({ platform: "darwin" }); await a.recorder.start(); assert.equal(a.paths.length, 0); assert.match((await a.recorder.stop()).unavailable, /unsupported/);
+    const b = fixture(); b.state.fail = true; await b.recorder.start(); assert.match((await b.recorder.stop()).unavailable, /browser-proc-unavailable/);
+});
+test("sample serialization and stop do not overlap or leave a scheduled reader", async () => {
+    const f = fixture(); await f.recorder.start(); let release;
+    f.state.pause = new Promise(resolve => { release = resolve; });
+    const a = f.recorder.sample(), b = f.recorder.sample(); assert.equal(a, b);
+    const stopped = f.recorder.stop(); release(); await stopped;
+    const count = f.paths.length; f.fire(); await f.recorder.sample(); assert.equal(f.paths.length, count); assert.ok(f.recorder.snapshot().overlapping > 0);
+});
+test("sample tail, event ring, process slots and GPU metadata priority are bounded", async () => {
+    const f = fixture({ children: Array.from({ length: 15 }, (_, i) => 200 + i) }); await f.recorder.start();
+    for (let i = 0; i < 125; i++) await f.recorder.sample();
+    for (let i = 0; i < 30; i++) f.recorder.event("test", { code: i });
+    const result = await f.recorder.stop(); assert.ok(result.samples.length <= 120); assert.ok(result.dropped > 0); assert.equal(result.events.length, 16);
+    assert.ok(result.samples.every(row => row.processes.length <= 8 && row.processes.every(p => p.threadSamples.length <= 32)));
+    assert.ok(result.samples.at(-1).processes.some(row => row.pid === 200)); assert.ok(result.processRowsDropped > 0);
+});
+test("shared cgroup before/after counters are labelled and not attributed to a browser kill", async () => {
+    const f = fixture(); await f.recorder.start(); f.state.memory = 1; const result = await f.recorder.stop();
+    assert.equal(result.memory.before.oom, "0"); assert.equal(result.memory.after.oom, "1"); assert.equal(result.memory.sharedCgroup, true);
+    assert.deepEqual(Object.keys(result.memory.after).sort(), ["oom", "oom_kill"]);
+});
+test("root failure exit and later cleanup signals are separately timestamped, never inferred childexit", async () => {
+    const f = fixture(); f.recorder.event("root-exit", { code: 9 }); f.recorder.event("failure-observed"); f.recorder.event("cleanup-signal", { signal: "SIGTERM" });
+    const events = f.recorder.snapshot().events; assert.deepEqual(events.map(row => row.kind), ["root-exit", "failure-observed", "cleanup-signal"]);
+    assert.ok(events[0].atMs < events[1].atMs && events[1].atMs < events[2].atMs);
+});
+test("native stderr has bounded head/tail/total and safe summary cap even for JSON escaping", () => {
+    const ring = createBoundedBrowserStderr(); ring.observe(Buffer.alloc(1024 * 1024, 1)); const stderr = ring.snapshot();
+    assert.equal(Buffer.byteLength(stderr.head), 16384); assert.equal(Buffer.byteLength(stderr.tail), 65536); assert.equal(stderr.totalBytes, 1024 * 1024); assert.ok(stderr.droppedBytes > 0);
+    let value; emitBrowserNative(report => value = report, { stderr, process: { samples: Array.from({ length: 120 }, () => ({ text: 'x'.repeat(5000) })) } });
+    assert.ok(Buffer.byteLength(JSON.stringify(value)) <= 256 * 1024); assert.ok(value.droppedForOutput > 0); assert.equal(value.stderr.unavailable, "output-cap");
+    assert.doesNotThrow(() => emitBrowserNative(() => { throw new Error("reporter failure"); }, { stderr }));
+});
+test("verifier keeps launch/quality/deadline path and does not await proc reads before original cleanup", async () => {
+    const source = await readFile(new URL('../../samples/Lumyte.UI.Transitions.Browser.Sample/verify-browser.mjs', import.meta.url), 'utf8');
+    assert.ok(source.indexOf('nativeReport("before-cleanup-failure"') < source.indexOf('browser.kill("SIGTERM")'));
+    assert.ok(source.indexOf('browser.kill("SIGTERM")') < source.indexOf('await nativeStopping'));
+    assert.match(source, /const timeout = setTimeout\([^\n]+2000\)/);
+    assert.match(source, /Buffer.from\(await evaluate\(.*CapturePngAsync/);
+    assert.ok(!source.includes('process.kill('));
 });

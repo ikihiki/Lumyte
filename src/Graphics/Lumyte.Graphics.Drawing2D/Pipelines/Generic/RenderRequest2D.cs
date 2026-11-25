@@ -1,15 +1,17 @@
 using System.Numerics;
+using Lumyte.Graphics.Pipelines;
 using Lumyte.Pipelines;
 
 namespace Lumyte.Graphics.Drawing2D.Pipelines;
 
 /// <summary>An immutable, preparation-local snapshot. Native references are never canonical wire elements.</summary>
-public sealed class RenderRequest2D : IImmutablePipelineInput
+public sealed class RenderRequest2D : IImmutablePipelineInput, IGraphicsPreparationBudget
 {
     internal RenderRequest2D(RenderPreparationContext2D context, IReadOnlyList<DrawingCommand2D> commands, Action<long>? reserve = null)
         : this(context.Target, commands, Guid.NewGuid(), reserve)
     {
         Context = context;
+        Translation = context.RetainedTranslation;
     }
 
     internal RenderRequest2D(DrawingTargetInfo2D target, IReadOnlyList<DrawingCommand2D> commands, Guid sourceIdentity, Action<long>? reserve = null)
@@ -45,6 +47,13 @@ public sealed class RenderRequest2D : IImmutablePipelineInput
     /// <summary>Gets the captured target geometry (no native allocation).</summary>
     public DrawingTargetInfo2D Target { get; }
 
+    /// <inheritdoc/>
+    long IGraphicsPreparationBudget.MaxPreparationBytes => PreparationByteLimit;
+
+    internal long PreparationByteLimit { get; init; } = long.MaxValue;
+
+    internal Vector2 Translation { get; }
+
     internal RenderPreparationContext2D? Context { get; }
 
     internal RenderResourcesSnapshot2D ResourceSnapshot { get; }
@@ -55,6 +64,8 @@ public sealed class RenderRequest2D : IImmutablePipelineInput
         ["width"] = Target.Description.Width,
         ["height"] = Target.Description.Height,
         ["samples"] = 16,
+        ["translationX"] = Translation.X,
+        ["translationY"] = Translation.Y,
         ["gridVersion"] = 1,
         ["commandCount"] = Commands.Count,
         ["viewCount"] = ResourceSnapshot.Views.Count,

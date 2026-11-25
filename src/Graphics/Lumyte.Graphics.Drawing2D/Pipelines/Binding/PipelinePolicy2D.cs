@@ -18,5 +18,14 @@ public sealed record PipelinePolicy2D(GraphicsPipelinePolicy Execution, DrawingA
         }
 
         Retention.Validate();
+        if (Retention.EnableResidentInstances && Execution.ImmutableUploads is null)
+        {
+            throw new ArgumentException("Generic resident instances require an explicit immutable upload policy fixed at Graphics build time.");
+        }
+
+        if (Retention.EnableResidentInstances && Execution.ImmutableUploads is { } uploads && uploads.MaxBytes > Retention.MaxCachedBytes)
+        {
+            throw new ArgumentException("Immutable upload storage must fit the renderer's explicit retained native budget.");
+        }
     }
 }

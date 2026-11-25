@@ -4,12 +4,13 @@ using Lumyte.Pipelines;
 
 namespace Lumyte.Graphics.Pipelines;
 
-internal sealed class DeviceValue(GraphicsRun run, SchemaDescriptor descriptor, SchemaExtent extent, int producerNode = 0)
+internal sealed class DeviceValue(GraphicsRun run, SchemaDescriptor descriptor, SchemaExtent extent, int producerNode = 0, Action<long>? reserveScratch = null)
 {
     private readonly List<PipelineTextureResource> _textures = [];
     private readonly List<IGraphicsSampler> _samplers = [];
     private object? _buffer;
     private bool _encoded;
+    private bool _immutableStorage;
     private IDeviceStorage? _storage;
     private ulong _bufferOffset;
     private PipelineExternalResource? _externalBuffer;
@@ -27,6 +28,11 @@ internal sealed class DeviceValue(GraphicsRun run, SchemaDescriptor descriptor, 
     internal void ValidateAccess(ResourceAccess access, int node)
     {
         Run.Validate();
+        if (_immutableStorage && (access & (ResourceAccess.ShaderWrite | ResourceAccess.CopyWrite)) != 0)
+        {
+            throw new InvalidOperationException("A retained canonical input is immutable; write a fresh device output instead.");
+        }
+
         if (!_encoded)
         {
             throw new InvalidOperationException("A device input has no prepared producer dependency.");
@@ -153,7 +159,7 @@ internal sealed class DeviceValue(GraphicsRun run, SchemaDescriptor descriptor, 
         return resource.View;
     }
 
-    internal void SetBuffer<TElement>(IGraphicsBuffer<TElement> buffer, ulong offset = 0)
+    internal void SetBuffer<TElement>(IGraphicsBuffer<TElement> buffer, ulong offset = 0, bool immutable = false)
         where TElement : unmanaged
     {
         CheckLayout<TElement>();
@@ -163,6 +169,7 @@ internal sealed class DeviceValue(GraphicsRun run, SchemaDescriptor descriptor, 
         }
 
         _buffer = buffer;
+        _immutableStorage = immutable;
         _bufferOffset = offset;
         _storage = new DeviceStorage<TElement>(buffer.SliceElements(offset, checked((ulong)Extent.ElementCount)));
     }
@@ -175,7 +182,15 @@ internal sealed class DeviceValue(GraphicsRun run, SchemaDescriptor descriptor, 
         if (_buffer is null)
         {
             long bytes = checked(Extent.ElementCount * Descriptor.ElementStride);
-            Run.ReserveScratch(bytes);
+            if (reserveScratch is null)
+            {
+                Run.ReserveScratch(bytes);
+            }
+            else
+            {
+                reserveScratch(bytes);
+            }
+
             IGraphicsBuffer<TElement> buffer = Run.Device.CreateBuffer<TElement>(new BufferDesc<TElement>
             {
                 Count = checked((ulong)Extent.ElementCount),

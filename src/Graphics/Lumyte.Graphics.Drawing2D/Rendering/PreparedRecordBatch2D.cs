@@ -5,7 +5,7 @@ using Lumyte.Mathematics.Colors;
 
 namespace Lumyte.Graphics.Drawing2D;
 
-internal sealed class PreparedRecordBatch2D : IRetainedCommandBatch2D, IRetainedMemory2D
+internal sealed class PreparedRecordBatch2D : IRetainedCommandBatch2D, IRetainedMemory2D, IPreparedWorkingBudget2D
 {
     private static readonly BarrierScope _read = new(PipelineStage.VertexShader | PipelineStage.FragmentShader, ResourceAccess.ShaderRead);
     private readonly RenderPreparationContext2D _context;
@@ -45,6 +45,8 @@ internal sealed class PreparedRecordBatch2D : IRetainedCommandBatch2D, IRetained
     public bool HasStableOwners => true;
 
     public long EstimatedBytes => checked(_bytes + _context.ArgumentPlan.EstimatedBytes);
+
+    public bool EnforcesWorkingBudget => _context.EnforceWorkingBudget;
 
     internal IEnumerable<(IPreparedCommandBatch2D Batch, IReadOnlyList<ShaderResources> Reservations)> GraphPages
     {
@@ -90,32 +92,7 @@ internal sealed class PreparedRecordBatch2D : IRetainedCommandBatch2D, IRetained
     }
 
     public void RecordRetained(IGraphicsCommandBuffer commands, IGraphicsTextureView target, bool resident)
-    {
-        ArgumentNullException.ThrowIfNull(commands);
-        ArgumentNullException.ThrowIfNull(target);
-        ObjectDisposedException.ThrowIf(_disposed, this);
-        _context.ValidateResources();
-        if (_views.Any(view => ReferenceEquals(view.Texture, target.Texture)))
-        {
-            throw new ArgumentException("A command cannot sample its active target.", nameof(target));
-        }
-
-        _context.ArgumentPlan.InitializeFallback(commands);
-        foreach (Page page in _pages)
-        {
-            if (page.RecordCount == 0)
-            {
-                continue;
-            }
-
-            if (!resident)
-            {
-                page.Copy(commands);
-            }
-
-            page.Record(commands, target, 0, (uint)page.RecordCount);
-        }
-    }
+        => RecordInstance(commands, target, resident, default);
 
     public void Dispose()
     {
@@ -137,6 +114,18 @@ internal sealed class PreparedRecordBatch2D : IRetainedCommandBatch2D, IRetained
     internal static ValueTask<IPreparedCommandBatch2D> PrepareAsync<T>(RenderPreparationContext2D context, ReadOnlyMemory<T> commands, CancellationToken cancellationToken)
         where T : DrawingCommand2D
     {
+        if (!context.EnforceWorkingBudget && context.ArgumentPlan.WorkingReferencesEnabled)
+        {
+            context = context.WithWorkingLimit(context.MaxWorkingBytes);
+        }
+
+        if (context.EnforceWorkingBudget)
+        {
+            context.ArgumentPlan.EnableWorkingReferenceBudget();
+            DrawingWorkingBudget2D.ValidateCumulative(context.OtherWorkingBytes, context.ArgumentPlan.EstimatedBytes, context.MaxWorkingBytes);
+            DrawingWorkingBudget2D.Validate(commands, context.Target, context.MaxWorkingBytes - context.OtherWorkingBytes - context.ArgumentPlan.EstimatedBytes);
+        }
+
         DrawRecordResources2D? resources = context.RecordResources();
         if (resources is null)
         {
@@ -230,6 +219,34 @@ internal sealed class PreparedRecordBatch2D : IRetainedCommandBatch2D, IRetained
             compile?.Failure(error);
             context.CleanupAfterFailure(batch, error);
             throw;
+        }
+    }
+
+    internal void RecordInstance(IGraphicsCommandBuffer commands, IGraphicsTextureView target, bool resident, Vector2 translation, bool earlierProducer = false)
+    {
+        ArgumentNullException.ThrowIfNull(commands);
+        ArgumentNullException.ThrowIfNull(target);
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        _context.ValidateResources();
+        if (_views.Any(view => ReferenceEquals(view.Texture, target.Texture)))
+        {
+            throw new ArgumentException("A command cannot sample its active target.", nameof(target));
+        }
+
+        _context.ArgumentPlan.InitializeFallback(commands);
+        foreach (Page page in _pages)
+        {
+            if (page.RecordCount == 0)
+            {
+                continue;
+            }
+
+            if (!resident && !earlierProducer)
+            {
+                page.Copy(commands);
+            }
+
+            page.Record(commands, target, 0, (uint)page.RecordCount, translation);
         }
     }
 
@@ -368,6 +385,18 @@ internal sealed class PreparedRecordBatch2D : IRetainedCommandBatch2D, IRetained
                 return;
             }
 
+            long workingReferenceBytes = checked(((long)Cpu.BufferCount + _views.Count + _samplers.Count + 2) * 256);
+            if (_batch._context.EnforceWorkingBudget)
+            {
+                _batch._context.ArgumentPlan.ReserveWorkingReferences(Reservation, Cpu.BufferCount, _views.Count, _samplers.Count);
+                long streamElements = checked(Cpu.Records.Count + Cpu.Paints.Count + Cpu.Clips.Count + Cpu.Masks.Count + Cpu.Images.Count + 1L);
+                long peak = checked(_batch._context.OtherWorkingBytes + _batch.EstimatedBytes + 32768 + (streamElements * 4096) + (Math.Max(1L, Cpu.Numeric.Count) * 96));
+                if (peak > _batch._context.MaxWorkingBytes)
+                {
+                    throw new NotSupportedException("Resident page resources exceed MaxWorkingBytes before allocation.");
+                }
+            }
+
             if (_batch._context.Device.GetBufferLayout<Vector4>().ElementStrideInBytes != 16)
             {
                 throw new NotSupportedException("The backend does not implement the canonical numeric stream stride.");
@@ -422,10 +451,11 @@ internal sealed class PreparedRecordBatch2D : IRetainedCommandBatch2D, IRetained
             Reservation.RegisterBuffer(_numeric.SliceElements(0, count), reference => _numericRef = reference);
             _batch._context.ArgumentPlan.MarkPreparedBuffer(Reservation, _numeric.SliceElements(0, count), new(PipelineStage.Copy | PipelineStage.VertexShader | PipelineStage.FragmentShader, ResourceAccess.CopyWrite | ResourceAccess.ShaderRead));
             _batch._bytes = checked(_batch._bytes + (long)(_numeric.SizeInBytes + _numericUpload.SizeInBytes));
-            _batch._context.ArgumentPlan.DeferUpload(Reservation, UploadAsync, MapAsync, Fill);
+            ValidateCompleteWorkingCharge();
+            _batch._context.ArgumentPlan.DeferUpload(Reservation, UploadAsync, MapAsync, Fill, workingReferenceBytes);
         }
 
-        internal void Record(IGraphicsCommandBuffer commands, IGraphicsTextureView target, uint first, uint count)
+        internal void Record(IGraphicsCommandBuffer commands, IGraphicsTextureView target, uint first, uint count, Vector2 translation = default)
         {
             DrawRecordPage2D.ValidateRange(first, count, (uint)RecordCount);
             if (count == 0)
@@ -448,18 +478,18 @@ internal sealed class PreparedRecordBatch2D : IRetainedCommandBatch2D, IRetained
 
             if (_mode == 4)
             {
-                DrawSimple(render, info, first, count);
+                DrawSimple(render, info, first, count, translation);
             }
             else
             {
                 switch (_mode)
                 {
-                    case 0: Draw(render, info, _basicMetadata!.Reference!, first, count); break;
-                    case 1: Draw(render, info, _maskMetadata!.Reference!, first, count); break;
+                    case 0: Draw(render, info, _basicMetadata!.Reference!, first, count, translation); break;
+                    case 1: Draw(render, info, _maskMetadata!.Reference!, first, count, translation); break;
                     case 2:
                     case 6:
-                    case 7: Draw(render, info, _imageMetadata!.Reference!, first, count); break;
-                    default: Draw(render, info, _metadata!.Reference!, first, count); break;
+                    case 7: Draw(render, info, _imageMetadata!.Reference!, first, count, translation); break;
+                    default: Draw(render, info, _metadata!.Reference!, first, count, translation); break;
                 }
             }
 
@@ -493,10 +523,10 @@ internal sealed class PreparedRecordBatch2D : IRetainedCommandBatch2D, IRetained
             }
         }
 
-        private void Draw<TMetadata>(IRenderEncoder render, DrawingTargetInfo2D info, IGpuRef<TMetadata> metadata, uint first, uint count)
+        private void Draw<TMetadata>(IRenderEncoder render, DrawingTargetInfo2D info, IGpuRef<TMetadata> metadata, uint first, uint count, Vector2 translation)
             where TMetadata : struct, IShaderArguments
         {
-            var args = new DrawRangeArguments2D<TMetadata>(_records.Reference!, metadata, first, count, new(info.Description.Width, info.Description.Height), info.PixelOrigin, 0, 0);
+            var args = new DrawRangeArguments2D<TMetadata>(_records.Reference!, metadata, first, count, new(info.Description.Width, info.Description.Height), info.PixelOrigin, BitConverter.SingleToUInt32Bits(translation.X), BitConverter.SingleToUInt32Bits(translation.Y));
             if (_batch._context.Device.Caps.ShaderTarget == ShaderTarget.SpirV)
             {
                 Reservation.Draw(render, in args, 6, count, 0, 0);
@@ -511,9 +541,9 @@ internal sealed class PreparedRecordBatch2D : IRetainedCommandBatch2D, IRetained
             }
         }
 
-        private void DrawSimple(IRenderEncoder render, DrawingTargetInfo2D info, uint first, uint count)
+        private void DrawSimple(IRenderEncoder render, DrawingTargetInfo2D info, uint first, uint count, Vector2 translation)
         {
-            var args = new SimpleDrawRangeArguments2D(_records.Reference!, _numericRef!, first, count, new(info.Description.Width, info.Description.Height), info.PixelOrigin, 0, 0);
+            var args = new SimpleDrawRangeArguments2D(_records.Reference!, _numericRef!, first, count, new(info.Description.Width, info.Description.Height), info.PixelOrigin, BitConverter.SingleToUInt32Bits(translation.X), BitConverter.SingleToUInt32Bits(translation.Y));
             if (_batch._context.Device.Caps.ShaderTarget == ShaderTarget.SpirV)
             {
                 Reservation.Draw(render, in args, 6, count, 0, 0);
@@ -536,8 +566,17 @@ internal sealed class PreparedRecordBatch2D : IRetainedCommandBatch2D, IRetained
             return result;
         }
 
+        private void ValidateCompleteWorkingCharge()
+        {
+            if (_batch._context.EnforceWorkingBudget)
+            {
+                DrawingWorkingBudget2D.ValidateCumulative(_batch._context.OtherWorkingBytes, _batch.EstimatedBytes, _batch._context.MaxWorkingBytes);
+            }
+        }
+
         private async ValueTask MapAsync(CancellationToken token)
         {
+            ValidateCompleteWorkingCharge();
             foreach (IStream stream in _streams)
             {
                 await stream.MapAsync(token).ConfigureAwait(false);
@@ -558,6 +597,7 @@ internal sealed class PreparedRecordBatch2D : IRetainedCommandBatch2D, IRetained
             long copied = 0;
             try
             {
+                ValidateCompleteWorkingCharge();
                 Cpu.Resolve(null!, _sampler!);
                 copied += _records.Fill(CollectionsMarshal.AsSpan(Cpu.Records));
                 if (_mode != 4)

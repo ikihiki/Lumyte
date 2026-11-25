@@ -3,8 +3,25 @@ using Lumyte.Graphics.Pipelines;
 
 namespace Lumyte.Graphics.Drawing2D.Pipelines;
 
-internal sealed class PipelineBatch2D(GraphicsPipelineRecordPlan plan, IGraphicsTextureView target, PipelineOwnerGroup2D owners) : IPreparedCommandBatch2D
+internal sealed class PipelineBatch2D(GraphicsPipelineRecordPlan plan, IGraphicsTextureView target, PipelineOwnerGroup2D owners, PipelineSnapshotBudget2D.Use? snapshot = null) : IPreparedCommandBatch2D, IPreparedImmutableUploads2D, IPreparedWorkingBudget2D, IRetainedMemory2D
 {
+    private readonly KeyValuePair<object, long> _working = plan.CaptureWorkingReservation();
+    private readonly long _snapshotBytes = snapshot?.ReservedBytes ?? 0;
+    private bool _immutablePublished;
+
+    public bool EnforcesWorkingBudget => true;
+
+    public bool HasStableOwners => true;
+
+    public void AccountMemory(Dictionary<object, long> memory)
+    {
+        memory.TryAdd(_working.Key, _working.Value);
+        if (snapshot is not null)
+        {
+            memory.TryAdd(snapshot, _snapshotBytes);
+        }
+    }
+
     public void DeclareResources(IDrawingResourceDeclarations2D resources)
     {
         ArgumentNullException.ThrowIfNull(resources);
@@ -53,4 +70,13 @@ internal sealed class PipelineBatch2D(GraphicsPipelineRecordPlan plan, IGraphics
     }
 
     public void Dispose() => owners.Dispose();
+
+    public void RetireImmutableUploads(IGraphicsSubmission submission)
+    {
+        if (!_immutablePublished)
+        {
+            plan.RetireImmutableUploads(submission);
+            _immutablePublished = true;
+        }
+    }
 }

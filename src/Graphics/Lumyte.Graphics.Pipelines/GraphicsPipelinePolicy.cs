@@ -20,6 +20,9 @@ public sealed record GraphicsPipelinePolicy
         MaxEpochs = maxEpochs;
     }
 
+    /// <summary>Gets the explicit immutable upload retention policy, or null for fresh transfers.</summary>
+    public GraphicsImmutableUploadPolicy? ImmutableUploads { get; init; }
+
     /// <summary>Gets the scratch ceiling.</summary>
     public long MaxScratchBytes { get; }
 

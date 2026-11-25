@@ -108,14 +108,20 @@ public sealed class GraphicsPipelineBuildHost : IDisposable
                 throw new ArgumentException("A device access refers to a missing input.");
             }
 
-            if (gpu.Domain == GraphicsExecutionDomain.Compute && (_device.Caps.ShaderTarget == ShaderTarget.Wgsl || _device.Caps.MaxComputeInvocationsPerWorkgroup == 0))
+            if (gpu.Domain == GraphicsExecutionDomain.Compute)
             {
-                throw new NotSupportedException("The selected compute topology is unavailable on this device.");
+                GraphicsComputeAdmission.Validate(_device.Caps, OperatingSystem.IsBrowser());
             }
 
             if (gpu.Domain == GraphicsExecutionDomain.Mesh && _device.Caps.MeshShaderLimits is null)
             {
                 throw new NotSupportedException("The selected mesh topology is unavailable on this device.");
+            }
+
+            if (_policy.ImmutableUploads is not null && gpu.InputAccesses.Any(access =>
+                (access.Access & (ResourceAccess.ShaderWrite | ResourceAccess.CopyWrite)) != 0 && IsImmutableUpload(node.Inputs[access.InputIndex])))
+            {
+                throw new NotSupportedException("An explicit immutable upload cannot feed a shader writer; declare a fresh device output instead.");
             }
 
             foreach (StageArtifactKey key in gpu.Artifacts)
@@ -131,6 +137,22 @@ public sealed class GraphicsPipelineBuildHost : IDisposable
                     descriptions.Add(key, description);
                 }
             }
+        }
+
+        bool IsImmutableUpload(int producer)
+        {
+            if (producer == 0)
+            {
+                return false;
+            }
+
+            int index = producer - 1;
+            if (graphics[index]?.Domain == GraphicsExecutionDomain.Upload)
+            {
+                return definition.Nodes[index].Factory is ITransferFactory { RetainsImmutableSource: true };
+            }
+
+            return graphics[index] is null && definition.Nodes[index].Factory is IDeviceProjectionFactory && definition.Nodes[index].Inputs.Any(IsImmutableUpload);
         }
 
         int[] nodeEpochs = new int[requirements.Length];

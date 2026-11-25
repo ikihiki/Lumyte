@@ -67,6 +67,9 @@ public sealed partial class Renderer2D : IAsyncPipelineRenderer2D
             using IDisposable argumentOwner = _resources.CleanupOwner(arguments);
             var context = new RenderPreparationContext2D(_device, info, _resources, arguments)
             {
+                MaxWorkingBytes = _retained.MaxWorkingBytes,
+                OtherWorkingBytes = arguments.EstimatedBytes,
+                EnforceWorkingBudget = true,
                 SourceBinding = new RenderSourceBinding2D(_device, target.View, binding.RecordContext),
             };
             PreparedPipelineExecution2D? execution = null;

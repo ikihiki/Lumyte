@@ -1,9 +1,10 @@
+using System.Numerics;
 using System.Runtime.ExceptionServices;
 using Lumyte.Graphics.Abstractions;
 
 namespace Lumyte.Graphics.Drawing2D;
 
-internal sealed class RetainedBatchRun2D(IReadOnlyList<IPreparedCommandBatch2D> batches, bool selectedBuiltins, IDisposable? compositionUse = null, IDisposable? imageResources = null) : IRetainedCommandBatch2D, IRetainedMemory2D
+internal sealed class RetainedBatchRun2D(IReadOnlyList<IPreparedCommandBatch2D> batches, bool selectedBuiltins, IDisposable? compositionUse = null, IDisposable? imageResources = null) : IRetainedCommandBatch2D, IRetainedMemory2D, IPreparedWorkingBudget2D, IPreparedImmutableUploads2D
 {
     private int _remaining = batches.Count;
     private List<IPreparedCommandBatch2D>? _failedCleanup;
@@ -13,6 +14,10 @@ internal sealed class RetainedBatchRun2D(IReadOnlyList<IPreparedCommandBatch2D> 
     public bool HasStableOwners => batches.All(batch => batch is IRetainedMemory2D { HasStableOwners: true });
 
     public long EstimatedBytes => batches.OfType<IRetainedCommandBatch2D>().Sum(batch => batch.EstimatedBytes);
+
+    public bool EnforcesWorkingBudget => batches.OfType<IPreparedWorkingBudget2D>().Any(batch => batch.EnforcesWorkingBudget);
+
+    internal bool Shareable => selectedBuiltins && batches.All(batch => batch is PreparedRecordBatch2D);
 
     internal bool Reusable => selectedBuiltins && batches.All(batch => batch is IRetainedCommandBatch2D);
 
@@ -42,25 +47,7 @@ internal sealed class RetainedBatchRun2D(IReadOnlyList<IPreparedCommandBatch2D> 
     public void Record(IGraphicsCommandBuffer commands, IGraphicsTextureView target) => RecordRetained(commands, target, false);
 
     public void RecordRetained(IGraphicsCommandBuffer commands, IGraphicsTextureView target, bool resident)
-    {
-        for (int i = 0; i < batches.Count; i++)
-        {
-            if (i > 0)
-            {
-                var attachment = new BarrierScope(PipelineStage.ColorOutput, ResourceAccess.ColorRead | ResourceAccess.ColorWrite);
-                commands.Barrier(new TextureBarrierDesc { Texture = target.Texture, Range = new(0, 1, 0, 1), BeforeState = TextureState.ColorAttachment, AfterState = TextureState.ColorAttachment, Before = attachment, After = attachment });
-            }
-
-            if (selectedBuiltins && batches[i] is IRetainedCommandBatch2D retained)
-            {
-                retained.RecordRetained(commands, target, resident);
-            }
-            else
-            {
-                batches[i].Record(commands, target);
-            }
-        }
-    }
+        => RecordInstance(commands, target, resident, default);
 
     public void Dispose()
     {
@@ -105,6 +92,42 @@ internal sealed class RetainedBatchRun2D(IReadOnlyList<IPreparedCommandBatch2D> 
             {
                 (_failedCleanup ??= []).Add(batch);
                 (failures ??= []).Add(failure);
+            }
+        }
+    }
+
+    public void RetireImmutableUploads(IGraphicsSubmission submission)
+    {
+        foreach (IPreparedImmutableUploads2D batch in batches.OfType<IPreparedImmutableUploads2D>())
+        {
+            batch.RetireImmutableUploads(submission);
+        }
+    }
+
+    internal void RecordInstance(IGraphicsCommandBuffer commands, IGraphicsTextureView target, bool resident, Vector2 translation, bool earlierProducer = false)
+    {
+        for (int i = 0; i < batches.Count; i++)
+        {
+            if (i > 0)
+            {
+                var attachment = new BarrierScope(PipelineStage.ColorOutput, ResourceAccess.ColorRead | ResourceAccess.ColorWrite);
+                commands.Barrier(new TextureBarrierDesc { Texture = target.Texture, Range = new(0, 1, 0, 1), BeforeState = TextureState.ColorAttachment, AfterState = TextureState.ColorAttachment, Before = attachment, After = attachment });
+            }
+
+            if (selectedBuiltins && batches[i] is IRetainedCommandBatch2D retained)
+            {
+                if (retained is PreparedRecordBatch2D records)
+                {
+                    records.RecordInstance(commands, target, resident, translation, earlierProducer);
+                }
+                else
+                {
+                    retained.RecordRetained(commands, target, resident);
+                }
+            }
+            else
+            {
+                batches[i].Record(commands, target);
             }
         }
     }

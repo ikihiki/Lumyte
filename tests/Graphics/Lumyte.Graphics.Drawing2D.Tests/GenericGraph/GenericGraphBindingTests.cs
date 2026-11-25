@@ -15,6 +15,101 @@ namespace Lumyte.Graphics.Drawing2D.Tests;
 /// <summary>Exercises the real generic build and drawing graph binding without shaders or submission.</summary>
 public sealed class GenericGraphBindingTests
 {
+    /// <summary>Separate generic runs in one parent Graph share one working ceiling before the next native scratch allocation.</summary>
+    /// <param name="exceeds">Whether the exact aggregate ceiling is short by one byte.</param>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void GenericGraphBudgetAdmitsExactAggregateAndRejectsBeforeNextAllocation(bool exceeds)
+    {
+        long scratchBytes = TransferBytes<DrawingArguments>() * 1024L;
+        long perRunCharge = 256 + 1408 + 512 + scratchBytes + 400;
+        long exact = (2 * perRunCharge) + 256;
+        using var fixture = new Fixture(retention: new() { MaxWorkingBytes = exact - (exceeds ? 1 : 0) }, scratchBytes: scratchBytes);
+        using var graph = new Graph(fixture.Device);
+        using var texture = new OriginTexture(fixture.Device);
+        var canvas = new RenderGraphCanvas2D();
+        canvas.Begin();
+        canvas.FillRect(new(0, 0, 2, 2), new SRgba<float>(1, 0, 0, 1));
+        canvas.BeginLayer(new() { ContentBounds = new(0, 0, 0, 0) });
+        canvas.EndLayer();
+        canvas.FillRect(new(0, 0, 2, 2), new SRgba<float>(0, 1, 0, 1));
+        using var renderer = new RenderGraphRenderer2D(fixture.Renderer, canvas.End(), Target(graph, texture), new(graph));
+        if (exceeds)
+        {
+            Assert.Throws<InvalidOperationException>(() => fixture.Complete(graph.Append2D(renderer).AsTask()));
+            Assert.Equal(1, fixture.Device.NativeBuffers);
+            Assert.Single(fixture.Device.DisposedBuffers);
+        }
+        else
+        {
+            using PreparedDrawingPasses2D prepared = fixture.Complete(graph.Append2D(renderer).AsTask());
+            Assert.Equal(2, fixture.Device.NativeBuffers);
+            Assert.True(prepared.EnforcesWorkingBudget);
+            Assert.Equal(2 * perRunCharge, prepared.WorkingBytes(new object()));
+            Assert.Empty(fixture.Device.DisposedBuffers);
+            prepared.Dispose();
+            Assert.Equal(2, fixture.Device.DisposedBuffers.Count);
+        }
+
+        Assert.Equal(2, fixture.Requests.Count);
+    }
+
+    /// <summary>Generic reservation identities are charged once even through repeated aliases and a compatibility owner.</summary>
+    [Fact]
+    public void GenericGraphBudgetDeduplicatesRepeatedAndMixedOwnerIdentities()
+    {
+        using var fixture = new Fixture(scratchBytes: 65536);
+        using var texture = new OriginTexture(fixture.Device);
+        using IGraphicsTextureView view = texture.CreateView();
+        var canvas = new Canvas2D();
+        canvas.Begin();
+        canvas.FillRect(new(0, 0, 2, 2), new SRgba<float>(1, 0, 0, 1));
+        using PreparedDraw2D prepared = fixture.Complete(fixture.Renderer.PrepareAsync(canvas.End(), new() { View = view }).AsTask());
+        var batches = (IReadOnlyList<IPreparedCommandBatch2D>)typeof(PreparedDraw2D).GetField("_batches", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(prepared)!;
+        IPreparedCommandBatch2D batch = Assert.Single(batches);
+        IRetainedMemory2D memory = Assert.IsAssignableFrom<IRetainedMemory2D>(batch);
+        Assert.True(memory.HasStableOwners);
+        var owners = new Dictionary<object, long>(ReferenceEqualityComparer.Instance);
+        memory.AccountMemory(owners);
+        Assert.Equal(2, owners.Count);
+        long once = owners.Values.Sum();
+        KeyValuePair<object, long> shared = owners.First();
+        using var compatibility = new MixedBudgetAlias(shared);
+        Assert.Equal(once + 64, DrawingWorkingBudget2D.OwnedBytes([batch, compatibility, batch]));
+    }
+
+    /// <summary>Completion publication is not repeated against a returned record plan when a later owner cleanup needs retry.</summary>
+    [Fact]
+    public void GenericImmutablePublicationSurvivesPartialCleanupRetry()
+    {
+        using var fixture = new Fixture();
+        using var texture = new OriginTexture(fixture.Device);
+        using IGraphicsTextureView view = texture.CreateView();
+        var canvas = new Canvas2D();
+        canvas.Begin();
+        canvas.FillRect(new(0, 0, 2, 2), new SRgba<float>(1, 0, 0, 1));
+        using PreparedDraw2D prepared = fixture.Complete(fixture.Renderer.PrepareAsync(canvas.End(), new() { View = view }).AsTask());
+        RenderRequest2D request = fixture.Requests.Single();
+        using PipelineResult<Device<TargetWritesV1>> result = fixture.Complete(fixture.Pipeline.PrepareAsync(request).AsTask());
+        GraphicsPipelineRecordPlan plan = result.AcquireRecordPlan(fixture.Pipeline, request.Context!.SourceBinding!.OwnerContext);
+        var cleanup = new FailOncePublicationCleanup();
+        var owners = new PipelineOwnerGroup2D();
+        owners.Add(cleanup);
+        owners.Add(plan);
+        var batch = new PipelineBatch2D(plan, view, owners);
+        using var commands = new OriginCommands(fixture.Device);
+        batch.Record(commands, view);
+        commands.Dispose();
+        using var submission = new CompletedPublicationSubmission();
+        batch.RetireImmutableUploads(submission);
+        Assert.Throws<AggregateException>(batch.Dispose);
+        Assert.Throws<ObjectDisposedException>(() => plan.RetireImmutableUploads(submission));
+        batch.RetireImmutableUploads(submission);
+        batch.Dispose();
+        Assert.Equal(2, cleanup.Calls);
+    }
+
     /// <summary>Generic direct and retained owners preserve live-image admission after preparation.</summary>
     /// <param name="retained">Whether the immutable source is a retained snapshot.</param>
     [Theory]
@@ -54,6 +149,36 @@ public sealed class GenericGraphBindingTests
         Assert.False(resource.IsReferenced);
         using ImageResourceRegistry2D.Resource.WriteLease writer = resource.TryAcquireWrite()!;
         Assert.NotNull(writer);
+    }
+
+    /// <summary>Direct generic snapshots obey the explicit working ceiling before pipeline processing.</summary>
+    [Fact]
+    public void GenericSnapshotRejectsWorkingBudgetBeforePipeline()
+    {
+        using var fixture = new Fixture(retention: new() { MaxWorkingBytes = 1 });
+        using var texture = new OriginTexture(fixture.Device);
+        using IGraphicsTextureView view = texture.CreateView();
+        var canvas = new Canvas2D();
+        canvas.Begin();
+        canvas.FillRect(new(0, 0, 2, 2), new SRgba<float>(1, 0, 0, 1));
+        Assert.Throws<NotSupportedException>(() => fixture.Complete(fixture.Renderer.PrepareAsync(canvas.End(), new() { View = view }).AsTask()));
+        Assert.Empty(fixture.Requests);
+    }
+
+    /// <summary>Expanded retained capture is admitted before invoking any generic processor.</summary>
+    [Fact]
+    public void GenericRetainedCaptureRejectsWorkingBudgetBeforePipeline()
+    {
+        using var fixture = new Fixture(retention: new() { EnableResidentInstances = true, MaxWorkingBytes = 4096 });
+        using var texture = new OriginTexture(fixture.Device);
+        using IGraphicsTextureView view = texture.CreateView();
+        var canvas = new Canvas2D();
+        canvas.Begin();
+        canvas.FillRect(new(0, 0, 2, 2), new SRgba<float>(1, 0, 0, 1));
+        using var snapshot = new DrawingSnapshot2D(1, [new(default, canvas.End(), System.Numerics.Matrix3x2.Identity, [], 1, 1)]);
+        Assert.Throws<NotSupportedException>(() => fixture.Complete(fixture.Renderer.PrepareAsync(snapshot, new() { View = view }).AsTask()));
+        Assert.Empty(fixture.Requests);
+        Assert.Equal(0, fixture.Renderer.RetentionStatistics.ActiveFrames);
     }
 
     /// <summary>Generic preparation rejects an active live-image writer before invoking the pipeline.</summary>
@@ -269,6 +394,9 @@ public sealed class GenericGraphBindingTests
         Assert.Empty(fixture.Requests);
     }
 
+    private static int TransferBytes<T>()
+        where T : struct, IShaderArguments => T.TransferSize;
+
     private static RenderGraphDrawList2D List()
     {
         var canvas = new RenderGraphCanvas2D();
@@ -285,17 +413,69 @@ public sealed class GenericGraphBindingTests
         Description = new() { Width = texture.Width, Height = texture.Height, Format = texture.Format, Usage = texture.Usage },
     };
 
+    private sealed class MixedBudgetAlias(KeyValuePair<object, long> shared) : IPreparedCommandBatch2D, IRetainedMemory2D
+    {
+        public bool HasStableOwners => true;
+
+        public void AccountMemory(Dictionary<object, long> owners)
+        {
+            owners.TryAdd(shared.Key, shared.Value);
+            owners.TryAdd(this, 64);
+        }
+
+        public void DeclareResources(IDrawingResourceDeclarations2D resources)
+        {
+        }
+
+        public void Record(IGraphicsCommandBuffer commands, IGraphicsTextureView target)
+        {
+        }
+
+        public void Dispose()
+        {
+        }
+    }
+
+    private sealed class FailOncePublicationCleanup : IDisposable
+    {
+        internal int Calls { get; private set; }
+
+        public void Dispose()
+        {
+            if (++Calls == 1)
+            {
+                throw new InvalidOperationException("Injected retry after record-plan disposal.");
+            }
+        }
+    }
+
+    private sealed class CompletedPublicationSubmission : IGraphicsSubmission
+    {
+        public SubmissionStatus Status => SubmissionStatus.Completed;
+
+        public ValueTask WaitAsync(CancellationToken cancellationToken = default) => ValueTask.CompletedTask;
+
+        public void Dispose()
+        {
+        }
+    }
+
     private sealed class Fixture : IDisposable
     {
         private readonly ExecutionRuntime _runtime = new([]);
         private readonly GraphicsPipelineBuildHost _build;
 
-        internal Fixture(Action? validate = null, bool readback = false)
+        internal Fixture(Action? validate = null, bool readback = false, DrawingRetentionOptions2D? retention = null, long scratchBytes = 0)
         {
+            ScratchBytes = scratchBytes;
             _runtime.PrepareOnCurrentHost(OwnerPlacement.Host, CpuExecutionMode.Cooperative, 1, new ExecutionOptions());
             Pump(_runtime.StartAsync().AsTask());
-            var policy = new PipelinePolicy2D(new(1024 * 1024, 1024 * 1024, 1024 * 1024, 3), DrawingArgumentTableMode.Auto, new());
-            _build = new(_runtime, Device, new EmptyArtifacts(), policy.Execution);
+            var executionPolicy = new GraphicsPipelinePolicy(1024 * 1024, 1024 * 1024, 1024 * 1024, 3)
+            {
+                ImmutableUploads = retention?.EnableResidentInstances == true ? new(retention.MaxCachedBytes, 128) : null,
+            };
+            var policy = new PipelinePolicy2D(executionPolicy, DrawingArgumentTableMode.Auto, retention ?? new());
+            _build = new(_runtime, Device, scratchBytes == 0 ? new EmptyArtifacts() : new OriginCompositionArtifacts(), policy.Execution);
             var g = new PipelineGraph<RenderRequest2D>();
             Port<RenderRequest2D> observed = g.Stage(new Observe(this), g.Input);
             Port<Device<TargetV1>> target = g.Stage(RenderFields2D.Target(), observed);
@@ -307,6 +487,8 @@ public sealed class GenericGraphBindingTests
             Pipeline = _build.Build(g.Complete(g.Stage(new Endpoint(this), target)));
             Renderer = new(Device, Pipeline, new(true, true, true, true, true, true, true, true, true, true, true), policy, validateResources: validate);
         }
+
+        internal long ScratchBytes { get; }
 
         internal ProfilingDevice Device { get; } = new();
 
@@ -360,7 +542,7 @@ public sealed class GenericGraphBindingTests
     {
         public IStageFactory<Device<TargetV1>, Device<TargetWritesV1>> Factory => this;
 
-        public StageRequirements Describe(StageInputDescriptions inputs) => new(256, [new GraphicsStageRequirements(GraphicsExecutionDomain.Raster, 0, [], [new(0, ResourceAccess.ColorRead | ResourceAccess.ColorWrite)])]);
+        public StageRequirements Describe(StageInputDescriptions inputs) => new(fixture.ScratchBytes == 0 ? 256 : 512, [new GraphicsStageRequirements(GraphicsExecutionDomain.Raster, fixture.ScratchBytes, fixture.ScratchBytes == 0 ? [] : [GraphCompositionArtifact2D.Key], [new(0, ResourceAccess.ColorRead | ResourceAccess.ColorWrite)])]);
 
         public IStageProcessor<Device<TargetV1>, Device<TargetWritesV1>> Create(StageBuildContext context) => this;
 
@@ -369,9 +551,75 @@ public sealed class GenericGraphBindingTests
             GraphicsStagePreparationContext gpu = ((IGraphicsStageCapabilities)context.Capabilities).Preparation;
             DeviceBindings<TargetV1> target = gpu.GetDeviceBindings(a);
             fixture.PreparedTarget = target.GetTexture(0);
+            if (fixture.ScratchBytes != 0)
+            {
+                StageArtifactLease artifact = ((IGraphicsStageCapabilities)context.Capabilities).Build.GetArtifact(GraphCompositionArtifact2D.Key);
+                _ = gpu.CreateShaderDataScratchBuffer<DrawingArguments>(artifact, checked((ulong)(fixture.ScratchBytes / TransferBytes<DrawingArguments>())));
+            }
+
             ValueLease<Device<TargetWritesV1>> output = gpu.AllocateDeviceOutput<TargetWritesV1>(new(1, target.Extent.Metadata));
             gpu.Encode(output, _ => fixture.Records++);
             return ValueTask.FromResult(output);
+        }
+
+        public void Dispose()
+        {
+        }
+    }
+
+    private sealed class OriginCompositionArtifacts : IStageArtifactProvider
+    {
+        private readonly GenericGpuArtifactProvider2D _descriptions = GenericGpuArtifactProvider2D.CreateEmbedded();
+
+        public StageArtifactDescription Describe(StageArtifactKey key, IGraphicDevice device) => _descriptions.Describe(key, device);
+
+        public StageArtifactLease Acquire(StageArtifactKey key, StageArtifactBuildContext context)
+        {
+            IGraphicsShader vertex = context.Device.CreateShader(DrawingShaders2D.Vertex);
+            IGraphicsShader fragment = context.Device.CreateShader(DrawingShaders2D.Fragment);
+            var pipeline = new OriginCompositionPipeline(context.Device, context.Device.CreateGraphicsPipeline(new() { VertexShader = vertex, FragmentShader = fragment }));
+            var sampler = new OriginCompositionSampler(context.Device);
+            var owner = new CompositionOwner(vertex, fragment, pipeline, sampler);
+            return new(Describe(key, context.Device), context.Device, context.Generation, pipeline, null, null, sampler, owner);
+        }
+    }
+
+    private sealed class CompositionOwner(params IDisposable[] owners) : IDisposable
+    {
+        public void Dispose()
+        {
+            for (int i = owners.Length - 1; i >= 0; i--)
+            {
+                owners[i].Dispose();
+            }
+        }
+    }
+
+    private sealed class OriginCompositionPipeline(IGraphicDevice device, IGraphicsPipeline inner) : IGraphicsPipeline, IGraphicsNativeOrigin
+    {
+        public GraphicsPipelineDesc Desc => inner.Desc;
+
+        public IGraphicDevice Device => device;
+
+        public object AllocationIdentity => inner;
+
+        public void ValidateOrigin()
+        {
+        }
+
+        public void Dispose() => inner.Dispose();
+    }
+
+    private sealed class OriginCompositionSampler(IGraphicDevice device) : IGraphicsSampler, IGraphicsNativeOrigin
+    {
+        public SamplerDesc Desc { get; } = new();
+
+        public IGraphicDevice Device => device;
+
+        public object AllocationIdentity => this;
+
+        public void ValidateOrigin()
+        {
         }
 
         public void Dispose()

@@ -1,151 +1,177 @@
-import { readFile, readdir, readlink, mkdtemp, mkdir, writeFile, stat, copyFile, rm, chmod, truncate } from "node:fs/promises";
-import { spawn, spawnSync } from "node:child_process";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+// Passive subset of the historical51b8 recorder: same proc-stat/owned-tree design,
+// without perf, spawning, signals, argv/environment inspection or native attachments.
+import { open, opendir, readlink } from "node:fs/promises";
 
-export function parseProcessStat(text) {
-    const end = text.lastIndexOf(")");
-    if (end < 0) throw new Error("invalid-stat");
-    const fields = text.slice(end + 2).trim().split(/\s+/);
-    return { state: fields[0], ppid: Number(fields[1]), userTicks: Number(fields[11]), systemTicks: Number(fields[12]), threads: Number(fields[17]), startTicks: fields[19] };
+async function readBounded(path, limit = 4096) {
+    const file = await open(path, "r");
+    try {
+        const bytes = Buffer.alloc(limit + 1);
+        const { bytesRead } = await file.read(bytes, 0, bytes.length, 0);
+        if (bytesRead > limit) throw new Error("oversized-proc");
+        return bytes.subarray(0, bytesRead).toString("utf8");
+    } finally { await file.close(); }
 }
-export function createBrowserProcessRecorder({ browserPid, environment = process.env, platform = process.platform,
-    read = readFile, list = readdir, link = readlink, launch = spawn, now = () => performance.now(),
-    intervalMs = 1000, maxSamples = 120, maxProcesses = 8, maxThreads = 16,
-    signalGroup = (pid, signal) => process.kill(-pid, signal), stopGraceMs = 1500 } = {}) {
-    let timer, pending, ended = false, rootIdentity, executable, spool, perf, perfDone, perfStopped = false, nativeAttempted = false;
-    let unavailable, dropped = 0, nativeStatus = "not-started", nativeError = "", nativeBytes = 0;
-    const samples = [], identities = new Map();
-    const clocks = platform === "linux" ? spawnSync("getconf", ["CLK_TCK"], { encoding: "utf8", timeout: 500 }) : {};
-    const clockTicks = Number(clocks.stdout?.trim()) || null;
-    const boundedRead = async (path, limit = 65536) => { const value = await read(path, "utf8"); if (value.length > limit) throw new Error("oversized-proc"); return value; };
-    const processStat = async pid => parseProcessStat(await boundedRead('/proc/' + pid + '/stat', 4096));
-    async function ownedProcesses() {
-        const root = await processStat(browserPid);
-        if (root.startTicks !== rootIdentity) throw new Error("browser-exited-or-pid-reused");
-        const queue = [browserPid], seen = new Set(queue), result = [];
-        while (queue.length && seen.size <= 64) {
-            const parent = queue.shift();
-            const tids = (await list('/proc/' + parent + '/task').catch(() => [])).slice(0, 128);
-            for (const tid of tids) {
-                const children = await boundedRead('/proc/' + parent + '/task/' + tid + '/children', 4096).catch(() => "");
-                for (const raw of children.trim().split(/\s+/)) {
-                    const pid = Number(raw);
-                    if (!Number.isSafeInteger(pid) || pid <= 0 || seen.has(pid) || seen.size >= 64) continue;
-                    seen.add(pid);
-                    const info = await processStat(pid).catch(() => null);
-                    if (!info || info.ppid !== parent) continue;
-                    queue.push(pid);
-                    const path = await link('/proc/' + pid + '/exe').catch(() => "");
-                    if (path !== executable) continue;
-                    const args = await boundedRead('/proc/' + pid + '/cmdline', 16384).catch(() => "");
-                    // Chrome may rewrite argv into one space-separated process title.
-                    const type = /(?:^|[\0\s])--type=(gpu-process|renderer)(?=[\0\s]|$)/.exec(args)?.[1];
-                    if (type && result.length < maxProcesses) result.push({ pid, type, ...info });
+async function listBounded(path, limit = 128) {
+    const entries = [], directory = await opendir(path);
+    try { for await (const entry of directory) { entries.push(entry.name); if (entries.length >= limit) break; } }
+    finally { await directory.close().catch(() => {}); }
+    return entries;
+}
+export function parseProcessStat(text) {
+    const end = text.lastIndexOf(")"), fields = text.slice(end + 2).trim().split(/\s+/);
+    if (end < 0 || fields.length < 22 || !/^\d+$/.test(fields[19])) throw new Error("invalid-stat");
+    return { state: fields[0], ppid: Number(fields[1]), userTicks: fields[11], systemTicks: fields[12], threads: Number(fields[17]), startTicks: fields[19], rssPages: fields[21] };
+}
+const safely = action => { try { return action(); } catch {} };
+export function createBrowserProcessRecorder({ browserPid, platform = process.platform, uid = process.getuid?.(),
+    read = readBounded, list = listBounded, link = readlink, now = () => performance.now(),
+    schedule = setInterval, unschedule = clearInterval } = {}) {
+    let root, pending, starting, timer, ended = false, unavailable, cgroup, beforeMemory;
+    let dropped = 0, unavailableReads = 0, sampleBytes = 0, overlapping = 0, processRowsDropped = 0, discoveryCapped = false;
+    const samples = [], events = [];
+    const at = () => safely(now) ?? 0;
+    async function text(path, limit = 4096) {
+        const value = await read(path, limit);
+        if (typeof value !== "string" || Buffer.byteLength(value) > limit) throw new Error("oversized-proc");
+        return value;
+    }
+    async function identity(pid) {
+        const base = '/proc/' + pid, first = parseProcessStat(await text(base + '/stat'));
+        const status = await text(base + '/status', 16384), ids = /^Uid:\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)/m.exec(status);
+        if (!ids || ids.slice(1).some(value => Number(value) !== uid)) throw new Error("foreign-uid");
+        const exe = await link(base + '/exe');
+        if (typeof exe !== "string" || exe.length > 1024) throw new Error("invalid-executable");
+        const second = parseProcessStat(await text(base + '/stat'));
+        if (first.startTicks !== second.startTicks || first.ppid !== second.ppid) throw new Error("pid-reused");
+        return { pid, uid, exe, ...second, vmHwmKiB: /^VmHWM:\s+(\d+)/m.exec(status)?.[1] ?? null };
+    }
+    async function still(item) {
+        const current = await identity(item.pid);
+        if (current.startTicks !== item.startTicks || current.exe !== item.exe || current.uid !== item.uid || current.ppid !== item.ppid) throw new Error("identity-changed");
+        return current;
+    }
+    async function rows() {
+        await still(root);
+        const queue = [root], candidates = [], seen = new Set([root.pid]);
+        for (let index = 0; index < queue.length && index < 64; index++) {
+            const parent = queue[index];
+            try {
+                await still(parent);
+                const tids = (await list('/proc/' + parent.pid + '/task', 128)).slice(0, 128);
+                for (const tid of tids) {
+                    if (!/^\d+$/.test(String(tid))) continue;
+                    let children;
+                    try { children = await text('/proc/' + parent.pid + '/task/' + tid + '/children'); } catch { unavailableReads++; continue; }
+                    for (const value of children.trim().split(/\s+/)) {
+                        const pid = Number(value);
+                        if (!Number.isSafeInteger(pid) || pid <= 0 || seen.has(pid) || seen.size >= 64) continue;
+                        seen.add(pid);
+                        try {
+                            const item = await identity(pid);
+                            await still(parent);
+                            if (item.ppid !== parent.pid || item.exe !== root.exe) continue;
+                            queue.push(item);
+                        } catch { unavailableReads++; }
+                    }
                 }
-            }
+                const comm = (await text('/proc/' + parent.pid + '/comm', 128).catch(() => "")).trim();
+                candidates.push({ ...parent, role: parent.pid === browserPid ? "browser-root" : /gpu/i.test(comm) ? "gpu-thread-observed" : "owned-chrome-role-unknown" });
+            } catch { unavailableReads++; }
         }
+        await still(root);
+        processRowsDropped += Math.max(0, candidates.length - 8);
+        discoveryCapped ||= seen.size >= 64;
+        const selected = candidates.sort((a, b) => (a.pid === browserPid ? -2 : a.role === "gpu-thread-observed" ? -1 : 0) - (b.pid === browserPid ? -2 : b.role === "gpu-thread-observed" ? -1 : 0)).slice(0, 8);
+        const result = [];
+        for (const parent of selected) {
+            try {
+                await still(parent);
+                const threads = [];
+                for (const tid of (await list('/proc/' + parent.pid + '/task', 32)).slice(0, 32)) {
+                    if (!/^\d+$/.test(String(tid))) continue;
+                    try {
+                        const base = '/proc/' + parent.pid + '/task/' + tid;
+                        const stat = parseProcessStat(await text(base + '/stat'));
+                        const comm = (await text(base + '/comm', 128)).trim().slice(0, 96);
+                        const sched = (await text(base + '/schedstat', 256)).trim().split(/\s+/);
+                        threads.push({ tid: Number(tid), startTicks: stat.startTicks, state: stat.state, name: comm, userTicks: stat.userTicks, systemTicks: stat.systemTicks,
+                            runtimeNs: /^\d+$/.test(sched[0]) ? sched[0] : null, runqueueWaitNs: /^\d+$/.test(sched[1]) ? sched[1] : null });
+                    } catch { unavailableReads++; }
+                }
+                result.push({ ...await still(parent), role: parent.role, threadsDropped: Math.max(0, parent.threads - threads.length), threadSamples: threads });
+            } catch { unavailableReads++; }
+        }
+        await still(root);
         return result;
     }
-    async function stopPerf() {
-        if (!perf || perfStopped) return;
-        perfStopped = true;
-        const signal = value => {
-            try { if (Number.isSafeInteger(perf.pid) && perf.pid > 0) signalGroup(perf.pid, value); else perf.kill(value); } catch {}
-        };
-        signal("SIGINT");
-        let timeout;
-        await Promise.race([perfDone, new Promise(resolve => { timeout = setTimeout(resolve, stopGraceMs); })]);
-        clearTimeout(timeout);
-        // Kill the whole owned group even if timeout exited first: perf may remain.
-        signal("SIGKILL");
-        await Promise.race([perfDone, new Promise(resolve => { const t = setTimeout(resolve, 250); t.unref?.(); })]);
-    }
-    async function beginPerf(item) {
-        if (nativeAttempted || ended) return;
-        nativeAttempted = true;
-        const binary = environment.LUMYTE_BROWSER_PERF;
-        if (!binary) { nativeStatus = "unavailable-no-configured-tool"; return; }
-        const current = await processStat(item.pid);
-        if (current.startTicks !== item.startTicks) { nativeStatus = "unavailable-pid-reused"; return; }
-        spool = await mkdtemp(join(tmpdir(), "lumyte-owned-gpu-perf-"));
-        await chmod(spool, 0o700);
-        nativeStatus = "recording";
-        perf = launch("timeout", ["--signal=INT", "--kill-after=2s", "300s", binary, "record", "-e", "cpu-clock:u", "-F", "49", "--call-graph", "dwarf,8192", "-m", "256", "--timestamp", "--clockid", "mono", "--no-buildid-cache", "--switch-output=8M", "--switch-max-files=2", "-o", join(spool, "gpu.perf.data"), "-p", String(item.pid)], { detached: true, stdio: ["ignore", "ignore", "pipe"] });
-        perf.stderr?.on("data", data => { if (nativeError.length < 4096) nativeError = (nativeError + data.toString()).slice(0, 4096); });
-        perfDone = new Promise(resolve => {
-            perf.once("error", () => { nativeStatus = "unavailable-launch-error"; resolve(); });
-            perf.once("exit", (code, signal) => {
-                const stoppedByOwner = perfStopped && (signal === "SIGINT" || signal === "SIGKILL" || code === 130);
-                nativeStatus = code === 0 || stoppedByOwner ? "stopped" : "unavailable-permission-or-recording-error";
-                resolve();
-            });
-        });
-    }
-    async function sample() {
-        if (ended) return;
+    async function sampleInner() {
         try {
-            const processes = await ownedProcesses();
-            const rows = [];
-            for (const item of processes) {
-                const identity = item.pid + ":" + item.startTicks;
-                identities.set(identity, { pid: item.pid, startTicks: item.startTicks, type: item.type });
-                while (identities.size > 32) identities.delete(identities.keys().next().value);
-                const sched = (await boundedRead('/proc/' + item.pid + '/schedstat', 256).catch(() => "")).trim().split(/\s+/);
-                const threads = [];
-                for (const tid of (await list('/proc/' + item.pid + '/task').catch(() => [])).slice(0, maxThreads)) {
-                    const t = await boundedRead('/proc/' + item.pid + '/task/' + tid + '/schedstat', 256).catch(() => "");
-                    const s = t.trim().split(/\s+/);
-                    if (s.length >= 2) threads.push({ tid: Number(tid), runtimeNs: s[0], runqueueWaitNs: s[1] });
-                }
-                rows.push({ ...item, runtimeNs: sched[0] || null, runqueueWaitNs: sched[1] || null, threadSamples: threads });
-                if (item.type === "gpu-process") await beginPerf(item);
-            }
-            samples.push({ atMs: now(), processes: rows });
-            if (samples.length > maxSamples) { samples.shift(); dropped++; }
-            if (perf && !perfStopped) {
-                const files = (await readdir(spool)).filter(x => /^gpu\.perf\.data(?:[.-][0-9]+)?$/.test(x));
-                const sizes = await Promise.all(files.map(x => stat(join(spool, x))));
-                if (sizes.reduce((sum, x) => sum + x.size, 0) > 64 * 1024 * 1024) { nativeStatus = "size-watchdog"; await stopPerf(); }
-            }
-        } catch (error) { unavailable = error.message === "browser-exited-or-pid-reused" ? error.message : "proc-unavailable"; }
+            const processes = await rows();
+            const value = { atMs: at(), processes }, bytes = Buffer.byteLength(JSON.stringify(value));
+            samples.push({ value, bytes }); sampleBytes += bytes;
+            while (samples.length > 120 || sampleBytes > 160 * 1024) { sampleBytes -= samples.shift().bytes; dropped++; }
+        } catch { unavailable = "owned-proc-unavailable-or-identity-changed"; }
     }
-    async function start() {
-        if (timer || rootIdentity || ended) return;
-        if (platform !== "linux" || !Number.isSafeInteger(browserPid) || browserPid <= 0) { unavailable = "unsupported-platform-or-pid"; return; }
-        try { rootIdentity = (await processStat(browserPid)).startTicks; executable = await link('/proc/' + browserPid + '/exe'); }
-        catch { unavailable = "browser-proc-unavailable"; return; }
-        await sample();
-        timer = setInterval(() => { if (!pending) pending = sample().finally(() => { pending = undefined; }); }, intervalMs);
-        timer.unref?.();
+    function sample() {
+        if (ended || !root) return Promise.resolve();
+        if (pending) { overlapping++; return pending; }
+        pending = sampleInner().finally(() => { pending = undefined; });
+        return pending;
     }
-    async function finish({ retain = false, directory } = {}) {
-        ended = true; clearInterval(timer); timer = undefined;
-        await pending; await stopPerf();
-        const metadata = { version: 1, browserPid, rootIdentity, clockTicks, unavailable, dropped, samples, identities: [...identities.values()],
-            nativeStatus, nativeError, nativeBytes: 0,
-            limitations: "Process CPU ticks and scheduler time are not hardware GPU timestamps. Optional perf has no privilege escalation; denied attachment is unavailable, not a captured profile. Stripped/JIT addresses may not distinguish shader compilation from execution. Native segments rotate; byte watchdog limits recording and export. Truncated native files are incomplete, not successful captures." };
+    async function memory() {
+        if (cgroup === undefined) return undefined;
         try {
-            if (retain && directory) {
-                await mkdir(directory, { recursive: true });
-                if (spool) {
-                    const files = (await readdir(spool)).filter(x => /^gpu\.perf\.data(?:[.-][0-9]+)?$/.test(x)).sort().reverse();
-                    metadata.nativeFiles = [];
-                    for (const name of files) {
-                        const path = join(spool, name); const file = await stat(path);
-                        if (!file.size) continue;
-                        const remaining = 64 * 1024 * 1024 - nativeBytes;
-                        if (remaining <= 0) { metadata.nativeTruncated = true; break; }
-                        if (file.size > remaining) { await truncate(path, remaining); metadata.nativeTruncated = true; }
-                        await copyFile(path, join(directory, name));
-                        nativeBytes += Math.min(file.size, remaining); metadata.nativeFiles.push(name);
-                    }
-                    metadata.nativeBytes = nativeBytes;
-                }
-                await writeFile(join(directory, "processes.json"), JSON.stringify(metadata) + "\n");
-            }
-        } finally { if (spool) await rm(spool, { recursive: true, force: true }).catch(() => {}); }
-        return metadata;
+            const entries = (await text('/sys/fs/cgroup' + cgroup + '/memory.events')).trim().split('\n');
+            return Object.fromEntries(entries.map(row => row.trim().split(/\s+/)).filter(([key, value]) => /^(low|high|max|oom|oom_kill|oom_group_kill)$/.test(key) && /^\d+$/.test(value)));
+        } catch { unavailableReads++; }
     }
-    return { start, finish, sample };
+    async function startInner() {
+        if (root || ended) return;
+        if (platform !== "linux" || !Number.isSafeInteger(browserPid) || browserPid <= 0 || !Number.isSafeInteger(uid)) { unavailable = "unsupported-platform-or-identity"; return; }
+        try {
+            root = await identity(browserPid);
+            let match;
+            try { match = /^0::([^\n]*)$/m.exec(await text('/proc/' + browserPid + '/cgroup')); } catch { unavailableReads++; }
+            if (match && /^\/(?:[a-zA-Z0-9_.@-]+\/?)*$/.test(match[1]) && !match[1].split('/').includes('..')) cgroup = match[1] === '/' ? '' : match[1];
+            beforeMemory = await memory();
+            await sample();
+            if (!ended) { timer = schedule(() => { void sample(); }, 1000); timer?.unref?.(); }
+        } catch { unavailable = "browser-proc-unavailable"; }
+    }
+    function start() {
+        if (!starting) starting = startInner();
+        return starting;
+    }
+    function event(kind, data = {}) {
+        const record = { kind, atMs: at() };
+        for (const key of ["code", "signal", "errorCode"]) if (typeof data[key] === "number" || data[key] === null || typeof data[key] === "string") record[key] = typeof data[key] === "string" ? data[key].slice(0, 80) : data[key];
+        events.push(record); if (events.length > 16) events.shift();
+    }
+    function snapshot() {
+        return { version: 1, browserPid, root, unavailable, dropped, unavailableReads, overlapping, processRowsDropped, discoveryCapped, samples: samples.map(row => row.value), events: [...events],
+            memory: { before: beforeMemory, sharedCgroup: true },
+            limitations: "Passive owned Chrome CPU/RSS/thread observations, not GPU timestamps or shader stacks. Role inferred only from bounded thread names; no argv. GPU child exit/cause unknown unless separately reported. Shared-cgroup counters do not attribute OOM. Logging/sampling perturb scheduling." };
+    }
+    async function stop() { ended = true; if (timer !== undefined) unschedule(timer); timer = undefined; await starting; await pending; const value = snapshot(); value.memory.after = await memory(); return value; }
+    return { start, sample, snapshot, stop, event };
+}
+export function createBoundedBrowserStderr() {
+    let head = Buffer.alloc(0), tail = Buffer.alloc(0), total = 0;
+    return {
+        observe(data) { const bytes = Buffer.isBuffer(data) ? data : Buffer.from(String(data)); total += bytes.length;
+            if (head.length < 16384) head = Buffer.concat([head, bytes.subarray(0, 16384 - head.length)]);
+            tail = bytes.length >= 65536 ? Buffer.from(bytes.subarray(bytes.length - 65536)) : Buffer.concat([tail, bytes]).subarray(-65536);
+        },
+        snapshot() { return { head: head.toString('utf8'), tail: tail.toString('utf8'), totalBytes: total, droppedBytes: Math.max(0, total - head.length - tail.length) }; },
+    };
+}
+export function emitBrowserNative(emit, value) {
+    try {
+        // Escaped stderr can expand JSON. Prefer losing old samples to exceeding the log cap.
+        const report = structuredClone(value); let droppedForOutput = 0;
+        while (Buffer.byteLength(JSON.stringify(report)) > 256 * 1024 && report.process?.samples?.length) { report.process.samples.shift(); droppedForOutput++; }
+        report.droppedForOutput = droppedForOutput;
+        if (Buffer.byteLength(JSON.stringify(report)) > 256 * 1024) { report.stderr = { totalBytes: report.stderr?.totalBytes, droppedBytes: report.stderr?.totalBytes, unavailable: "output-cap" }; }
+        if (Buffer.byteLength(JSON.stringify(report)) <= 256 * 1024) emit(report);
+    } catch { /* Diagnostics never replace the original application failure. */ }
 }

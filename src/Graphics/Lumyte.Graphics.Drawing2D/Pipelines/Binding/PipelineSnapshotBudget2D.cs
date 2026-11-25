@@ -13,6 +13,17 @@ internal sealed class PipelineSnapshotBudget2D(long limit)
         private long _bytes;
         private bool _returned;
 
+        internal long ReservedBytes
+        {
+            get
+            {
+                lock (owner._gate)
+                {
+                    return _bytes;
+                }
+            }
+        }
+
         public void Dispose()
         {
             lock (owner._gate)
