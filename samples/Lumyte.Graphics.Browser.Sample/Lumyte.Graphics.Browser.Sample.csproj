@@ -7,6 +7,7 @@
     <IsPackable>false</IsPackable>
   </PropertyGroup>
   <ItemGroup>
+    <ProjectReference Include="../../src/Graphics/Lumyte.Graphics.Drawing2D/Lumyte.Graphics.Drawing2D.csproj" />
     <ProjectReference Include="../../src/Graphics/Lumyte.Graphics.Browser/Lumyte.Graphics.Browser.csproj" />
     <ProjectReference Include="../Lumyte.Graphics.Shared/Lumyte.Graphics.Shared.csproj" />
     <Content Include="../../src/Graphics/Lumyte.Graphics.Browser/wwwroot/lumyte-graphics.js" Link="wwwroot/lumyte-graphics.js" CopyToPublishDirectory="PreserveNewest" />

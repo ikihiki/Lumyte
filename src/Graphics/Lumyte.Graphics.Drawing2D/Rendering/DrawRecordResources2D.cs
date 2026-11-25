@@ -2,10 +2,13 @@ using Lumyte.Graphics.Abstractions;
 
 namespace Lumyte.Graphics.Drawing2D;
 
-internal sealed class DrawRecordResources2D(IGraphicDevice device, long poolBudget) : IDisposable
+internal sealed class DrawRecordResources2D(IGraphicDevice device, long poolBudget, bool mesh = false) : IDisposable
 {
     private readonly List<IDisposable> _owned = [];
     private readonly Dictionary<int, IGraphicsPipeline> _pipelines = [];
+    private readonly Dictionary<int, IMeshPipeline> _meshPipelines = [];
+
+    internal bool IsMesh => mesh;
 
     internal DrawNumericPool2D NumericPool { get; } = new(device, poolBudget);
 
@@ -35,6 +38,23 @@ internal sealed class DrawRecordResources2D(IGraphicDevice device, long poolBudg
         DrawRecordAbi2D.Validate(fragment.Artifact, device.Caps.ShaderTarget, mode);
         IGraphicsPipeline pipeline = Own(device.CreateGraphicsPipeline(new() { VertexShader = vertex, FragmentShader = fragment }));
         _pipelines.Add(mode, pipeline);
+        return pipeline;
+    }
+
+    internal IMeshPipeline GetMeshPipeline(int mode)
+    {
+        if (_meshPipelines.TryGetValue(mode, out IMeshPipeline? existing))
+        {
+            return existing;
+        }
+
+        string variant = mode switch { 0 => "-basic", 1 => "-mask", 2 => "-image", 4 => "-solid", 6 => "-image-small", 7 => "-image-medium", _ => string.Empty };
+        IGraphicsShader meshShader = Own(device.CreateShader(ShaderArtifact.LoadEmbedded(typeof(DrawRecordResources2D).Assembly, "Lumyte.Drawing2D.draw-records" + variant + "-mesh.lshader")));
+        IGraphicsShader fragment = Own(device.CreateShader(ShaderArtifact.LoadEmbedded(typeof(DrawRecordResources2D).Assembly, "Lumyte.Drawing2D.draw-records" + variant + "-fragment.lshader")));
+        DrawRecordAbi2D.Validate(meshShader.Artifact, device.Caps.ShaderTarget, mode);
+        DrawRecordAbi2D.Validate(fragment.Artifact, device.Caps.ShaderTarget, mode);
+        IMeshPipeline pipeline = Own(device.CreateMeshPipeline(new() { MeshShader = meshShader, FragmentShader = fragment }));
+        _meshPipelines.Add(mode, pipeline);
         return pipeline;
     }
 

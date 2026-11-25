@@ -24,56 +24,16 @@ public sealed class GenericGraphNativeTests
     [InlineData(2)]
     [InlineData(3)]
     public void DirectInjectedGraphPreservesPixelsAndReusesPipeline(int scenario)
-    {
-        Type type = System.Reflection.Assembly.Load("Lumyte.Graphics.Vulkan").GetType("Lumyte.Graphics.Vulkan.VulkanDevice", true)!;
-        System.Reflection.MethodInfo factory = type.GetMethods().Single(m => m.Name == "Create" && m.IsStatic && m.GetParameters().All(p => p.HasDefaultValue));
-        var device = (IGraphicDevice)factory.Invoke(null, factory.GetParameters().Select(p => p.DefaultValue).ToArray())!;
-        using var nativeOwner = (IDisposable)device;
-        var runtime = new ExecutionRuntime([]);
-        runtime.PrepareOnCurrentHost(OwnerPlacement.Host, CpuExecutionMode.Cooperative, 1, new ExecutionOptions());
-        Pump(runtime, runtime.StartAsync().AsTask());
-        try
-        {
-            var requests = new List<RenderRequest2D>();
-            var pipelineGraph = new PipelineGraph<RenderRequest2D>();
-            Port<Device<SceneV1>> scene = pipelineGraph.Stage(new CanonicalProducer(requests), pipelineGraph.Input).Then(Transfers.Upload<SceneV1>());
-            Port<Device<FrameV1>> frame = pipelineGraph.Stage(RenderFields2D.Frame(), pipelineGraph.Input).Then(Transfers.Upload<FrameV1>());
-            Port<Device<ResourceViewsV1>> views = pipelineGraph.Stage(RenderFields2D.ResourceViews(), pipelineGraph.Input);
-            Port<Device<TargetV1>> target = pipelineGraph.Stage(RenderFields2D.Target(), pipelineGraph.Input);
-            Port<Device<TargetWritesV1>> output = pipelineGraph.Stage(RasterStages2D.EvaluateAndComposite(new(16, 1)), scene, views, frame, target);
-            var policy = new GraphicsPipelinePolicy(512L * 1024 * 1024, 64L * 1024 * 1024, 128L * 1024 * 1024, 3);
-            using var build = new GraphicsPipelineBuildHost(runtime, device, GenericGpuArtifactProvider2D.CreateEmbedded(), policy);
-            using IPipeline<RenderRequest2D, Device<TargetWritesV1>> pipeline = build.Build(pipelineGraph.Complete(output));
-            using var renderer = new Renderer2D(device, pipeline, new(true, true, true, true, true, true, true, true, true, true, true), new(policy, DrawingArgumentTableMode.Auto, new()));
-            RenderGraphDrawList2D list = Recording(scenario);
-            byte[] first = Render(runtime, device, renderer, list, scenario, 0);
-            byte[] second = Render(runtime, device, renderer, list, scenario, 1);
-            Assert.Equal(first, second);
-            Assert.Equal(scenario == 0 ? 2 : 4, requests.Count);
-            if (scenario is 1 or 2)
-            {
-                Assert.Contains(requests, r => r.Target.PixelOrigin == new Vector2(1, 1) && r.Target.Description.Width == 2 && r.Target.Description.Height == 2);
-            }
+        => AssertDirectInjectedGraphPixels(scenario, false);
 
-            for (int y = 0; y < 4; y++)
-            {
-                for (int x = 0; x < 4; x++)
-                {
-                    bool inside = x is 1 or 2 && y is 1 or 2;
-                    float blue = inside ? scenario switch { 1 => .5f, 2 => .25f, _ => 0 } : 0;
-                    float green = scenario == 3 && x == 0 && y == 0 ? 1 : 0;
-                    float[] expected = [1 - blue - green, green, blue, 1];
-                    for (int c = 0; c < 4; c++)
-                    {
-                        float actual = (float)BitConverter.UInt16BitsToHalf(BitConverter.ToUInt16(first, (((y * 4) + x) * 8) + (c * 2)));
-                        Assert.True(actual == expected[c], $"scenario={scenario} pixel=({x},{y}) channel={c}: expected {expected[c]}, actual {actual}");
-                    }
-                }
-            }
-        }
-        finally
+    /// <summary>Substitutes the concrete mesh endpoint on flat and layered parent Graph recordings.</summary>
+    [GenericGpuNativeMeshFact]
+    [Trait("Execution", "Gpu")]
+    public void MeshDirectInjectedGraphPreservesMixedKindsAndLayerPixels()
+    {
+        for (int scenario = 0; scenario < 4; scenario++)
         {
-            Pump(runtime, runtime.StopAsync().AsTask());
+            AssertDirectInjectedGraphPixels(scenario, true);
         }
     }
 
@@ -143,6 +103,62 @@ public sealed class GenericGraphNativeTests
             Assert.Equal(0f, (float)BitConverter.UInt16BitsToHalf(BitConverter.ToUInt16(pixels, 2)));
             Assert.Equal(0f, (float)BitConverter.UInt16BitsToHalf(BitConverter.ToUInt16(pixels, 4)));
             Assert.Equal(1f, (float)BitConverter.UInt16BitsToHalf(BitConverter.ToUInt16(pixels, 6)));
+        }
+        finally
+        {
+            Pump(runtime, runtime.StopAsync().AsTask());
+        }
+    }
+
+    private static void AssertDirectInjectedGraphPixels(int scenario, bool mesh)
+    {
+        Type type = System.Reflection.Assembly.Load("Lumyte.Graphics.Vulkan").GetType("Lumyte.Graphics.Vulkan.VulkanDevice", true)!;
+        System.Reflection.MethodInfo factory = type.GetMethods().Single(m => m.Name == "Create" && m.IsStatic && m.GetParameters().All(p => p.HasDefaultValue));
+        var device = (IGraphicDevice)factory.Invoke(null, factory.GetParameters().Select(p => p.DefaultValue).ToArray())!;
+        using var nativeOwner = (IDisposable)device;
+        var runtime = new ExecutionRuntime([]);
+        runtime.PrepareOnCurrentHost(OwnerPlacement.Host, CpuExecutionMode.Cooperative, 1, new ExecutionOptions());
+        Pump(runtime, runtime.StartAsync().AsTask());
+        try
+        {
+            var requests = new List<RenderRequest2D>();
+            var pipelineGraph = new PipelineGraph<RenderRequest2D>();
+            Port<Device<SceneV1>> scene = pipelineGraph.Stage(new CanonicalProducer(requests), pipelineGraph.Input).Then(Transfers.Upload<SceneV1>());
+            Port<Device<FrameV1>> frame = pipelineGraph.Stage(RenderFields2D.Frame(), pipelineGraph.Input).Then(Transfers.Upload<FrameV1>());
+            Port<Device<ResourceViewsV1>> views = pipelineGraph.Stage(RenderFields2D.ResourceViews(), pipelineGraph.Input);
+            Port<Device<TargetV1>> target = pipelineGraph.Stage(RenderFields2D.Target(), pipelineGraph.Input);
+            Port<Device<TargetWritesV1>> output = mesh
+                ? pipelineGraph.Stage(MeshStages2D.EvaluateAndComposite(new(16, 1)), scene, views, frame, target)
+                : pipelineGraph.Stage(RasterStages2D.EvaluateAndComposite(new(16, 1)), scene, views, frame, target);
+            var policy = new GraphicsPipelinePolicy(512L * 1024 * 1024, 64L * 1024 * 1024, 128L * 1024 * 1024, 3);
+            using var build = new GraphicsPipelineBuildHost(runtime, device, GenericGpuArtifactProvider2D.CreateEmbedded(), policy);
+            using IPipeline<RenderRequest2D, Device<TargetWritesV1>> pipeline = build.Build(pipelineGraph.Complete(output));
+            using var renderer = new Renderer2D(device, pipeline, new(true, true, true, true, true, true, true, true, true, true, true), new(policy, DrawingArgumentTableMode.Auto, new()));
+            RenderGraphDrawList2D list = Recording(scenario);
+            byte[] first = Render(runtime, device, renderer, list, scenario, 0);
+            byte[] second = Render(runtime, device, renderer, list, scenario, 1);
+            Assert.Equal(first, second);
+            Assert.Equal(scenario == 0 ? 2 : 4, requests.Count);
+            if (scenario is 1 or 2)
+            {
+                Assert.Contains(requests, r => r.Target.PixelOrigin == new Vector2(1, 1) && r.Target.Description.Width == 2 && r.Target.Description.Height == 2);
+            }
+
+            for (int y = 0; y < 4; y++)
+            {
+                for (int x = 0; x < 4; x++)
+                {
+                    bool inside = x is 1 or 2 && y is 1 or 2;
+                    float blue = inside ? scenario switch { 1 => .5f, 2 => .25f, _ => 0 } : 0;
+                    float green = scenario == 3 && x == 0 && y == 0 ? 1 : 0;
+                    float[] expected = [1 - blue - green, green, blue, 1];
+                    for (int c = 0; c < 4; c++)
+                    {
+                        float actual = (float)BitConverter.UInt16BitsToHalf(BitConverter.ToUInt16(first, (((y * 4) + x) * 8) + (c * 2)));
+                        Assert.True(actual == expected[c], $"scenario={scenario} pixel=({x},{y}) channel={c}: expected {expected[c]}, actual {actual}");
+                    }
+                }
+            }
         }
         finally
         {

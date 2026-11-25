@@ -635,11 +635,11 @@ public sealed partial class Drawing2DTests
         AssertPixel(backdrop, 5, 4, 0, new(0, 0, 1, 1));
     }
 
-    private static async Task<Vector4[]> RenderAsync(IGraphicDevice device, int width, int height, Action<RenderGraphCanvas2D> draw, IGraphicsTexture[]? inputs = null, float pixelScale = 1, bool useDefaultResources = false, bool individualPaths = false, Func<IGraphicsCommandBuffer, IGraphicsCommandBuffer>? observe = null, bool composed = false, IFillRectRenderer2D? rectangleBackend = null)
+    private static async Task<Vector4[]> RenderAsync(IGraphicDevice device, int width, int height, Action<RenderGraphCanvas2D> draw, IGraphicsTexture[]? inputs = null, float pixelScale = 1, bool useDefaultResources = false, bool individualPaths = false, Func<IGraphicsCommandBuffer, IGraphicsCommandBuffer>? observe = null, bool composed = false, IFillRectRenderer2D? rectangleBackend = null, bool meshCoverage = false)
     {
         useDefaultResources |= _fixedRecordEffects.Value;
-        DrawingResourceState2D? shared = composed ? null : _serialResources.Value?.Get(device, useDefaultResources);
-        using ExternalDrawingResources? resources = (useDefaultResources && !composed) || shared is not null ? null : new(device, builtinIdentity: useDefaultResources);
+        DrawingResourceState2D? shared = composed || meshCoverage ? null : _serialResources.Value?.Get(device, useDefaultResources);
+        using ExternalDrawingResources? resources = (useDefaultResources && !composed && !meshCoverage) || shared is not null ? null : new(device, builtinIdentity: useDefaultResources);
         var canvas = new RenderGraphCanvas2D();
         canvas.Begin();
         draw(canvas);
@@ -668,7 +668,7 @@ public sealed partial class Drawing2DTests
             strategies = new(rectangleBackend, strategies.FillRoundedRect, strategies.FillCircle, strategies.DrawLine, strategies.FillPath, strategies.StrokePath, strategies.DrawImage, strategies.DrawCoverageMask, strategies.DrawDistanceField, strategies.DrawMesh, strategies.DrawPaintGraph);
         }
 
-        using IRenderer2D? configured = composed ? ComposeDefinition(strategies).BuildRenderer(device, resources!.Resources, resources, null) : null;
+        using IRenderer2D? configured = meshCoverage ? CreateMeshCoverageRenderer(device, resources!) : composed ? ComposeDefinition(strategies).BuildRenderer(device, resources!.Resources, resources, null) : null;
         var binding = new RenderTargetBinding2D { Texture = target, Description = description, LoadOp = AttachmentLoadOp.Clear, PixelScale = pixelScale };
         using RenderGraphRenderer2D renderer = configured is not null
             ? new RenderGraphRenderer2D(configured, list, binding, bindings)

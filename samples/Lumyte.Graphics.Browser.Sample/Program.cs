@@ -32,6 +32,8 @@ internal static partial class Program
             Console.WriteLine("Browser Mesh/Task rejection checks passed.");
         }
 
+        await MeshUnsupportedSmoke.RunAsync(device);
+
         List<string> reports = [];
         Record(CapsDisplay.Describe(device), reports);
         await GraphicsExercises.RunAsync(device, "suite", report => Record(report, reports));

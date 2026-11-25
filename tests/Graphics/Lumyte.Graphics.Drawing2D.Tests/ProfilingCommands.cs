@@ -75,9 +75,19 @@ internal class ProfilingCommands : IGraphicsCommandBuffer
         public void SetArguments<T>(in T arguments)
             where T : struct, IShaderArguments => owner.Events.Add(T.ShaderTypeName == "DrawRangeArguments2D" ? RecordedDrawRange.Capture(IShaderArguments.Capture(arguments)) : arguments);
 
-        public void SetPipeline(IMeshPipeline pipeline) => throw new NotSupportedException();
+        public void SetPipeline(IMeshPipeline pipeline)
+        {
+            if (pipeline is ProfilingDevice.MeshPipeline mesh)
+            {
+                ObjectDisposedException.ThrowIf(mesh.IsDisposed, mesh);
+                ObjectDisposedException.ThrowIf(((ProfilingDevice.Shader)mesh.Desc.MeshShader).IsDisposed, mesh.Desc.MeshShader);
+                ObjectDisposedException.ThrowIf(((ProfilingDevice.Shader)mesh.Desc.FragmentShader!).IsDisposed, mesh.Desc.FragmentShader!);
+            }
 
-        public void DrawMeshTasks(uint x, uint y = 1, uint z = 1) => throw new NotSupportedException();
+            owner.Events.Add(pipeline);
+        }
+
+        public void DrawMeshTasks(uint x, uint y = 1, uint z = 1) => owner.Events.Add(("mesh", x, y, z));
 
         public void SetPipeline(IGraphicsPipeline pipeline)
         {

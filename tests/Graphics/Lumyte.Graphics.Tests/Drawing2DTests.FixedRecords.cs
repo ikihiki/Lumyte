@@ -56,7 +56,7 @@ public sealed partial class Drawing2DTests
         }
     }
 
-    private static async Task CheckFixedRecordsAsync(IGraphicDevice device)
+    private static async Task CheckFixedRecordsAsync(IGraphicDevice device, bool meshCoverage = false)
     {
         using var reuse = new SerialDrawingResources(device);
         Action<RenderGraphCanvas2D> boundaryDraw = canvas =>
@@ -69,7 +69,7 @@ public sealed partial class Drawing2DTests
             canvas.FillCircle(new(4, 4), 100, new SRgba<float>(1, 0, 0, 0.5f));
             canvas.FillRect(new(0, 0, 8, 8), new SRgba<float>(0, 0, 1, 0.5f));
         };
-        Vector4[] boundary = await RenderAsync(device, 8, 8, boundaryDraw, useDefaultResources: true);
+        Vector4[] boundary = await RenderAsync(device, 8, 8, boundaryDraw, useDefaultResources: true, meshCoverage: meshCoverage);
         Assert.All(boundary, pixel => Assert.InRange(Vector4.Distance(new(0.25f, 0, 0.5f, 0.75f), pixel), 0, 0.002f));
 
         using IGraphicsTexture image = device.CreateTexture(new() { Width = 2, Height = 2, Format = TextureFormat.Rgba8Unorm, Usage = TextureUsage.Sampled | TextureUsage.CopyDestination });
@@ -84,7 +84,7 @@ public sealed partial class Drawing2DTests
             canvas.Scale(new Vector2(1e-10f));
             canvas.DrawPaintGraph(PaintGraph2D.ImagePattern(new() { View = imageView, Source = new(0, 0, 1, 1), PatternToLocal = Matrix3x2.CreateScale(1e-10f) }));
         };
-        Vector4[] transparent = await RenderAsync(device, 2, 1, invalidImageInverse, [image], useDefaultResources: true);
+        Vector4[] transparent = await RenderAsync(device, 2, 1, invalidImageInverse, [image], useDefaultResources: true, meshCoverage: meshCoverage);
         Assert.All(transparent, pixel => Assert.Equal(Vector4.Zero, pixel));
         Path2D triangle = RecordTriangle();
         var solid = PaintGraph2D.Solid(new(1, 0, 0, 0.5f));
@@ -129,7 +129,7 @@ public sealed partial class Drawing2DTests
                 canvas.DrawDistanceField(new(maskView, sampler, DistanceFieldEncoding2D.Sdf, 4), new(0, 0, 2, 2), new(1, 1, 0, 7), paint);
             };
             Vector4[] expected = await RenderAsync(device, 16, 12, draw, [image, mask]);
-            Vector4[] actual = await RenderAsync(device, 16, 12, draw, [image, mask], useDefaultResources: true);
+            Vector4[] actual = await RenderAsync(device, 16, 12, draw, [image, mask], useDefaultResources: true, meshCoverage: meshCoverage);
             for (int i = 0; i < expected.Length; i++)
             {
                 Assert.InRange(Vector4.Distance(expected[i], actual[i]), 0, 0.002f);

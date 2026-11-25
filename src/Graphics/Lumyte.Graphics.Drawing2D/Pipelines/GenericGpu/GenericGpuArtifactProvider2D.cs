@@ -2,6 +2,7 @@ using System.Security.Cryptography;
 using System.Text;
 using Lumyte.Graphics.Abstractions;
 using Lumyte.Graphics.Pipelines;
+using Lumyte.Graphics.Shared;
 
 namespace Lumyte.Graphics.Drawing2D.Pipelines;
 
@@ -41,9 +42,21 @@ public sealed class GenericGpuArtifactProvider2D : IStageArtifactProvider
     public StageArtifactDescription Describe(StageArtifactKey key, IGraphicDevice device)
     {
         ShaderArtifact[] modules = Modules(key);
-        if (key.ImplementationType == typeof(MeshEvaluateAndComposite2D) && device.Caps.MeshShaderLimits is null)
+        if (key.ImplementationType == typeof(MeshEvaluateAndComposite2D))
         {
-            throw new NotSupportedException("Mesh shaders are required before acquiring native resources.");
+            DeviceCaps caps = device.Caps;
+            if (!caps.Features.HasFlag(GraphicsFeatures.MeshShader) || caps.ShaderTarget == ShaderTarget.Wgsl || caps.MeshShaderLimits is not { } limits)
+            {
+                throw new NotSupportedException("Mesh shaders are required before acquiring native resources; Browser/Wgpu is unsupported.");
+            }
+
+            MeshShaderValidation.Validate(modules[0].GetTarget(caps.ShaderTarget), caps);
+            MeshShaderValidation.Program(modules[0].GetTarget(caps.ShaderTarget), null, modules[1].GetTarget(caps.ShaderTarget));
+            ShaderWorkgroupLimits workgroup = limits.Workgroup;
+            if (workgroup.MaxGroupCountX == 0 || workgroup.MaxGroupCountY == 0 || workgroup.MaxGroupCountZ == 0 || workgroup.MaxTotalGroupCount == 0)
+            {
+                throw new NotSupportedException("The native mesh endpoint requires one dispatch group.");
+            }
         }
 
         using var programs = new MemoryStream();

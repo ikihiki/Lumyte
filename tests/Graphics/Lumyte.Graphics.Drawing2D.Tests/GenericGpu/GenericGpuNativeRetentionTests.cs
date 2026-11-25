@@ -24,6 +24,18 @@ public sealed partial class GenericGpuNativeTests
     [InlineData(true, true)]
     [Trait("Execution", "Gpu")]
     public void GenericRetainedUploadsPublishOnlyAfterCompletionAndPreserveThreeVersions(bool viaGraph, bool paged)
+        => RetainedUploadsPublishOnlyAfterCompletionAndPreserveThreeVersions(viaGraph, false, paged);
+
+    /// <summary>Preserves immutable input identities and source leases on the concrete native mesh endpoint.</summary>
+    [GenericGpuNativeMeshFact]
+    [Trait("Execution", "Gpu")]
+    public void MeshRetainedUploadsPreserveThreeVersionsDirectAndGraph()
+    {
+        RetainedUploadsPublishOnlyAfterCompletionAndPreserveThreeVersions(false, true, false);
+        RetainedUploadsPublishOnlyAfterCompletionAndPreserveThreeVersions(true, true, false);
+    }
+
+    private static void RetainedUploadsPublishOnlyAfterCompletionAndPreserveThreeVersions(bool viaGraph, bool mesh, bool paged)
     {
         IGraphicDevice device = CreateDevice();
         using var deviceOwner = (IDisposable)device;
@@ -52,7 +64,9 @@ public sealed partial class GenericGpuNativeTests
             }
             else
             {
-                definition = graph.Complete(graph.Stage(RasterStages2D.EvaluateAndComposite(new(16, 1)), scenePort, views, framePort, target));
+                definition = graph.Complete(mesh
+                    ? graph.Stage(MeshStages2D.EvaluateAndComposite(new(16, 1)), scenePort, views, framePort, target)
+                    : graph.Stage(RasterStages2D.EvaluateAndComposite(new(16, 1)), scenePort, views, framePort, target));
             }
 
             var policy = new GraphicsPipelinePolicy((paged ? 512L : 64L) * 1024 * 1024, 16 * 1024 * 1024, 16 * 1024 * 1024, 3)
