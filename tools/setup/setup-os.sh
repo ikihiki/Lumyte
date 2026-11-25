@@ -111,8 +111,15 @@ Dir::Cache::srcpkgcache "";
 Debug::NoLocking "true";
 APT::Sandbox::User "$(id -un)";
 EOF
-    APT_CONFIG="$apt_root/apt.conf" /usr/bin/apt-get "${lumyte_apt_options[@]}" update -o APT::Update::Error-Mode=any
-    APT_CONFIG="$apt_root/apt.conf" /usr/bin/apt-get "${lumyte_apt_options[@]}" install -y --download-only --no-install-recommends "${packages[@]}"
+    # Rootless extraction owns this private archive directory. Apply its override
+    # after CI routing options so downloads and extraction cannot diverge; keep
+    # all forwarded source, trust, proxy and downloaded-package cache settings.
+    rootless_apt_options=("${lumyte_apt_options[@]}")
+    if (( ${#lumyte_apt_options[@]} )); then
+        rootless_apt_options+=(-o "Dir::Cache::archives=$apt_root/archives")
+    fi
+    APT_CONFIG="$apt_root/apt.conf" /usr/bin/apt-get "${rootless_apt_options[@]}" update -o APT::Update::Error-Mode=any
+    APT_CONFIG="$apt_root/apt.conf" /usr/bin/apt-get "${rootless_apt_options[@]}" install -y --download-only --no-install-recommends "${packages[@]}"
     shopt -s nullglob
     for package in "$apt_root/archives/"*.deb; do
         dpkg-deb --extract "$package" "$LUMYTE_ENV_ROOT/sysroot"

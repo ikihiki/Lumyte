@@ -87,7 +87,7 @@ class SourceTests(unittest.TestCase):
             with self.assertRaises(FileNotFoundError):
                 APT.prepare(main, parts, target)
 
-    def run_setup(self, github='true', distro='ubuntu', arch='x86_64', legacy=True, rootless=False, root_mode=False, runner='github-hosted', missing_python=False, privileged_missing=False, old_python=False, fail_update=False, trace=False, no_rewrite=False, secret_path=False, baseline=False, audit=False, diagnostic_io_failure=False, ci_apt=False):
+    def run_setup(self, github='true', distro='ubuntu', arch='x86_64', legacy=True, rootless=False, root_mode=False, runner='github-hosted', missing_python=False, privileged_missing=False, old_python=False, fail_update=False, trace=False, no_rewrite=False, secret_path=False, baseline=False, audit=False, diagnostic_io_failure=False, ci_apt=False, spaced_root=False):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             tools = root / 'tools'
@@ -110,7 +110,9 @@ class SourceTests(unittest.TestCase):
             source = source.replace('/usr/share/keyrings/debian-archive-keyring.gpg', str(keyring))
             source = source.replace('"$EUID" == 0', '"$FIXTURE_EUID" == 0')
             (tools / 'setup-os.sh').write_text(source)
-            (tools / 'environment.sh').write_text('export LUMYTE_ENV_ROOT="$FIXTURE_ROOT/env"\n')
+            env_name = 'env with spaces' if spaced_root else 'env'
+            env_root = root / env_name
+            (tools / 'environment.sh').write_text('export LUMYTE_ENV_ROOT=' + shlex.quote(str(env_root)) + '\n')
             (tools / 'ci-apt.sh').write_text((HERE / 'ci-apt.sh').read_text())
             (tools / 'ci-apt-sources.py').write_text((HERE / 'ci-apt-sources.py').read_text())
             main = root / 'sources.list'
@@ -131,18 +133,31 @@ class SourceTests(unittest.TestCase):
                 'apt-get': '''#!/usr/bin/env python3
 import os,sys,json
 from pathlib import Path
+archives=None
 args=sys.argv[1:];main=Path(os.environ['FIXTURE_MAIN']);parts=Path(os.environ['FIXTURE_PARTS'])
 if os.environ.get('APT_CONFIG'):
  import re
  config=Path(os.environ['APT_CONFIG']).read_text()
+ archives=Path(re.search(r'Dir::Cache::archives "([^"]+)"',config)[1])
  main=Path(re.search(r'Dir::Etc::sourcelist "([^"]+)"',config)[1])
  parts=Path(re.search(r'Dir::Etc::sourceparts "([^"]+)"',config)[1])
 for value in args:
+ if value.startswith('Dir::Cache::archives='):archives=Path(value.split('=',1)[1])
  if value.startswith('Dir::Etc::sourcelist='):main=Path(value.split('=',1)[1])
  if value.startswith('Dir::Etc::sourceparts='):parts=Path(value.split('=',1)[1])
 sources=([main.read_text()] if main.exists() else [])+([p.read_text() for p in sorted(parts.iterdir())] if parts != Path('-') else [])
 with open(os.environ['FIXTURE_LOG'],'a') as f:f.write(json.dumps({'args':args,'sources':sources,'proxy':os.environ.get('HTTPS_PROXY'),'frontend':os.environ.get('DEBIAN_FRONTEND'),'main':str(main),'parts':str(parts)})+'\\n')
-if os.environ.get('FIXTURE_FAIL_UPDATE')=='1' and args[0]=='update':sys.exit(100)
+if os.environ.get('FIXTURE_FAIL_UPDATE')=='1' and 'update' in args:sys.exit(100)
+if '--download-only' in args:
+ archives.mkdir(parents=True,exist_ok=True)
+ (archives/'sentinel package.deb').write_text('downloaded archive sentinel')
+''',
+                'dpkg-deb': '''#!/usr/bin/env python3
+import sys
+from pathlib import Path
+assert sys.argv[1]=='--extract'
+assert Path(sys.argv[2]).read_text()=='downloaded archive sentinel'
+(Path(sys.argv[3])/'extracted-sentinel').write_text(sys.argv[2])
 '''}
             for name, script in scripts.items():
                 path = binaries / name
@@ -150,7 +165,7 @@ if os.environ.get('FIXTURE_FAIL_UPDATE')=='1' and args[0]=='update':sys.exit(100
                 path.chmod(0o755)
             # Fake apt/config use an absolute interpreter solely to stay runnable
             # while the target bootstrap PATH genuinely has no named python3.
-            for name in ['apt-get', 'apt-config']:
+            for name in ['apt-get', 'apt-config', 'dpkg-deb']:
                 path = binaries / name
                 path.write_text(path.read_text().replace('#!/usr/bin/env python3', '#!' + sys.executable, 1))
             for name in ['bash', 'dirname', 'mkdir', 'cat', 'env', 'true']:
@@ -196,6 +211,12 @@ if os.environ.get('FIXTURE_FAIL_UPDATE')=='1' and args[0]=='update':sys.exit(100
             if not rootless and not ci_apt:
                 for call in calls:
                     self.assertIn('https://user:password@private.example/pkg', ''.join(call['sources']))
+            if rootless:
+                extracted = env_root / 'sysroot/extracted-sentinel'
+                self.assertTrue(extracted.is_file(), 'downloaded .deb was not extracted into sysroot')
+                archive_args = [arg.split('=', 1)[1] for arg in calls[1]['args'] if arg.startswith('Dir::Cache::archives=')]
+                archives = Path(archive_args[-1]) if archive_args else env_root / 'apt/archives'
+                self.assertEqual(str(archives / 'sentinel package.deb'), extracted.read_text())
             if audit:
                 def normalize(call):
                     copied = json.loads(json.dumps(call))
@@ -278,6 +299,24 @@ if os.environ.get('FIXTURE_FAIL_UPDATE')=='1' and args[0]=='update':sys.exit(100
         self.assertIn('https://archive.ubuntu.com/ubuntu', ''.join(calls[0]['sources']))
         self.assertIn('https://security.ubuntu.com/ubuntu', ''.join(calls[0]['sources']))
         self.assertFalse(any(value.startswith('Dir::Etc::') for value in calls[0]['args']))
+
+    def test_rootless_ci_downloaded_archive_is_actually_extracted(self):
+        for arch in ['x86_64', 'aarch64']:
+            for ci_apt in [False, True]:
+                with self.subTest(arch=arch, ci_apt=ci_apt):
+                    calls, _ = self.run_setup(rootless=True, ci_apt=ci_apt, arch=arch, spaced_root=True)
+                    self.assertIn('--download-only', calls[1]['args'])
+                    if ci_apt:
+                        for call in calls:
+                            self.assertEqual('-', call['parts'])
+                            self.assertTrue(call['main'].endswith('/env with spaces/ci-apt/sources.list'))
+                            self.assertIn('Binary::apt-get::APT::Keep-Downloaded-Packages=true', call['args'])
+                            archive_args = [arg for arg in call['args'] if arg.startswith('Dir::Cache::archives=')]
+                            self.assertEqual(2, len(archive_args))
+                            self.assertTrue(archive_args[0].endswith('/ci-apt/archives'))
+                            self.assertTrue(archive_args[-1].endswith('/apt/archives'))
+                    self.assertTrue(all('signed-by=' in text for text in calls[1]['sources']))
+                    self.assertFalse(any('trusted=yes' in text for text in calls[1]['sources']))
 
     def test_root_normal_ci_uses_same_private_selection_without_sudo(self):
         calls, main = self.run_setup(root_mode=True)
@@ -469,7 +508,14 @@ if os.environ.get('FIXTURE_FAIL_UPDATE')=='1' and args[0]=='update':sys.exit(100
     def test_rootless_tail_and_packages_workflow_remain_unchanged(self):
         base = subprocess.check_output(['git', 'show', '14b0c33d:tools/setup/setup-os.sh'], cwd=HERE, text=True).replace('    report_acquisition_route rootless rootless rootless not-run\n', '')
         current = (HERE / 'setup-os.sh').read_text().replace('    report_acquisition_route rootless rootless rootless not-run\n', '')
-        self.assertEqual(base[base.index('else\n    # Bootstrap requirements'):], current[current.index('else\n    # Bootstrap requirements'):])
+        # Only the acquisition option block may differ: bootstrap, private signed
+        # configuration, extraction, fonts and the package inventory stay exact.
+        start = 'else\n    # Bootstrap requirements'
+        old_options = base.index('    APT_CONFIG="$apt_root/apt.conf"')
+        new_options = current.index('    # Rootless extraction owns')
+        self.assertEqual(base[base.index(start):old_options], current[current.index(start):new_options])
+        tail = '    shopt -s nullglob'
+        self.assertEqual(base[base.index(tail):], current[current.index(tail):])
         self.assertIn('LUMYTE_SETUP_ROOTLESS:-0', current)
         self.assertEqual(base[base.index('packages=('):base.index('\n\n', base.index('packages=('))], current[current.index('packages=('):current.index('\n\n', current.index('packages=('))])
 
