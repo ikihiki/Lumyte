@@ -113,6 +113,34 @@ public sealed class CpuSparseCoverageTests
         Assert.Equal(386, requirement.MaxHostBytes);
     }
 
+    /// <summary>Every sample of every command survives the exact large two-page paging fixture.</summary>
+    [Fact]
+    public void TwoPageScenePreservesAllCommandMasks()
+    {
+        DrawingCommand2D[] commands = Enumerable.Range(0, 256).Select(i => (DrawingCommand2D)new FillRectCommand2D(new(.25f, .25f, 256.5f, .5f), _paint, _state)).ToArray();
+        var target = new DrawingTargetInfo2D { Description = new TextureDesc { Width = 257, Height = 1, Format = TextureFormat.Rgba16Float, Usage = TextureUsage.RenderAttachment } };
+        var request = new RenderRequest2D(target, commands, Guid.NewGuid());
+        Vector4[] cells = CpuNormalize2D.Normalize(request, new(2048, 65536, 262144, 1048576), default);
+        Vector4[] original = cells.ToArray();
+        Assert.InRange(cells.Length * 16, 65537, 131072);
+        float[] values = CpuSparseCoverage2D.Evaluate(cells, request.FrameCells(), new(cells.Length, request.Metadata()), 256L * 1024 * 1024, default);
+        Assert.Equal(257 * 256 * 16, values.Length);
+        for (int command = 0; command < 256; command++)
+        {
+            for (int x = 0; x < 257; x++)
+            {
+                for (int sample = 0; sample < 16; sample++)
+                {
+                    float px = x + (((sample % 4) + .5f) / 4), py = ((sample / 4) + .5f) / 4;
+                    float expected = px >= .25f && px < 256.75f && py >= .25f && py < .75f ? 1 : 0;
+                    Assert.Equal(expected, values[(((command * 257) + x) * 16) + sample]);
+                }
+            }
+        }
+
+        Assert.Equal(original, cells);
+    }
+
     private static void Pump(ExecutionRuntime runtime, Task task)
     {
         var timeout = System.Diagnostics.Stopwatch.StartNew();

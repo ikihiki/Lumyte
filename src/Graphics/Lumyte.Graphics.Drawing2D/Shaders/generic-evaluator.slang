@@ -1,16 +1,21 @@
+#ifdef GENERIC_PAGED_SCENE
+float4 loadScene(uint index) { index=min(index,arguments.SceneCells-1); return arguments.Scene.Load(index/arguments.PageCells).Page.Load(index%arguments.PageCells); }
+#else
+float4 loadScene(uint index) { return arguments.Scene.Load(index); }
+#endif
 struct DrawingInstruction {
  float4 T0; float4 T1; float4 A; float4 B; float4 C; float4 D;
  uint Kind; uint First; uint Count; uint Mode;
  GpuTextureRef Texture; GpuSamplerRef Sampler;
 };
-uint dataCount(uint h) { return asuint(arguments.Scene.Load(h+1)).w; }
-float4 loadData(uint h,uint i) { return arguments.Scene.Load(asuint(arguments.Scene.Load(h+1)).z+min(i,dataCount(h)-1)); }
+uint dataCount(uint h) { return asuint(loadScene(h+1)).w; }
+float4 loadData(uint h,uint i) { return loadScene(asuint(loadScene(h+1)).z+min(i,dataCount(h)-1)); }
 DrawingInstruction instruction(uint h,uint i) {
- uint at=asuint(arguments.Scene.Load(h+1)).x+8*i;
+ uint at=asuint(loadScene(h+1)).x+8*i;
  DrawingInstruction n;
- n.T0=arguments.Scene.Load(at); n.T1=arguments.Scene.Load(at+1);
- n.A=arguments.Scene.Load(at+2); n.B=arguments.Scene.Load(at+3); n.C=arguments.Scene.Load(at+4); n.D=arguments.Scene.Load(at+5);
- uint4 k=asuint(arguments.Scene.Load(at+6)),r=asuint(arguments.Scene.Load(at+7));
+ n.T0=loadScene(at); n.T1=loadScene(at+1);
+ n.A=loadScene(at+2); n.B=loadScene(at+3); n.C=loadScene(at+4); n.D=loadScene(at+5);
+ uint4 k=asuint(loadScene(at+6)),r=asuint(loadScene(at+7));
  n.Kind=k.x; n.First=k.y; n.Count=k.z; n.Mode=k.w;
 #if GENERIC_RESOURCES
  n.Texture=arguments.Resources.Load(r.x==0xffffffffu ? 0 : r.x+1).Texture;
@@ -18,16 +23,16 @@ DrawingInstruction instruction(uint h,uint i) {
 #endif
  return n;
 }
-uint commandHeader(uint ordinal) { uint h=1; for(uint i=0;i<ordinal;i++) h=asuint(arguments.Scene.Load(h)).z; return h; }
+uint commandHeader(uint ordinal) { uint h=1; for(uint i=0;i<ordinal;i++) h=asuint(loadScene(h)).z; return h; }
 float outerClip(uint h,float2 p) {
- uint4 c=asuint(arguments.Scene.Load(h+2));
+ uint4 c=asuint(loadScene(h+2));
  if(c.x==0) return 1; if(c.x==1) return 0;
- float4 b=arguments.Scene.Load(h+3);
+ float4 b=loadScene(h+3);
  if(any(p<b.xy)||any(p>=b.xy+b.zw)) return 0;
  if(c.x==2) return 1;
- if(c.x==3) { float4 a=arguments.Scene.Load(h+4); float2 s=floor(p*4); return all(s>=a.xy)&&all(s<a.zw)?1:0; }
+ if(c.x==3) { float4 a=loadScene(h+4); float2 s=floor(p*4); return all(s>=a.xy)&&all(s<a.zw)?1:0; }
  uint2 q=uint2(floor(p)-b.xy); uint index=q.y*uint(b.z)+q.x;
- float4 packed=arguments.Scene.Load(c.y+index/4); uint bits=uint(packed[index%4]);
+ float4 packed=loadScene(c.y+index/4); uint bits=uint(packed[index%4]);
  uint2 sub=uint2(floor(frac(p)*4)); return float((bits>>(sub.y*4+sub.x))&1);
 }
 float cross2(float2 a, float2 b) { return a.x * b.y - a.y * b.x; }
@@ -197,7 +202,7 @@ float4 evaluate<let capacity : int>(uint h,uint root,float2 pixel,bool coverageO
 {
     float4 values[capacity];
     for(uint clearIndex=0;clearIndex<capacity;clearIndex++) values[clearIndex]=0;
-    for(uint i=0;i<min(root+1,asuint(arguments.Scene.Load(h+1)).y);i++)
+    for(uint i=0;i<min(root+1,asuint(loadScene(h+1)).y);i++)
     {
         // Physical-pointer loads may be scalarized for an inactive SIMD loop-exit lane.
         // Bound the fetch by the independently supplied buffer range, not the loop bound.

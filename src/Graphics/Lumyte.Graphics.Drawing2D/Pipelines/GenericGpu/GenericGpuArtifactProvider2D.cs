@@ -33,7 +33,7 @@ public sealed class GenericGpuArtifactProvider2D : IStageArtifactProvider
     /// <returns>The completed embedded module provider.</returns>
     public static GenericGpuArtifactProvider2D CreateEmbedded()
     {
-        string[] names = ["generic-coverage-compute", "generic-paint-compute", "generic-clip-compute", "generic-vertex", "generic-compose-fragment", "generic-fused-fragment", "generic-mesh"];
+        string[] names = ["generic-coverage-compute", "generic-paint-compute", "generic-clip-compute", "generic-vertex", "generic-compose-fragment", "generic-fused-fragment", "generic-mesh", "generic-paged-coverage-compute", "generic-paged-paint-compute", "generic-paged-clip-compute", "generic-paged-compose-fragment"];
         return new(names.ToDictionary(n => n, n => ShaderArtifact.LoadEmbedded(typeof(GenericGpuArtifactProvider2D).Assembly, $"Lumyte.Drawing2D.{n}.lshader")));
     }
 
@@ -112,7 +112,7 @@ public sealed class GenericGpuArtifactProvider2D : IStageArtifactProvider
         }
 
         Type t = key.ImplementationType;
-        string[] names = t == typeof(ComputeCoverage2D) ? ["generic-coverage-compute"] : t == typeof(ComputePaint2D) ? ["generic-paint-compute"] : t == typeof(ComputeClip2D) ? ["generic-clip-compute"] : t == typeof(RasterCompose2D) ? ["generic-vertex", "generic-compose-fragment"] : t == typeof(RasterEvaluateAndComposite2D) ? ["generic-vertex", "generic-fused-fragment"] : t == typeof(MeshEvaluateAndComposite2D) ? ["generic-mesh", "generic-fused-fragment"] : throw new NotSupportedException("Unknown generic stage implementation.");
+        string[] names = t == typeof(PagedComputeCoverage2D) ? ["generic-paged-coverage-compute"] : t == typeof(PagedComputePaint2D) ? ["generic-paged-paint-compute"] : t == typeof(PagedComputeClip2D) ? ["generic-paged-clip-compute"] : t == typeof(PagedRasterCompose2D) ? ["generic-vertex", "generic-paged-compose-fragment"] : t == typeof(ComputeCoverage2D) ? ["generic-coverage-compute"] : t == typeof(ComputePaint2D) ? ["generic-paint-compute"] : t == typeof(ComputeClip2D) ? ["generic-clip-compute"] : t == typeof(RasterCompose2D) ? ["generic-vertex", "generic-compose-fragment"] : t == typeof(RasterEvaluateAndComposite2D) ? ["generic-vertex", "generic-fused-fragment"] : t == typeof(MeshEvaluateAndComposite2D) ? ["generic-mesh", "generic-fused-fragment"] : throw new NotSupportedException("Unknown generic stage implementation.");
         return names.Select(n => _artifacts.TryGetValue(n, out ShaderArtifact? a) ? a : throw new NotSupportedException($"Missing completed artifact: {n}.")).ToArray();
     }
 

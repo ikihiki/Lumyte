@@ -183,10 +183,10 @@ public sealed partial class GenericGpuNativeTests
             {
                 Port<Device<Coverage16V1>> coverage = cpuSparse
                     ? graph.Stage(new CpuSparseCoverage2D(samples, 256L * 1024 * 1024), hostScene, hostFrame).Then(Transfers.Upload<Coverage16V1>())
-                    : graph.Stage(ComputeStages2D.Coverage(samples), scene, frame);
-                Port<Device<Paint16V1>> paint = graph.Stage(ComputeStages2D.Paint(samples), scene, views, frame);
-                Port<Device<Clip16V1>> clip = graph.Stage(ComputeStages2D.Clip(samples), scene, frame);
-                output = graph.Stage(RasterStages2D.Compose(samples), scene, coverage, paint, clip, target);
+                    : graph.Stage(ComputeStages2D.PagedCoverage(samples, new GenericPagingLimits2D()), scene, frame);
+                Port<Device<Paint16V1>> paint = graph.Stage(ComputeStages2D.PagedPaint(samples, new GenericPagingLimits2D()), scene, views, frame);
+                Port<Device<Clip16V1>> clip = graph.Stage(ComputeStages2D.PagedClip(samples, new GenericPagingLimits2D()), scene, frame);
+                output = graph.Stage(RasterStages2D.PagedCompose(samples, new GenericPagingLimits2D()), scene, coverage, paint, clip, target);
             }
 
             var policy = new GraphicsPipelinePolicy(512L * 1024 * 1024, 64L * 1024 * 1024, 128L * 1024 * 1024, 3);

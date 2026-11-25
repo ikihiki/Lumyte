@@ -58,9 +58,9 @@ public sealed class GenericGraphNativeTests
             {
                 var samples = new SamplePolicy2D(16, 1);
                 Port<Device<Coverage16V1>> coverage = pipelineGraph.Stage(new CpuSparseCoverage2D(samples, 256L * 1024 * 1024), hostScene, hostFrame).Then(Transfers.Upload<Coverage16V1>());
-                Port<Device<Paint16V1>> paint = pipelineGraph.Stage(ComputeStages2D.Paint(samples), scene, views, frame);
-                Port<Device<Clip16V1>> clip = pipelineGraph.Stage(ComputeStages2D.Clip(samples), scene, frame);
-                output = pipelineGraph.Stage(RasterStages2D.Compose(samples), scene, coverage, paint, clip, target);
+                Port<Device<Paint16V1>> paint = pipelineGraph.Stage(ComputeStages2D.PagedPaint(samples, new GenericPagingLimits2D()), scene, views, frame);
+                Port<Device<Clip16V1>> clip = pipelineGraph.Stage(ComputeStages2D.PagedClip(samples, new GenericPagingLimits2D()), scene, frame);
+                output = pipelineGraph.Stage(RasterStages2D.PagedCompose(samples, new GenericPagingLimits2D()), scene, coverage, paint, clip, target);
             }
             else
             {
