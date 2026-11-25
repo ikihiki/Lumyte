@@ -65,5 +65,11 @@
     <SlangShader Include="Shaders/generic-fused-fragment.slang" ResourceName="Lumyte.Drawing2D.generic-fused-fragment" Stage="fragment" AdditionalInputs="$(MSBuildProjectDirectory)/Shaders/generic-evaluator.slang" />
     <SlangShader Include="Shaders/generic-mesh.slang" ResourceName="Lumyte.Drawing2D.generic-mesh" Stage="mesh" AdditionalInputs="$(MSBuildProjectDirectory)/Shaders/generic-evaluator.slang" />
   </ItemGroup>
+  <ItemGroup>
+    <SlangShader Include="Shaders/generic-paged-coverage-compute.slang" ResourceName="Lumyte.Drawing2D.generic-paged-coverage-compute" Stage="compute" AdditionalInputs="$(MSBuildProjectDirectory)/Shaders/generic-evaluator.slang" />
+    <SlangShader Include="Shaders/generic-paged-paint-compute.slang" ResourceName="Lumyte.Drawing2D.generic-paged-paint-compute" Stage="compute" AdditionalInputs="$(MSBuildProjectDirectory)/Shaders/generic-evaluator.slang" />
+    <SlangShader Include="Shaders/generic-paged-clip-compute.slang" ResourceName="Lumyte.Drawing2D.generic-paged-clip-compute" Stage="compute" AdditionalInputs="$(MSBuildProjectDirectory)/Shaders/generic-evaluator.slang" />
+    <SlangShader Include="Shaders/generic-paged-compose-fragment.slang" ResourceName="Lumyte.Drawing2D.generic-paged-compose-fragment" Stage="fragment" AdditionalInputs="$(MSBuildProjectDirectory)/Shaders/generic-evaluator.slang" />
+  </ItemGroup>
   <Import Project="../../../tools/shaders/Slang.targets" />
 </Project>

@@ -25,5 +25,15 @@ internal record struct GenericArguments2D
 
     public float TranslationY { get; set; }
 
+    public IGpuRef<GenericScenePage2D> ScenePages { get; set; }
+
+    public uint SceneCells { get; set; }
+
+    public uint PageCells { get; set; }
+
+    public uint SampleOffset { get; set; }
+
+    public uint SampleCount { get; set; }
+
     public uint CommandIndex { get; set; }
 }
