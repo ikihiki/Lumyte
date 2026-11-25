@@ -28,6 +28,23 @@ without referencing this assembly.
   The separate `Lumyte.Graphics.Pipelines.RenderGraph` adapter imports dependencies
   transactionally; it is not a scheduling or completion shortcut.
 
+## Explicit source versus derived uploads
+
+The existing `new Upload<S>()` and `Transfers.Upload<S>()` declarations retain
+source eligibility for compatibility. `UploadRetention.Source` explicitly selects
+the same contract: only an enabled compiled `ImmutableUploads` policy may retain
+exact completed source chunks. The transfer edge, not the schema type, declares
+this provenance; the same schema may also contain invocation-derived data.
+
+Declare derived CPU output uploads as `Transfers.Upload<S>(UploadRetention.Fresh)`
+(or `new Upload<S>(UploadRetention.Fresh)`). Fresh bypasses immutable lookup,
+admission, chunk ceilings and publication entirely, even with a zero-capacity
+source cache. It still pays the ordinary per-run scratch/transfer budget and owns
+new staging/destination allocations through the unchanged cancellation, recording,
+completion and cleanup path. Writable-consumer preflight uses this same captured
+edge declaration; Source remains read-only when retention is enabled, including
+through passthrough. No schema-name inference or runtime backend selection occurs.
+
 ## Trust and ownership
 
 Graphics.Abstractions issues local generation identities through restricted friend

@@ -168,6 +168,29 @@ plan.Record、Finish、Submit、AttachSubmission、実完了確認、command と
 
 方式の追加、mesh shader、GPU scene の編集、damage redraw は対象外である。
 
+### Transfer-edge source eligibility
+
+Immutable retention applies to declared source uploads, not every CPU-produced
+value of a given schema. The backwards-compatible `Upload<S>()` constructor and
+`Transfers.Upload<S>()` helper declare `UploadRetention.Source`. Their new
+`UploadRetention` overloads capture either Source or Fresh in the immutable
+factory. Source preserves the existing exact node/schema/layout/metadata/bytes,
+device/generation, finite admission, pending-copy isolation and completion-only
+publication contract. It is eligibility, not a request to enable retention when
+the compiled policy is null.
+
+Invocation-derived CPU outputs use `Transfers.Upload<S>(UploadRetention.Fresh)`.
+For example, CPU coverage uses Fresh for both ordinary and paged GPU consumers;
+Scene, Frame and resource source inputs retain their existing source declaration.
+Fresh allocates run-owned staging and destination buffers without touching source
+cache lookup, admission, eviction, publication or its chunk limit. Ordinary run
+transfer/scratch ceilings and cancellation/cleanup/retirement remain mandatory.
+The same factory eligibility controls writable-input preflight and actual upload
+routing. No Core schema property or Drawing2D name dependency is introduced:
+Coverage (or Scene) supplied as an external immutable source can independently be
+explicitly Source on another edge. A caller must declare provenance; no ambient
+registry or automatic backend optimizer infers it.
+
 ### Explicit generic paging does not extend the immutable cache
 
 The opt-in PagedCoverage/PagedPaint/PagedClip/PagedCompose factories use the unchanged version-one canonical ports and immutable source allocation. Their private scene-page directory resolves existing absolute cell addresses; it is not retained canonical content or a new cache entry. Every output window owns a fresh table generation, RO source-page registrations, and fresh upload/device directory storage. Compute outputs remain fresh RW allocations; Compose registers their exact windows RO in different owned tables. These objects retire with the preparation/submission, never with a reused plan or global registry. Source leases, source identity, device generation, translationX/Y and source/grid matching continue to use the existing Graphics ownership path.

@@ -84,7 +84,7 @@ public sealed partial class GenericGpuNativeTests
             Port<Device<TargetV1>> targetPort = g.Stage(RenderFields2D.Target(), g.Input);
             var samples = new SamplePolicy2D(16, 1);
             var limits = new GenericPagingLimits2D();
-            Port<Device<Coverage16V1>> coverage = cpuCoverage ? g.Stage(new PagingCpuCoverage(), g.Input).Then(Transfers.Upload<Coverage16V1>()) : paged ? g.Stage(ComputeStages2D.PagedCoverage(samples, limits), scene, frame) : g.Stage(ComputeStages2D.Coverage(samples), scene, frame);
+            Port<Device<Coverage16V1>> coverage = cpuCoverage ? g.Stage(new PagingCpuCoverage(), g.Input).Then(Transfers.Upload<Coverage16V1>(UploadRetention.Fresh)) : paged ? g.Stage(ComputeStages2D.PagedCoverage(samples, limits), scene, frame) : g.Stage(ComputeStages2D.Coverage(samples), scene, frame);
             Port<Device<Paint16V1>> paint = paged ? g.Stage(ComputeStages2D.PagedPaint(samples, limits), scene, views, frame) : g.Stage(ComputeStages2D.Paint(samples), scene, views, frame);
             Port<Device<Clip16V1>> clip = paged ? g.Stage(ComputeStages2D.PagedClip(samples, limits), scene, frame) : g.Stage(ComputeStages2D.Clip(samples), scene, frame);
             Port<Device<TargetWritesV1>> output = paged ? g.Stage(RasterStages2D.PagedCompose(samples, limits), scene, coverage, paint, clip, targetPort) : g.Stage(RasterStages2D.Compose(samples), scene, coverage, paint, clip, targetPort);
