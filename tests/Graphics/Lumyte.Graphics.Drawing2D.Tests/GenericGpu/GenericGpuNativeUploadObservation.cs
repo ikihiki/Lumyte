@@ -5,7 +5,7 @@ namespace Lumyte.Graphics.Drawing2D.Tests;
 /// <summary>Observes actual native recording without replacing transfers or encoders.</summary>
 public sealed partial class GenericGpuNativeTests
 {
-    private sealed class UploadObservationCommands(IGraphicsCommandBuffer native, List<(object Destination, ulong Bytes)> copies) : IGraphicsCommandBuffer, IGraphicsNativeOrigin
+    private sealed class UploadObservationCommands(IGraphicsCommandBuffer native, List<(object Destination, ulong Bytes)> copies, List<RetentionNativeCopy>? captures = null) : IGraphicsCommandBuffer, IGraphicsNativeOrigin
     {
         public CommandBufferState State => native.State;
 
@@ -20,6 +20,11 @@ public sealed partial class GenericGpuNativeTests
             where TDestination : unmanaged
         {
             copies.Add((destination.Buffer, source.SizeInBytes));
+            if (captures is not null)
+            {
+                captures.Add(RetentionNativeCopy.Capture(native, source, destination.Buffer));
+            }
+
             native.CopyBuffer(source, destination);
         }
 
