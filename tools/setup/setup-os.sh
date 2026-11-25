@@ -42,7 +42,7 @@ install_system_packages() {
     if [[ "${GITHUB_ACTIONS:-}" == true && "${RUNNER_ENVIRONMENT:-}" == github-hosted && "$ID" == ubuntu && "$dotnet_arch" == x64 ]] \
         && "$@" /bin/sh -c 'command -v python3 >/dev/null 2>&1 && python3 -c "import sys; sys.exit(sys.version_info < (3, 8))"'; then
         report_acquisition_route helper_selected eligible "$privilege" compatible
-        "$@" python3 "$script_dir/ci-apt-sources.py" "${packages[@]}"
+        "$@" python3 "$script_dir/ci-apt-sources.py" "${lumyte_apt_options[@]}" -- "${packages[@]}"
     else
         py_probe=not-run
         if [[ "${GITHUB_ACTIONS:-}" != true ]]; then reason=not_github_actions

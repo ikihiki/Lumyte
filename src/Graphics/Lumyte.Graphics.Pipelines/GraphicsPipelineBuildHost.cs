@@ -149,7 +149,7 @@ public sealed class GraphicsPipelineBuildHost : IDisposable
             int index = producer - 1;
             if (graphics[index]?.Domain == GraphicsExecutionDomain.Upload)
             {
-                return true;
+                return definition.Nodes[index].Factory is ITransferFactory { RetainsImmutableSource: true };
             }
 
             return graphics[index] is null && definition.Nodes[index].Factory is IDeviceProjectionFactory && definition.Nodes[index].Inputs.Any(IsImmutableUpload);

@@ -87,7 +87,7 @@ class SourceTests(unittest.TestCase):
             with self.assertRaises(FileNotFoundError):
                 APT.prepare(main, parts, target)
 
-    def run_setup(self, github='true', distro='ubuntu', arch='x86_64', legacy=True, rootless=False, root_mode=False, runner='github-hosted', missing_python=False, privileged_missing=False, old_python=False, fail_update=False, trace=False, no_rewrite=False, secret_path=False, baseline=False, audit=False, diagnostic_io_failure=False):
+    def run_setup(self, github='true', distro='ubuntu', arch='x86_64', legacy=True, rootless=False, root_mode=False, runner='github-hosted', missing_python=False, privileged_missing=False, old_python=False, fail_update=False, trace=False, no_rewrite=False, secret_path=False, baseline=False, audit=False, diagnostic_io_failure=False, ci_apt=False):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             tools = root / 'tools'
@@ -111,6 +111,7 @@ class SourceTests(unittest.TestCase):
             source = source.replace('"$EUID" == 0', '"$FIXTURE_EUID" == 0')
             (tools / 'setup-os.sh').write_text(source)
             (tools / 'environment.sh').write_text('export LUMYTE_ENV_ROOT="$FIXTURE_ROOT/env"\n')
+            (tools / 'ci-apt.sh').write_text((HERE / 'ci-apt.sh').read_text())
             (tools / 'ci-apt-sources.py').write_text((HERE / 'ci-apt-sources.py').read_text())
             main = root / 'sources.list'
             parts = root / 'parts'
@@ -126,7 +127,7 @@ class SourceTests(unittest.TestCase):
             scripts = {
                 'uname': '#!/bin/sh\nif [ "$1" = -s ]; then echo Linux; else echo "$FIXTURE_ARCH"; fi\n',
                 'sudo': '#!/bin/sh\nif [ -n "$FIXTURE_PRIV_PATH" ]; then PATH="$FIXTURE_PRIV_PATH"; export PATH; fi\nwhile [ "$1" = -n ] || [ "' + chr(36) + '{1#--preserve-env=}" != "$1" ]; do shift; done\nexec "$@"\n',
-                'apt-config': '#!/usr/bin/env python3\nimport os,shlex\nprint("SourceList="+shlex.quote(os.environ["FIXTURE_MAIN"]))\nprint("SourceParts="+shlex.quote(os.environ["FIXTURE_PARTS"]))\n',
+                'apt-config': '#!/usr/bin/env python3\nimport os,shlex,sys\nvalues={"Dir::Etc::sourcelist":os.environ["FIXTURE_MAIN"],"Dir::Etc::sourceparts":os.environ["FIXTURE_PARTS"]}\nfor arg in sys.argv[1:]:\n if "=" in arg:\n  k,v=arg.split("=",1);values[k]=v\nprint("SourceList="+shlex.quote(values["Dir::Etc::sourcelist"]))\nprint("SourceParts="+shlex.quote(values["Dir::Etc::sourceparts"] if values["Dir::Etc::sourceparts"] != "-" else os.environ["FIXTURE_ROOT"]+"/disabled-parts/"))\n',
                 'apt-get': '''#!/usr/bin/env python3
 import os,sys,json
 from pathlib import Path
@@ -139,7 +140,7 @@ if os.environ.get('APT_CONFIG'):
 for value in args:
  if value.startswith('Dir::Etc::sourcelist='):main=Path(value.split('=',1)[1])
  if value.startswith('Dir::Etc::sourceparts='):parts=Path(value.split('=',1)[1])
-sources=([main.read_text()] if main.exists() else [])+[p.read_text() for p in sorted(parts.iterdir())]
+sources=([main.read_text()] if main.exists() else [])+([p.read_text() for p in sorted(parts.iterdir())] if parts != Path('-') else [])
 with open(os.environ['FIXTURE_LOG'],'a') as f:f.write(json.dumps({'args':args,'sources':sources,'proxy':os.environ.get('HTTPS_PROXY'),'frontend':os.environ.get('DEBIAN_FRONTEND'),'main':str(main),'parts':str(parts)})+'\\n')
 if os.environ.get('FIXTURE_FAIL_UPDATE')=='1' and args[0]=='update':sys.exit(100)
 '''}
@@ -169,7 +170,7 @@ if os.environ.get('FIXTURE_FAIL_UPDATE')=='1' and args[0]=='update':sys.exit(100
             log = root / 'calls.jsonl'
             env = {**os.environ, 'PATH': str(binaries) if missing_python else str(binaries) + ':' + os.environ['PATH'], 'FIXTURE_ROOT': str(root),
                    'FIXTURE_PY_LOG': str(root / 'python-calls.jsonl'), 'FIXTURE_FAIL_UPDATE': '1' if fail_update else '0', 'FIXTURE_MAIN': str(main), 'FIXTURE_PARTS': str(parts), 'FIXTURE_LOG': str(log), 'FIXTURE_ARCH': arch,
-                   'GITHUB_ACTIONS': github, 'RUNNER_ENVIRONMENT': runner, 'FIXTURE_PRIV_PATH': private_path, 'HTTPS_PROXY': 'https://proxy.example:1234', 'LUMYTE_SETUP_ROOTLESS': '1' if rootless else '0', 'FIXTURE_EUID': '0' if root_mode else '1000'}
+                   'GITHUB_ACTIONS': github, 'RUNNER_ENVIRONMENT': runner, 'FIXTURE_PRIV_PATH': private_path, 'HTTPS_PROXY': 'https://proxy.example:1234', 'LUMYTE_CI_APT': '1' if ci_apt else '0', 'LUMYTE_SETUP_ROOTLESS': '1' if rootless else '0', 'FIXTURE_EUID': '0' if root_mode else '1000'}
             with open('/dev/full', 'w') if diagnostic_io_failure else open(os.devnull, 'w') as failed_sink:
                 result = subprocess.run(['bash', str(tools / 'setup-os.sh')], env=env, stdout=subprocess.PIPE,
                                         stderr=failed_sink if diagnostic_io_failure else subprocess.PIPE, text=True)
@@ -192,7 +193,7 @@ if os.environ.get('FIXTURE_FAIL_UPDATE')=='1' and args[0]=='update':sys.exit(100
             self.assertEqual(PACKAGES, calls[1]['args'][-len(PACKAGES):])
             self.assertEqual(None if rootless else 'noninteractive', calls[1]['frontend'])
             self.assertEqual(env['HTTPS_PROXY'], calls[1]['proxy'])
-            if not rootless:
+            if not rootless and not ci_apt:
                 for call in calls:
                     self.assertIn('https://user:password@private.example/pkg', ''.join(call['sources']))
             if audit:
@@ -211,6 +212,46 @@ if os.environ.get('FIXTURE_FAIL_UPDATE')=='1' and args[0]=='update':sys.exit(100
                 probes = [line for line in py_log.read_text().splitlines() if json.loads(line)[0] == '-c'] if py_log.exists() else []
                 return [normalize(call) for call in calls], probes
             return (calls, str(main), result.stdout + result.stderr) if trace else (calls, str(main))
+
+    def test_forwarded_options_survive_private_rewrite_and_discovery(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            main = root / 'selected.list'
+            parts = root / 'selected.d'
+            parts.mkdir()
+            main.write_text('deb ' + AWS + ' noble main\n')
+            options = ['-o', 'Dir::Cache::archives=' + str(root / 'archives with spaces'),
+                       '-o', 'Binary::apt-get::APT::Keep-Downloaded-Packages=true',
+                       '-o', 'Dir::Etc::sourcelist=' + str(main),
+                       '-o', 'Dir::Etc::sourceparts=' + str(parts)]
+            calls = []
+            def run(command, **kwargs):
+                calls.append(command)
+                return subprocess.CompletedProcess(command, 0, 'SourceList=' + shlex.quote(str(main)) + ' SourceParts=' + shlex.quote(str(parts)))
+            APT.install(PACKAGES, run, apt_options=options)
+            self.assertEqual(['apt-config', *options, 'shell'], calls[0][:len(options) + 2])
+            self.assertEqual(3, len(calls))
+            for command in calls[1:]:
+                for option in options[1::2]:
+                    self.assertIn(option, command)
+                selected = [arg.split('=', 1)[1] for arg in command if arg.startswith('Dir::Etc::sourcelist=')]
+                self.assertEqual(str(main), selected[0])
+                self.assertNotEqual(str(main), selected[-1])
+                self.assertFalse(Path(selected[-1]).exists())
+            self.assertEqual('deb ' + AWS + ' noble main\n', main.read_text())
+
+    def test_ci_apt_options_reach_discovery_update_and_install(self):
+        for root_mode, missing_python in [(True, False), (False, False), (True, True)]:
+            with self.subTest(root_mode=root_mode, missing_python=missing_python):
+                calls, original = self.run_setup(ci_apt=True, root_mode=root_mode, missing_python=missing_python)
+                for call in calls:
+                    self.assertNotEqual(original, call['main'])
+                    self.assertTrue(call['main'].endswith('/env/ci-apt/sources.list'))
+                    self.assertEqual('-', call['parts'])
+                    self.assertIn(CANONICAL.rstrip('/'), ''.join(call['sources']))
+                    self.assertNotIn(AWS, ''.join(call['sources']))
+                    self.assertIn('Binary::apt-get::APT::Keep-Downloaded-Packages=true', call['args'])
+                    self.assertTrue(any(arg.startswith('Dir::Cache::archives=') and arg.endswith('/env/ci-apt/archives') for arg in call['args']))
 
     def test_ci_legacy_fail_first_then_private_effective_sources_selected(self):
         calls, original = self.run_setup()
@@ -426,7 +467,7 @@ if os.environ.get('FIXTURE_FAIL_UPDATE')=='1' and args[0]=='update':sys.exit(100
             self.assertIn('could not be completed safely', result.stderr)
 
     def test_rootless_tail_and_packages_workflow_remain_unchanged(self):
-        base = subprocess.check_output(['git', 'show', '969a47dc:tools/setup/setup-os.sh'], cwd=HERE, text=True)
+        base = subprocess.check_output(['git', 'show', '14b0c33d:tools/setup/setup-os.sh'], cwd=HERE, text=True).replace('    report_acquisition_route rootless rootless rootless not-run\n', '')
         current = (HERE / 'setup-os.sh').read_text().replace('    report_acquisition_route rootless rootless rootless not-run\n', '')
         self.assertEqual(base[base.index('else\n    # Bootstrap requirements'):], current[current.index('else\n    # Bootstrap requirements'):])
         self.assertIn('LUMYTE_SETUP_ROOTLESS:-0', current)

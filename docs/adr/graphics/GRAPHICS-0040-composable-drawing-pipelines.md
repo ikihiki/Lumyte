@@ -176,7 +176,7 @@ using Lumyte.Graphics.Drawing2D.Pipelines;
 var downloaded = g.Stage(ComputeStages2D.Coverage(samples), scene, deviceFrame)
     .Then(Transfers.Download<Coverage16V1>());
 var coverage = g.Stage(new FiniteCoverageCheck(16L * 1048576), downloaded)
-    .Then(Transfers.Upload<Coverage16V1>());
+    .Then(Transfers.Upload<Coverage16V1>(UploadRetention.Fresh));
 // Compose → Complete → Graphics build → new Renderer2D は前例と同じ。
 var segmented = (IAsyncPipelineRenderer2D)renderer;
 using PreparedPipelineExecution2D executionPlan =

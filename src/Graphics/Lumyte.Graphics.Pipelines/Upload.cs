@@ -8,11 +8,31 @@ namespace Lumyte.Graphics.Pipelines;
 public sealed class Upload<TSchema> : IStage<Host<TSchema>, Device<TSchema>>
     where TSchema : ISchema
 {
-    /// <summary>Gets the immutable transfer factory.</summary>
-    public IStageFactory<Host<TSchema>, Device<TSchema>> Factory { get; } = new FactoryImpl();
-
-    private sealed class FactoryImpl : IStageFactory<Host<TSchema>, Device<TSchema>>, ITransferFactory
+    /// <summary>Initializes a new instance of the <see cref="Upload{TSchema}"/> class with source retention eligibility.</summary>
+    public Upload()
+        : this(UploadRetention.Source)
     {
+    }
+
+    /// <summary>Initializes a new instance of the <see cref="Upload{TSchema}"/> class.</summary>
+    /// <param name="retention">Source eligibility or invocation-owned fresh storage.</param>
+    public Upload(UploadRetention retention)
+    {
+        if (!Enum.IsDefined(retention))
+        {
+            throw new ArgumentOutOfRangeException(nameof(retention));
+        }
+
+        Factory = new FactoryImpl(retention);
+    }
+
+    /// <summary>Gets the immutable transfer factory.</summary>
+    public IStageFactory<Host<TSchema>, Device<TSchema>> Factory { get; }
+
+    private sealed class FactoryImpl(UploadRetention retention) : IStageFactory<Host<TSchema>, Device<TSchema>>, ITransferFactory
+    {
+        public bool RetainsImmutableSource => retention == UploadRetention.Source;
+
         public StageRequirements Describe(StageInputDescriptions inputs)
         {
             SchemaDescriptor schema = TSchema.Descriptor;
@@ -32,18 +52,18 @@ public sealed class Upload<TSchema> : IStage<Host<TSchema>, Device<TSchema>>
                 throw new NotSupportedException("Upload requires the explicit graphics host.");
             }
 
-            return new UploadProcessor();
+            return new UploadProcessor(RetainsImmutableSource);
         }
     }
 
-    private sealed class UploadProcessor : IStageProcessor<Host<TSchema>, Device<TSchema>>
+    private sealed class UploadProcessor(bool retainsImmutableSource) : IStageProcessor<Host<TSchema>, Device<TSchema>>
     {
         public async ValueTask<ValueLease<Device<TSchema>>> PrepareAsync(StagePreparationContext context, ValueLease<Host<TSchema>> a, CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
             SchemaData<TSchema> data = context.ReadHost(a);
             var graphics = (IGraphicsStageCapabilities)context.Capabilities;
-            var visitor = new UploadVisitor(graphics.Preparation, data.Extent, cancellationToken);
+            var visitor = new UploadVisitor(graphics.Preparation, data.Extent, cancellationToken, retainsImmutableSource);
             DeviceValue output = await data.Storage.Accept(visitor);
             return context.PublishPlatform(new Device<TSchema>(output));
         }
@@ -53,7 +73,7 @@ public sealed class Upload<TSchema> : IStage<Host<TSchema>, Device<TSchema>>
         }
     }
 
-    private sealed class UploadVisitor(GraphicsStagePreparationContext preparation, SchemaExtent extent, CancellationToken token) : ICanonicalDataVisitor<ValueTask<DeviceValue>>
+    private sealed class UploadVisitor(GraphicsStagePreparationContext preparation, SchemaExtent extent, CancellationToken token, bool retainsImmutableSource) : ICanonicalDataVisitor<ValueTask<DeviceValue>>
     {
         public ValueTask<DeviceValue> Visit<TElement>(ReadOnlySpan<TElement> elements)
             where TElement : unmanaged
@@ -66,7 +86,7 @@ public sealed class Upload<TSchema> : IStage<Host<TSchema>, Device<TSchema>>
                 throw new ArgumentException("An empty schema requires an explicit empty-value representation.");
             }
 
-            return preparation.Run.ImmutableUploads is { } cache
+            return retainsImmutableSource && preparation.Run.ImmutableUploads is { } cache
                 ? UploadRetainedAsync(elements.ToArray(), cache)
                 : UploadAsync(elements.ToArray());
         }

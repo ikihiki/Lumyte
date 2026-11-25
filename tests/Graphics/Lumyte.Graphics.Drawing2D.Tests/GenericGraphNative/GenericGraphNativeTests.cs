@@ -57,7 +57,7 @@ public sealed class GenericGraphNativeTests
             if (cpuSparse)
             {
                 var samples = new SamplePolicy2D(16, 1);
-                Port<Device<Coverage16V1>> coverage = pipelineGraph.Stage(new CpuSparseCoverage2D(samples, 256L * 1024 * 1024), hostScene, hostFrame).Then(Transfers.Upload<Coverage16V1>());
+                Port<Device<Coverage16V1>> coverage = pipelineGraph.Stage(new CpuSparseCoverage2D(samples, 256L * 1024 * 1024), hostScene, hostFrame).Then(Transfers.Upload<Coverage16V1>(UploadRetention.Fresh));
                 Port<Device<Paint16V1>> paint = pipelineGraph.Stage(ComputeStages2D.PagedPaint(samples, new GenericPagingLimits2D()), scene, views, frame);
                 Port<Device<Clip16V1>> clip = pipelineGraph.Stage(ComputeStages2D.PagedClip(samples, new GenericPagingLimits2D()), scene, frame);
                 output = pipelineGraph.Stage(RasterStages2D.PagedCompose(samples, new GenericPagingLimits2D()), scene, coverage, paint, clip, target);
@@ -120,7 +120,7 @@ public sealed class GenericGraphNativeTests
         {
             var requests = new List<RenderRequest2D>();
             var g = new PipelineGraph<RenderRequest2D>();
-            Port<Device<SceneV1>> scene = g.Stage(new CanonicalProducer(requests), g.Input).Then(Transfers.Upload<SceneV1>()).Then(Transfers.Download<SceneV1>()).Then(Transfers.Upload<SceneV1>());
+            Port<Device<SceneV1>> scene = g.Stage(new CanonicalProducer(requests), g.Input).Then(Transfers.Upload<SceneV1>()).Then(Transfers.Download<SceneV1>()).Then(Transfers.Upload<SceneV1>(UploadRetention.Fresh));
             Port<Device<FrameV1>> frame = g.Stage(RenderFields2D.Frame(), g.Input).Then(Transfers.Upload<FrameV1>());
             Port<Device<ResourceViewsV1>> views = g.Stage(RenderFields2D.ResourceViews(), g.Input);
             Port<Device<TargetV1>> targetPort = g.Stage(RenderFields2D.Target(), g.Input);
