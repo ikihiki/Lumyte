@@ -88,6 +88,14 @@
     ]
   },
   {
+    "Project": "tests/Core/Lumyte.Pipelines.Tests/Lumyte.Pipelines.Tests.csproj",
+    "Default": "Cpu",
+    "IntegrationClasses": [],
+    "Lanes": [
+      "Cpu"
+    ]
+  },
+  {
     "Project": "tests/Core/Lumyte.Resources.Tests/Lumyte.Resources.Tests.csproj",
     "Default": "Cpu",
     "IntegrationClasses": [],
