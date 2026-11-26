@@ -2,6 +2,15 @@ namespace Lumyte.Pipelines;
 
 internal static class InputDescriptions
 {
+    private static readonly SchemaExtent _scalarExtent = new(1, new Dictionary<string, object>());
+
+    internal static StageInputDescriptions Fixed(int arity, long maxHostBytes)
+    {
+        var extents = new SchemaExtent[arity];
+        Array.Fill(extents, _scalarExtent);
+        return new StageInputDescriptions(extents, maxHostBytes);
+    }
+
     internal static StageInputDescriptions Build<TInput>(Node node, Node[] nodes, StageRequirements[] requirements, long inputByteBudget)
     {
         IEnumerable<SchemaExtent> extents = node.Inputs.Select(index =>
@@ -26,7 +35,7 @@ internal static class InputDescriptions
                 throw new InvalidOperationException("An input contains uninitialized host placement.");
             }
 
-            return ((IValueLeaseMetadata)input).PlacementExtent ?? new SchemaExtent(1, new Dictionary<string, object>());
+            return ((IValueLeaseMetadata)input).PlacementExtent ?? _scalarExtent;
         });
         return new StageInputDescriptions(extents, maxHostBytes);
     }

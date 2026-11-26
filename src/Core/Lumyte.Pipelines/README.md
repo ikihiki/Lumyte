@@ -17,7 +17,28 @@ Create must transfer a fresh independent processor owner. Processors are shared
 across runs and **must be reentrant**, including across awaits. MaxInFlight bounds
 running and retained results together. The host borrows ExecutionRuntime; its
 caller starts, pumps and stops that existing runtime. No second scheduler or
-thread pool is created. PipelineJobBridge lowers to existing graph/workflow queues.
+thread pool is created. PipelineJobBridge lowers to existing graph/workflow queues. At run admission,
+Cooperative mode lowers the typed pipeline's compiled dependency program into one
+existing runtime workflow. A finite ready list runs synchronous processors inline;
+uncompleted processors are retained while other ready branches start. Their
+completion notifications return to the same workflow context, which also owns
+actual yields after ShouldYield checkpoints. The interpreter does not dispatch to
+another runtime, scheduler or thread pool. The first failure suppresses unstarted
+work; all already started operations and their contexts drain before it is thrown.
+As with Execution JobRun, the first observed handler exception (including its
+original instance) is retained. A handler-thrown OperationCanceledException is a
+handler fault and is never demoted by its type; actual graph/token cancellation
+is recorded separately by the logical-stage checkpoint.
+
+ThreadPool mode instead uses strict single-consumer chain segments and independent
+existing-runtime fork/join jobs, preserving independent CPU branch parallelism.
+Both plans are built without requiring runtime preparation; the backend is selected
+only at run admission. Every declared external processor still executes. Each
+logical stage start is checked under the runtime lock against graph failure, user
+cancellation and CancelPending shutdown. Already started asynchronous stages drain
+before any run ownership is released. Contexts, producer identities and leases are
+never pooled or reopened. Bridge checkpoint scopes also close at workflow terminal
+completion and reject subsequent starts.
 
 Inputs, arbitrary published values and custom metadata marked immutable are a
 **caller/extension immutability contract**, not reflective deep-cloned objects.
@@ -45,11 +66,24 @@ Failed-run cleanup is retained by the pipeline and retried by its Dispose.
 
 PipelineBudget limits declared nodes, retained runs, and per-run declared host
 bytes. At most six incoming edges per node bounds total graph work. ExecutionRuntime
-separately reserves graph queue/work metadata. Build describes upper bounds before
+separately reserves graph queue/work metadata. Its MaxGraphNodes counts physical
+lowered nodes + lowered edges + queued workers, not logical pipeline stages;
+PipelineBudget.MaxNodes continues to bound logical stages. The cooperative bridge
+also charges an explicit checked per-run metadata allowance (logical-stage
+contexts/input arrays/producers/continuations, ready/pending/completion slots and
+the value table; 1024 bytes per logical stage plus fixed/table metadata) to the existing
+graph byte reservation until JobRun.Dispose. Immutable compiled plans are owned
+by the pipeline, rather than allocated per run. Build describes upper bounds before
 Create and rejects impossible minimum requirements. **Actual cumulative bytes are
 reserved just before each stage invocation**, before that stage allocates; later
 rejection does not roll back earlier work, but cleans all its owners. Checked
 arithmetic rejects overflow. Retaining results consumes in-flight capacity.
+
+For closed scalar payload types that cannot provide placement or input metadata,
+Build reuses immutable actual input descriptions by arity. Describe itself still
+runs before every stage and all actual requirement, host, extension and cumulative
+reservation validation remains in place. Dynamic IImmutablePipelineInput and
+Host/schema metadata use the general live validation path.
 
 Stage requirements must conservatively include every extension-owned payload byte,
 not just references. Framework publication charges lease/value metadata; CopyHostData

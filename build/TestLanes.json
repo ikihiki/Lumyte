@@ -92,7 +92,8 @@
     "Default": "Cpu",
     "IntegrationClasses": [],
     "Lanes": [
-      "Cpu"
+      "Cpu",
+      "Integration"
     ]
   },
   {

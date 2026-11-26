@@ -45,6 +45,93 @@ public static class PipelineJobBridge
         return new JobGraph<TContext>(nodes, incoming, outgoing.Select(value => value.ToArray()).ToArray(), edges);
     }
 
+    /// <summary>Queries the prepared runtime backend at admission, not at pipeline build time.</summary>
+    /// <param name="runtime">The borrowed runtime.</param>
+    /// <returns>Whether cooperative pipeline evaluation can use one existing workflow.</returns>
+    public static bool IsCooperative(ExecutionRuntime runtime)
+    {
+        ArgumentNullException.ThrowIfNull(runtime);
+        lock (runtime.Sync)
+        {
+            return runtime.IsCooperative;
+        }
+    }
+
+    /// <summary>Creates coarse workflows with cancellation-ordered logical stage checkpoints.</summary>
+    /// <typeparam name="TContext">The invocation context.</typeparam>
+    /// <param name="runtime">The borrowed execution runtime.</param>
+    /// <param name="actions">The finite compiled segment callbacks.</param>
+    /// <param name="dependencies">Segment producer indices preceding their consumer.</param>
+    /// <param name="retainedBytes">Additional finite per-run managed metadata bytes retained until JobRun disposal. Physical segment nodes, edges and workers still determine graph units; callers separately bound logical program size.</param>
+    /// <returns>The immutable runtime graph.</returns>
+    public static JobGraph<TContext> CreateCooperative<TContext>(ExecutionRuntime runtime, Func<TContext, PipelineJobScope, CancellationToken, ValueTask<Unit>>[] actions, int[][] dependencies, long retainedBytes)
+        where TContext : struct
+    {
+        ArgumentNullException.ThrowIfNull(actions);
+        ArgumentOutOfRangeException.ThrowIfNegative(retainedBytes);
+        var placeholders = new Func<TContext, CancellationToken, ValueTask<Unit>>[actions.Length];
+        for (int i = 0; i < actions.Length; i++)
+        {
+            ArgumentNullException.ThrowIfNull(actions[i]);
+            placeholders[i] = static (_, _) => default;
+        }
+
+        JobGraph<TContext> graph = Create(runtime, placeholders, dependencies);
+        for (int i = 0; i < actions.Length; i++)
+        {
+            graph.Nodes[i] = new CooperativeNode<TContext>(runtime, actions[i]);
+        }
+
+        return new JobGraph<TContext>(graph.Nodes, graph.Incoming, graph.Outgoing, graph.EdgeCount, retainedBytes);
+    }
+
+    private sealed class CooperativeNode<TContext>(ExecutionRuntime runtime, Func<TContext, PipelineJobScope, CancellationToken, ValueTask<Unit>> action) : GraphNode<TContext>(runtime)
+        where TContext : struct
+    {
+        internal override int Length(in TContext context) => 1;
+
+        internal override int WorkerCount(int length, int concurrency) => 1;
+
+        internal override void Create(GraphState<TContext> state, int node, int length, Span<QueuedWork> workers)
+        {
+            var scope = new PipelineJobScope(state);
+            workers[0] = new PendingWorkflow<TContext, Unit>(Runtime, state.Context, state.Token, (context, token) => InvokeAsync(context, scope, token), (error, canceled) => state.WorkerFinished(node, error, canceled), () => state.IsCancellationRequested);
+        }
+
+        private static async ValueTask<Unit> AwaitCompletionAsync(ValueTask<Unit> operation, PipelineJobScope scope)
+        {
+            try
+            {
+                return await operation;
+            }
+            finally
+            {
+                scope.Close();
+            }
+        }
+
+        private ValueTask<Unit> InvokeAsync(TContext context, PipelineJobScope scope, CancellationToken token)
+        {
+            try
+            {
+                ValueTask<Unit> operation = action(context, scope, token);
+                if (!operation.IsCompletedSuccessfully)
+                {
+                    return AwaitCompletionAsync(operation, scope);
+                }
+
+                Unit result = operation.Result;
+                scope.Close();
+                return new ValueTask<Unit>(result);
+            }
+            catch
+            {
+                scope.Close();
+                throw;
+            }
+        }
+    }
+
     private sealed class LoweredNode<TContext>(ExecutionRuntime runtime, Func<TContext, CancellationToken, ValueTask<Unit>> action) : GraphNode<TContext>(runtime)
         where TContext : struct
     {

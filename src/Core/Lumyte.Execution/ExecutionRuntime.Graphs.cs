@@ -11,6 +11,8 @@ public sealed partial class ExecutionRuntime
 
     internal bool CancelPending => _cancelPending;
 
+    internal bool IsCooperative => _cpuMode == CpuExecutionMode.Cooperative;
+
     private bool HasGraphPropagation => _graphs.Any(graph => graph.HasPropagation);
 
     /// <summary>Atomically admits a graph, reporting stopped, canceled and full admission as statuses.</summary>
@@ -61,7 +63,7 @@ public sealed partial class ExecutionRuntime
             }
 
             int units = checked(graph.NodeCount + graph.EdgeCount + commands);
-            long bytes = checked(Unsafe.SizeOf<TContext>() + 256L + (graph.NodeCount * 128L) + (graph.EdgeCount * 8L) + (commands * 128L));
+            long bytes = checked(Unsafe.SizeOf<TContext>() + graph.RetainedBytes + 256L + (graph.NodeCount * 128L) + (graph.EdgeCount * 8L) + (commands * 128L));
             lock (Sync)
             {
                 CommandEnqueueStatus admission = GetNormalAdmissionStatus(token);

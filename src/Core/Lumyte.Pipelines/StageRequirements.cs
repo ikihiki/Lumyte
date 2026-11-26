@@ -12,13 +12,13 @@ public sealed record StageRequirements
     {
         ArgumentOutOfRangeException.ThrowIfNegative(maxHostBytes);
         ArgumentNullException.ThrowIfNull(extensions);
-        if (extensions.Any(extension => extension is null))
+        if (extensions.Count != 0 && extensions.Any(extension => extension is null))
         {
             throw new ArgumentException("Requirements cannot contain null.", nameof(extensions));
         }
 
         MaxHostBytes = maxHostBytes;
-        Extensions = Array.AsReadOnly(extensions.ToArray());
+        Extensions = extensions.Count == 0 ? Array.Empty<IStageExtensionRequirement>() : Array.AsReadOnly(extensions.ToArray());
     }
 
     /// <summary>Gets the per-invocation host ceiling.</summary>

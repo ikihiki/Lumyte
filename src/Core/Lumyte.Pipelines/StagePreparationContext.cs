@@ -8,7 +8,6 @@ public sealed class StagePreparationContext
 {
     private readonly object _run;
     private readonly object _producer;
-    private readonly HashSet<object> _inputs;
     private readonly object[] _inputList;
     private readonly long _maxBytes;
     private readonly RunValueOwners? _owners;
@@ -17,13 +16,12 @@ public sealed class StagePreparationContext
     private bool _outputValidated;
     private bool _published;
 
-    internal StagePreparationContext(IStageCapabilities capabilities, object run, object producer, IEnumerable<object> inputs, long maxBytes, RunValueOwners? owners = null)
+    internal StagePreparationContext(IStageCapabilities capabilities, object run, object producer, object[] inputs, long maxBytes, RunValueOwners? owners = null)
     {
         Capabilities = capabilities;
         _run = run;
         _producer = producer;
-        _inputList = inputs.ToArray();
-        _inputs = new HashSet<object>(_inputList, ReferenceEqualityComparer.Instance);
+        _inputList = inputs;
         _maxBytes = maxBytes;
         _owners = owners;
         if (capabilities is IStageScopeBinding binding)
@@ -208,10 +206,23 @@ public sealed class StagePreparationContext
     {
         CheckOpen();
         ArgumentNullException.ThrowIfNull(value);
-        if (!ReferenceEquals(value.Run, _run) || !_inputs.Contains(value))
+        if (!ReferenceEquals(value.Run, _run) || !ContainsInput(value))
         {
             throw new InvalidOperationException("Lease is not an input of this invocation.");
         }
+    }
+
+    private bool ContainsInput(object value)
+    {
+        foreach (object input in _inputList)
+        {
+            if (ReferenceEquals(input, value))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private void EnsurePublication()

@@ -8,9 +8,22 @@ internal sealed class StageNode<TA, TB, TC, TD, TO>(IStageFactory<TA, TB, TC, TD
     {
         public override void Dispose() => processor.Dispose();
 
-        internal override async ValueTask<object> PrepareAsync(StagePreparationContext context, object[] inputs, CancellationToken cancellationToken)
+        internal override ValueTask<object> PrepareAsync(StagePreparationContext context, object[] inputs, CancellationToken cancellationToken)
         {
-            ValueLease<TO> output = await processor.PrepareAsync(context, (ValueLease<TA>)inputs[0], (ValueLease<TB>)inputs[1], (ValueLease<TC>)inputs[2], (ValueLease<TD>)inputs[3], cancellationToken);
+            ValueTask<ValueLease<TO>> operation = processor.PrepareAsync(context, (ValueLease<TA>)inputs[0], (ValueLease<TB>)inputs[1], (ValueLease<TC>)inputs[2], (ValueLease<TD>)inputs[3], cancellationToken);
+            if (operation.IsCompletedSuccessfully)
+            {
+                ValueLease<TO> output = operation.Result;
+                context.ValidateOutput(output);
+                return new ValueTask<object>(output);
+            }
+
+            return AwaitOutputAsync(operation, context);
+        }
+
+        private static async ValueTask<object> AwaitOutputAsync(ValueTask<ValueLease<TO>> operation, StagePreparationContext context)
+        {
+            ValueLease<TO> output = await operation;
             context.ValidateOutput(output);
             return output;
         }
