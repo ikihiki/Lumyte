@@ -386,6 +386,115 @@ var definition = g.Complete(final);
 - **失敗の範囲**: 区間1の失敗は区間0の外部書込みを取り消さない。全体atomic性が必要ならprivate targetと最終commitを明示する。
 - **単一区間との区別**: 最初のCPU計算→Upload→GPU完了だけなら一GPU区間である。Download→CPU→Uploadを含む契約を、一回のnative Prepareや一つのopaque callbackで代用しない。
 
+### ゲームループへの組込み
+
+sessionと処理templateを起動時に用意し、毎frameの不変snapshotを宣言して、イベント処理とowner pumpを継続しながらGPU完了と退役を回収する。
+
+- **起動時**: アプリがdevice・surface・ExecutionRuntimeを用意し、GraphicsExecutionModuleとowner phaseを接続する。session、kernel、sampler、処理template、rendererは対応する寿命の間保持し、毎frame作り直さない。
+- **毎frame**: 入力とsimulation更新から不変の描画snapshotを切り出す。使用leaseと資源publicationを固定し、新しいframeへ2D・effect・3D/postprocessを宣言する。内容versionや使用範囲がframeごとに変わるため、template再利用をframeのCompile/Prepare省略と同一視しない。
+- **担当thread**: window/入力のthread規則とnative操作の固定ownerを守る。CPU処理のdispatchとawait後の再開は既存ExecutionRuntimeへ任せ、Graphics用の別schedulerやThreadPoolを増設しない。
+- **待機中のループ**: 不完了のTaskをowner threadで同期waitせず、windowイベントと必要なExecution phaseをpumpし続ける。ownerへ戻る継続を同じthreadのawait/GetResultで塞ぐ構成を避ける。
+- **frame数の上限**: 下の例は描画中のframeを一つに制限する。slotが空くまではsimulationとイベント処理だけ進め、GPU仕事とsnapshotのqueueを無制限に積まない。複数frameを許す構成では、上限とframe間資源競合・保持予算を明示する。
+- **snapshotの寿命**: simulationが次tickへ進んでも、宣言・準備・GPU使用中のsnapshot、upload領域、cache entryを変更しない。最新snapshotだけを採るか全snapshotを描くかは入場前の明示policyとし、受理済GPU仕事を黙って破棄しない。
+- **Presentと完了**: surface取得、GPU submission、Present、submission完了、surface imageのrelease、command退役は別操作である。Present要求や戻り値だけでGPU完了・表示時刻を証明せず、Presentへのexportだけでacquire wait/signalを自動挿入しない。
+
+~~~text
+起動: runtime/module接続 → session・artifact・template・renderer構築
+各tick: 入力 → simulation → 描画slotが空いていれば不変snapshotを取得
+    → surface image取得・使用lease → frame宣言 → Compile → Prepare
+    → Record/Finish → 明示Submit → 明示Present要求
+    → 実GPU完了とsurface release確認 → command/owner退役 → slot解放
+待機中: 入力・simulation・owner pumpを継続する（GPU結果依存のCPU処理だけは待つ）
+~~~
+
+次はアプリ側loopの制御フローを示す骨格であり、コメントにある関数はアプリの接続点である。
+
+- **例の範囲**: RenderAndPresentFrameAsyncはライブラリの既存APIではない。下記のAPI抜粋が示すExecuteAsyncだけではSubmitとCPU完了待機の間にPresentを接続できず、この抜粋だけで表示を実装できる例とはしない。必要な明示同期を共通executionへ接続できない経路は拒否する。
+
+~~~csharp
+using System.Threading.Tasks;
+using Lumyte.Graphics.Drawing2D;
+using Lumyte.Graphics.Planning;
+
+// runtime/moduleの開始、owner thread、device/surfaceの初期化は省略。
+var session = new GraphicsDeviceSession(graphicsOwner, device, graphicsBudget);
+var template = session.Build(drawingDefinition);
+var renderer = new Renderer2D(session, template);
+Task? rendering = null;
+bool admitRendering = true;
+
+while (!ExitRequested())
+{
+    PollWindowEvents();
+    AdvanceSimulation(); // fixed/variable tickの方針はゲーム側が選ぶ。
+    PumpExecutionPhases(); // 必要なCPU継続とGraphics owner phaseを実行する。
+
+    if (rendering is { IsCompleted: true })
+    {
+        try { rendering.GetAwaiter().GetResult(); } // 完了済み結果だけを観測。
+        catch (Exception error)
+        {
+            admitRendering = false; // 隔離中に次のframeを入場させない。
+            ReportGraphicsFailure(error);
+        }
+        rendering = null;
+    }
+
+    if (admitRendering && rendering is null && IsDrawable())
+    {
+        var snapshot = CaptureImmutableScene();
+        rendering = RenderAndPresentFrameAsync(session, renderer, snapshot);
+    }
+
+    WaitForEventOrWorkWithFiniteTimeout(); // ownerの仕事もwakeさせる。GPU fenceは待たない。
+}
+
+Task shutdown = StopAdmissionAndDrainAsync(rendering, renderer, template, session);
+while (!shutdown.IsCompleted)
+{
+    PollWindowEvents();
+    PumpExecutionPhases(); // 回収が終わるまでruntime/ownerを止めない。
+    WaitForEventOrWorkWithFiniteTimeout();
+}
+shutdown.GetAwaiter().GetResult();
+// shutdownが成功した後だけ、swapchain/surface/device、runtimeを依存順で解放する。
+~~~
+
+- **接続点の意味**: ExitRequested/PollWindowEvents/AdvanceSimulation/CaptureImmutableSceneはゲーム側の入力・時間・snapshot処理である。PumpExecutionPhasesはhostが選んだExecutionのpumpを正しいowner threadで回す。待機関数はイベント・owner仕事で起床する有限待機であり、CPUのbusy loopやGPU同期waitを指定するものではない。
+- **描画Taskの意味**: RenderAndPresentFrameAsyncは下記のframe手順を非同期で進めるアプリの制御フローであり、共通計画に埋める不透明なGPU nodeではない。内部の個々のpass・use・argumentsは共通IRに見せる。Taskの終了はGPU完了・必要なsurface release・退役を含み、Presentを呼んだ時点では終了させない。
+- **終了Taskの意味**: StopAdmissionAndDrainAsyncは新規frameを止め、描画Taskの成功・失敗を観測し、既知submissionのDrainと保留ownerの回収、frame/import、template、sessionの順の退役まで進める。受理不明時は通常Drainだけで安全とせず、信頼されたdevice世代退役証明を要求する。shutdown失敗時もownerと回収経路を保持し、外側のusing/finallyでGPU使用中のdeviceやleaseを強制解放しない。例は入力・表示backendの全実装、simulation例外時も同じ回収経路へ入るtry/finally、障害復旧UIを省略している。これらの接続点を新しいライブラリAPIとして追加する指定ではない。
+
+基準コミットの src/Core/Lumyte.Execution/ExecutionRuntime.cs にあるpumpへ対応付ける場合、Host配置のGraphics ownerは同じthreadの各turnで次を呼ぶ。
+
+~~~csharp
+void PumpExecutionPhases()
+{
+    // 値は例示の有限work数・時間上限であり、速度やframe時間の保証ではない。
+    runtime.PumpHostLifecycle(64, TimeSpan.FromMilliseconds(2));
+    runtime.PumpJobs(64, TimeSpan.FromMilliseconds(2));
+    runtime.RunHostPhase(graphicsOwner.HostPhase, 64, TimeSpan.FromMilliseconds(2));
+}
+~~~
+
+- **pumpの責務**: HostPhaseはnative command配送用であり、ゲームのUpdateを自動実行するphaseではない。宣言・送信の開始とpumpはExecution handlerの外側にあるアプリのcoordinatorから行い、handler内部から再入pumpや新規submitを行わない。
+- **awaitとの関係**: await自体を禁止するのではなく、唯一のpump経路全体を未完了awaitの後ろへ置かない。独立したowner pumpが動いている非ownerのcoordinatorならawaitで進められる。ConfigureAwait(false)はwindow作成threadへ戻る保証ではない。
+
+frameを一回描く接続点は、次の手順を既存の宣言・実行契約へ対応付ける。
+
+1. 非同期準備を跨いで保持可能なsurface imageを取得し、その世代・view・acquire同期と独立使用leaseを確保する。取得できない場合はGPU仕事を作らずloopへ戻す。
+2. session.CreateFrameから同じframeを作り、renderer.Declareでsnapshotを共通宣言へ変換する。effect/postprocessと取得imageへのcopy/drawも同frameへ載せ、最後のuseをPresentへexportする。
+3. frame.CompileAsyncで全passを検査し、compiled.PrepareAsyncでnative資源・upload・table・PSO/bindingを確定する。
+4. 明示実行hostがRecord/Finish/Submitを進め、acquire semaphoreを送信のwaitへ、描画完了signalをPresentのwaitへ接続する。CPUのGPU完了待機を挟まずPresentを要求できるが、必要なqueue同期まで省略しない。native surface操作はowner規則に従う。単一ExecuteAsyncはこの途中接続を自動提供せず、接続不能なbackend/表示経路は未対応として拒否する。
+5. submissionとcommandの実完了、surface imageのWaitForReleaseAsyncをそれぞれ確認し、依存するcommand・lease・frameを安全な順で退役する。独立export/cacheを保持する場合はそのownerを残す。
+
+- **コードとの対応**: CreateFrame、Declare、CompileAsync、PrepareAsync、CreateExecutionと退役の利用例は前節の変更後コードと同じである。Presentとswapchain同期は、基準コミットの src/Graphics/Lumyte.Graphics.Abstractions/IGraphicsSurfaceFrame.cs、IGraphicsSwapchain.cs、IGraphicsQueue.cs の明示契約に従う。ExecuteAsyncだけでPresentまで自動実行したと扱わない。
+- **Browserの取得寿命**: 基準コミットの src/UI/Lumyte.UI.Application/UiHostPresenter.cs はcanvas imageがrendering turnで失効するため、非同期準備を取得前に終える。上の取得→非同期Prepareの順をそのまま適用しない。offscreen準備と表示imageの遅延取得・最終転送など、寿命と同一turn内の記録/Presentを満たす明示接続が必要であり、存在しないlate-binding APIを既存機能として扱わない。
+- **API抜粋の限界**: 後述のGraphicsExecutionが示すExecuteAsyncだけでは、Submit受理直後・GPU完了のCPU待機前へPresentを接続できない。このloopはアプリの制御フローを説明する骨格であり、当該公開抜粋だけでRenderAndPresentFrameAsyncを実装できる例ではない。acquire/rendered semaphoreとPresentを共通executionの送信・退役台帳へ接続できない表示経路は未対応として拒否し、アプリが共通台帳外で別Queue.Submitして回避しない。
+- **GPU結果が必要なsimulation**: 同frameのreadbackが必要なら明示DownloadとCPU依存を置き、実完了までその処理を開始しない。前回完了結果を次tickで使うなら、遅延とversionをゲーム側の明示policyにする。いずれもイベント処理とowner pumpを止める理由にはしない。
+- **取得結果**: Timeoutはbusy waitせず次turnで再試行し、Suboptimalの使用可能imageとOutdated/Lostの取得失敗を区別する。Outdatedは全acquired image解放後に再構成し、Lostはsurfaceの再作成、DeviceLostはdevice世代の回収へ進む。
+- **最小化・resize**: zero-sizeや取得不可では描画入場を見送り、入力・simulation・退役処理を継続する。resize通知は新しいsurface取得へ反映し、古いimageを使うsubmissionとpresentationの終了確認前にswapchainやviewを破棄しない。size/format依存の計画・cacheを無効化し、不変の算法templateや無関係なcacheまで毎回作り直さない。
+- **取消し・終了・device喪失**: 待機取消しでも送信済仕事とownerを保持する。新規入場停止→既知仕事の実完了確認またはdevice世代退役証明→必要なsurface releaseと回収→依存owner解放→runtime停止の順を守り、不明な仕事を残してdevice/runtimeを先に破棄しない。runtimeの停止を開始した後も、停止Taskが完了するまで必要なHost lifecycle/cleanupのpumpを継続する。
+
 ### 過去の判断との関係
 
 主要判断はGPU実行基盤の統合である。次の一部を変更し、既存ADRの判断本文は保持する。
@@ -759,6 +868,11 @@ CPU記録とGPU算法を分離し、共通計画へ変換してもpainter順・s
 +    {
 +        // 意味論node/templateを同scopeへ宣言。effectのGPU Lowerはここで先行実行しない。
 +        PlanValue<O> Declare(GraphicsPlanBuilder builder, PlanValue<A> input);
++    }
++    // アプリがExecutionRuntimeへ登録し、Host配置なら同じthreadからphaseをpumpする。
++    public sealed class GraphicsExecutionModule : IExecutionModule
++    {
++        public PhaseKey HostPhase { get; }
 +    }
 +    public sealed class GraphicsDeviceSession : IDisposable
 +    {
