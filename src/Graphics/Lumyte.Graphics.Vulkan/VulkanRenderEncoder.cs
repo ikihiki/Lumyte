@@ -18,6 +18,8 @@ internal sealed unsafe class VulkanRenderEncoder(VulkanCommandBuffer owner, Rend
     private bool _blend;
     private bool _stencil;
 
+    private object? _preparedIdentity;
+    private Type? _preparedArgumentType;
     private ShaderRootArguments? _arguments;
     private object? _argumentProgram;
     private bool _settingArguments;
@@ -59,6 +61,16 @@ internal sealed unsafe class VulkanRenderEncoder(VulkanCommandBuffer owner, Rend
     {
         ValidateRootSelection();
         VulkanGraphicsPipeline pipeline = _pipeline!;
+        if (value.NativePreparationIdentity is { } identity)
+        {
+            VulkanCommandBuffer.NativePreparation prepared = owner.FindPreparation(identity, typeof(T), pipeline, _table, _state, _formats, _depthFormat, _indexFormat);
+            SelectRoot(prepared.Root, prepared.Bytes, pipeline, prepared.ImplicitTable, prepared.PipelineLayout);
+            _preparedIdentity = identity;
+            _preparedArgumentType = typeof(T);
+            return;
+        }
+
+        _preparedIdentity = null;
         _settingArguments = true;
         try
         {
@@ -78,6 +90,7 @@ internal sealed unsafe class VulkanRenderEncoder(VulkanCommandBuffer owner, Rend
         where T : unmanaged
     {
         ValidateRootSelection();
+        _preparedIdentity = null;
         VulkanGraphicsPipeline pipeline = _pipeline!;
         _settingArguments = true;
         try
@@ -303,7 +316,7 @@ internal sealed unsafe class VulkanRenderEncoder(VulkanCommandBuffer owner, Rend
         _pipeline.ValidateAlive();
     }
 
-    private void SelectRoot(ShaderRootArguments root, ReadOnlySpan<byte> payload, VulkanGraphicsPipeline pipeline, VulkanArgumentTable? tableHint)
+    private void SelectRoot(ShaderRootArguments root, ReadOnlySpan<byte> payload, VulkanGraphicsPipeline pipeline, VulkanArgumentTable? tableHint, V.PipelineLayout? preparedLayout = null)
     {
         // User codecs and admission hooks can dispose the command owner or pipeline.
         // Revalidate the captured selection before issuing commands or publishing metadata.
@@ -321,7 +334,7 @@ internal sealed unsafe class VulkanRenderEncoder(VulkanCommandBuffer owner, Rend
 
         tableHint?.ThrowIfDisposed();
         _table?.ThrowIfDisposed();
-        VulkanPushConstants.Emit(owner, pipeline.ArgumentPipelineLayout, owner.Owner.GraphicsShaderStages, payload);
+        VulkanPushConstants.Emit(owner, preparedLayout ?? pipeline.ArgumentPipelineLayout, owner.Owner.GraphicsShaderStages, payload);
         _arguments = root;
         _argumentTableHint = tableHint;
         _argumentProgram = pipeline;
@@ -357,25 +370,40 @@ internal sealed unsafe class VulkanRenderEncoder(VulkanCommandBuffer owner, Rend
         }
 
         table?.ThrowIfDisposed();
-        IShaderReference[]? registrations = table?.SnapshotRegistrations();
-
-        if (indexed)
+        _pipeline!.ValidateAlive();
+        V.Pipeline pipeline;
+        V.PipelineLayout pipelineLayout;
+        VulkanShaderBinding? binding;
+        if (_preparedIdentity is { } identity)
         {
-            if (_indexFormat == null)
-            {
-                throw new InvalidOperationException("Set an index buffer before indexed execution.");
-            }
+            VulkanCommandBuffer.NativePreparation prepared = owner.FindPreparation(identity, _preparedArgumentType!, _pipeline!, table, _state, _formats, _depthFormat, indexed ? _indexFormat : null);
+            pipeline = prepared.Pipeline;
+            pipelineLayout = prepared.PipelineLayout;
+            binding = prepared.Binding;
         }
-
-        _pipeline.ValidateAlive();
-
-        V.Pipeline pipeline = _pipeline.Resolve(_state, _formats, table?.LayoutKey, _depthFormat, indexed ? _indexFormat : null);
-
-        VulkanShaderBinding? binding = null;
-        if (registrations != null)
+        else
         {
-            binding = table!.AcquireBinding(registrations, _pipeline.ArgumentLayout);
-            owner.KeepBinding(binding, registrations);
+            IShaderReference[]? registrations = table?.SnapshotRegistrations();
+
+            if (indexed)
+            {
+                if (_indexFormat == null)
+                {
+                    throw new InvalidOperationException("Set an index buffer before indexed execution.");
+                }
+            }
+
+            _pipeline.ValidateAlive();
+
+            pipeline = _pipeline.Resolve(_state, _formats, table?.LayoutKey, _depthFormat, indexed ? _indexFormat : null);
+
+            pipelineLayout = _pipeline.ArgumentPipelineLayout;
+            binding = null;
+            if (registrations != null)
+            {
+                binding = table!.AcquireBinding(registrations, _pipeline.ArgumentLayout);
+                owner.KeepBinding(binding, registrations);
+            }
         }
 
         // Publish only commands actually emitted. Program identity deliberately makes
@@ -388,13 +416,13 @@ internal sealed unsafe class VulkanRenderEncoder(VulkanCommandBuffer owner, Rend
         }
 
         if (binding != null && (!ReferenceEquals(_boundDescriptors, binding) ||
-            _boundDescriptorLayout.Handle != _pipeline.ArgumentPipelineLayout.Handle ||
+            _boundDescriptorLayout.Handle != pipelineLayout.Handle ||
             !ReferenceEquals(_boundProgram, _pipeline)))
         {
             V.DescriptorSet set = binding.Native;
-            owner.Owner.Api.CmdBindDescriptorSets(owner.Native, V.PipelineBindPoint.Graphics, _pipeline.ArgumentPipelineLayout, 0, 1, &set, 0, null);
+            owner.Owner.Api.CmdBindDescriptorSets(owner.Native, V.PipelineBindPoint.Graphics, pipelineLayout, 0, 1, &set, 0, null);
             _boundDescriptors = binding;
-            _boundDescriptorLayout = _pipeline.ArgumentPipelineLayout;
+            _boundDescriptorLayout = pipelineLayout;
             _descriptorBindCount++;
         }
 

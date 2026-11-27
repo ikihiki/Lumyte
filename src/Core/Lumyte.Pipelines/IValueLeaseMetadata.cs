@@ -3,6 +3,9 @@ namespace Lumyte.Pipelines;
 /// <summary>Exposes immutable runtime input metadata to preflight.</summary>
 internal interface IValueLeaseMetadata
 {
+    /// <summary>Gets a value indicating whether the actual payload has a declared recursive shape.</summary>
+    bool IsBundle { get; }
+
     /// <summary>Gets the canonical host placement, when present.</summary>
     IHostPlacement? HostPlacement { get; }
 
@@ -14,4 +17,8 @@ internal interface IValueLeaseMetadata
 
     /// <summary>Gets the actual captured canonical placement schema, when present.</summary>
     SchemaDescriptor? PlacementSchema { get; }
+
+    /// <summary>Validates a captured recursive bundle shape.</summary>
+    /// <param name="expected">The captured immutable shape.</param>
+    void ValidateShape(ValueShape expected);
 }

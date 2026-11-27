@@ -1,6 +1,6 @@
 namespace Lumyte.Pipelines;
 
-internal abstract class Node(IStageFactory factory, int[] inputs, Type outputType, SchemaDescriptor? hostSchema, Type implementationType, string placement, Func<SchemaDescriptor?> schemaProvider)
+internal abstract class Node(IStageFactory factory, int[] inputs, Type outputType, SchemaDescriptor? hostSchema, Type implementationType, string placement, Func<SchemaDescriptor?> schemaProvider, ValueShape capturedShape, Action<ValueShape> validateShape)
 {
     internal IStageFactory Factory { get; } = factory;
 
@@ -14,7 +14,20 @@ internal abstract class Node(IStageFactory factory, int[] inputs, Type outputTyp
 
     internal string Placement { get; } = placement;
 
-    internal void ValidateSchema() => SchemaMetadata.Validate(HostSchema, schemaProvider());
+    internal ValueShape CapturedShape { get; } = capturedShape;
+
+    internal void ValidateSchema()
+    {
+        SchemaMetadata.Validate(HostSchema, schemaProvider());
+        if (CapturedShape.IsComposite)
+        {
+            validateShape(CapturedShape);
+        }
+    }
+
+    internal abstract void Visit(IPipelineDefinitionVisitor visitor, int output);
+
+    internal abstract Node Rebind(int[] inputs);
 
     internal abstract Processor Create(StageBuildContext context);
 }

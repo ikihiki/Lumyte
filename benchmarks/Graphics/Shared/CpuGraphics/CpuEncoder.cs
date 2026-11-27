@@ -16,6 +16,14 @@ internal sealed class CpuEncoder(CpuCommands commands) : IRenderEncoder, IComput
 
     private byte[] _wire = [];
 
+    private GraphicsRenderStateDesc? _state;
+
+    private IndexFormat? _indexFormat;
+
+    private object? _preparedIdentity;
+
+    private Type? _preparedType;
+
     public void SetArgumentTable(IArgumentTable value)
     {
         Check();
@@ -36,6 +44,16 @@ internal sealed class CpuEncoder(CpuCommands commands) : IRenderEncoder, IComput
         where T : struct, IShaderArguments
     {
         Check();
+        if (arguments.NativePreparationIdentity is { } identity)
+        {
+            CpuCommands.NativePreparation entry = commands.FindPreparation(identity, typeof(T), _pipeline, _table, _state, _indexFormat);
+            commands.Owner.Consume(entry.Wire);
+            _preparedIdentity = identity;
+            _preparedType = typeof(T);
+            return;
+        }
+
+        _preparedIdentity = null;
         if (_wire.Length != T.TransferSize)
         {
             _wire = new byte[T.TransferSize];
@@ -78,6 +96,7 @@ internal sealed class CpuEncoder(CpuCommands commands) : IRenderEncoder, IComput
     {
         Check();
         ArgumentNullException.ThrowIfNull(state);
+        _state = state;
     }
 
     public void SetViewport(Viewport viewport)
@@ -194,6 +213,11 @@ internal sealed class CpuEncoder(CpuCommands commands) : IRenderEncoder, IComput
             throw new InvalidOperationException("Select a _pipeline.");
         }
 
+        if (_preparedIdentity != null)
+        {
+            commands.FindPreparation(_preparedIdentity, _preparedType!, _pipeline, _table, _state, _indexFormat);
+        }
+
         _pipeline.Check();
         _table?.Check();
     }
@@ -211,5 +235,6 @@ internal sealed class CpuEncoder(CpuCommands commands) : IRenderEncoder, IComput
         }
 
         _indexCount = indices.Count;
+        _indexFormat = typeof(T) == typeof(ushort) ? IndexFormat.Uint16 : IndexFormat.Uint32;
     }
 }

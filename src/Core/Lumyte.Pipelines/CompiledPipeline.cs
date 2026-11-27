@@ -15,14 +15,16 @@ internal sealed class CompiledPipeline<TInput, TOutput> : IPipeline<TInput, TOut
     private readonly PipelineBudget _budget;
     private readonly StageInputDescriptions?[] _fixedInputs;
     private readonly Func<int, object, IStageCapabilities> _capabilities;
+    private readonly IPipelineBackend? _backend;
     private readonly JobGraph<RunContext>? _jobs;
     private readonly JobGraph<RunContext>? _cooperativeJobs;
     private int _runs;
     private bool _disposed;
 
-    internal CompiledPipeline(ExecutionRuntime execution, PipelineDefinition<TInput, TOutput> definition, Processor[] processors, StageRequirements[] requirements, PipelineBudget budget, Func<int, object, IStageCapabilities>? capabilities = null)
+    internal CompiledPipeline(ExecutionRuntime execution, PipelineDefinition<TInput, TOutput> definition, Processor[] processors, StageRequirements[] requirements, PipelineBudget budget, Func<int, object, IStageCapabilities>? capabilities = null, IPipelineBackend? backend = null)
     {
         _execution = execution;
+        _backend = backend;
         _definition = definition;
         _processors = processors;
         _requirements = requirements;
@@ -112,6 +114,11 @@ internal sealed class CompiledPipeline<TInput, TOutput> : IPipeline<TInput, TOut
         var owner = new RunOwner(this);
         try
         {
+            if (_backend is null && !PipelineValueSafety.IsCpuReadable(input))
+            {
+                throw new InvalidOperationException("The CPU host requires an explicitly CPU-readable input shape.");
+            }
+
             var context = new RunContext(this, input, runIdentity, cancellationToken, owner.Values);
             _definition.ValidateInput(0, context.Input);
             InputDescriptions.Actual([context.Input], _budget.MaxHostBytes);
@@ -254,19 +261,25 @@ internal sealed class CompiledPipeline<TInput, TOutput> : IPipeline<TInput, TOut
             _memory.Reserve(actual.MaxHostBytes);
             InputDescriptions.ValidateHostInputs(compiled, inputs);
             InputDescriptions.ValidateHostInputs(actual, inputs);
-            IStageCapabilities capabilities = _pipeline._capabilities(index, _identity);
+            IStageCapabilities capabilities = _pipeline._backend is null ? _pipeline._capabilities(index, _identity) : _pipeline._backend.PrepareCapabilities(index, compiled, actual) ?? throw new InvalidOperationException("The backend returned null invocation capabilities.");
             if (capabilities is IStageRequirementValidation validation)
             {
                 validation.Validate(actual);
             }
-            else if (actual.Extensions.Count != 0)
+            else if (_pipeline._backend is null && actual.Extensions.Count != 0)
             {
                 throw new InvalidOperationException("Actual requirements introduce an uncompiled extension.");
             }
 
-            var context = new StagePreparationContext(capabilities, _identity, new object(), inputs, actual.MaxHostBytes, _owners);
+            if (_pipeline._backend is not null)
+            {
+                StageCapabilityBindings.Admit(capabilities);
+            }
+
+            var context = new StagePreparationContext(capabilities, _identity, new object(), inputs, actual.MaxHostBytes, _owners, _pipeline._backend is not null);
             try
             {
+                context.Bind();
                 ValueTask<object> operation = _pipeline._processors[index]!.PrepareAsync(context, inputs, _token);
                 if (!operation.IsCompletedSuccessfully)
                 {
@@ -275,15 +288,28 @@ internal sealed class CompiledPipeline<TInput, TOutput> : IPipeline<TInput, TOut
 
                 values[index + 1] = operation.Result;
                 _pipeline._definition.ValidateInput(index + 1, values[index + 1]);
+                context.ConfirmOutput();
             }
-            catch
+            catch (Exception primary)
             {
-                context.Close();
+                CloseFailed(context, primary);
                 throw;
             }
 
             context.Close();
             return default;
+        }
+
+        private static void CloseFailed(StagePreparationContext context, Exception primary)
+        {
+            try
+            {
+                context.Close();
+            }
+            catch (Exception rollback)
+            {
+                throw new AggregateException(primary, rollback);
+            }
         }
 
         private async ValueTask<Unit> AwaitOutputAsync(ValueTask<object> operation, StagePreparationContext context, int index)
@@ -292,12 +318,16 @@ internal sealed class CompiledPipeline<TInput, TOutput> : IPipeline<TInput, TOut
             {
                 Values[index + 1] = await operation;
                 _pipeline._definition.ValidateInput(index + 1, Values[index + 1]);
-                return default;
+                context.ConfirmOutput();
             }
-            finally
+            catch (Exception primary)
             {
-                context.Close();
+                CloseFailed(context, primary);
+                throw;
             }
+
+            context.Close();
+            return default;
         }
     }
 

@@ -7,18 +7,21 @@ public sealed class PipelineBuildHost : IDisposable
 {
     private readonly ExecutionRuntime _execution;
     private readonly PipelineBudget _budget;
+    private readonly IPipelineBackend? _backend;
     private readonly List<Processor> _failedCleanup = [];
     private bool _disposed;
 
     /// <summary>Initializes a new instance of the <see cref="PipelineBuildHost"/> class.</summary>
     /// <param name="execution">The borrowed runtime, pumped by its caller.</param>
     /// <param name="budget">The explicit finite admission limits.</param>
-    public PipelineBuildHost(ExecutionRuntime execution, PipelineBudget budget)
+    /// <param name="backend">An explicit borrowed extension backend, or null for strict CPU execution.</param>
+    public PipelineBuildHost(ExecutionRuntime execution, PipelineBudget budget, IPipelineBackend? backend = null)
     {
         ArgumentNullException.ThrowIfNull(execution);
         ArgumentNullException.ThrowIfNull(budget);
         _execution = execution;
         _budget = budget;
+        _backend = backend;
     }
 
     /// <summary>Builds independent processors after validating all finite requirements.</summary>
@@ -42,11 +45,12 @@ public sealed class PipelineBuildHost : IDisposable
         {
             requirements[i] = definition.Nodes[i].Factory.Describe(InputDescriptions.Build<TInput>(definition.Nodes[i], definition.Nodes, requirements, _budget.MaxHostBytes));
             ArgumentNullException.ThrowIfNull(requirements[i]);
-            if (requirements[i].Extensions.Count != 0)
+            if (_backend is null && requirements[i].Extensions.Count != 0)
             {
                 throw new NotSupportedException("The CPU host cannot satisfy extension requirements.");
             }
 
+            _backend?.Validate(i, requirements[i]);
             bytes = checked(bytes + requirements[i].MaxHostBytes);
         }
 
@@ -68,13 +72,13 @@ public sealed class PipelineBuildHost : IDisposable
         var processors = new List<Processor>();
         try
         {
-            var context = new StageBuildContext(CpuCapabilities.Instance);
-            foreach (Node node in definition.Nodes)
+            for (int i = 0; i < definition.Nodes.Length; i++)
             {
-                processors.Add(node.Create(context));
+                var context = new StageBuildContext(_backend is null ? CpuCapabilities.Instance : _backend.BuildCapabilities(i) ?? throw new InvalidOperationException("The backend returned null build capabilities."));
+                processors.Add(definition.Nodes[i].Create(context));
             }
 
-            return new CompiledPipeline<TInput, TOutput>(_execution, definition, processors.ToArray(), requirements, _budget);
+            return new CompiledPipeline<TInput, TOutput>(_execution, definition, processors.ToArray(), requirements, _budget, backend: _backend);
         }
         catch (Exception primary)
         {

@@ -230,6 +230,14 @@
     ]
   },
   {
+    "Project": "tests/Graphics/Lumyte.Graphics.Planning.Tests/Lumyte.Graphics.Planning.Tests.csproj",
+    "Default": "Cpu",
+    "IntegrationClasses": [],
+    "Lanes": [
+      "Cpu"
+    ]
+  },
+  {
     "Project": "tests/Graphics/Lumyte.Graphics.RenderGraph.Tests/Lumyte.Graphics.RenderGraph.Tests.csproj",
     "Default": "Cpu",
     "IntegrationClasses": [],

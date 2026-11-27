@@ -689,7 +689,7 @@ public sealed class CompiledSegmentTests
         }
     }
 
-    private sealed class DynamicInput(int elements) : IImmutablePipelineInput
+    private sealed class DynamicInput(int elements) : IImmutablePipelineInput, ICpuPipelineValue
     {
         public SchemaExtent Description { get; } = new(elements, new Dictionary<string, object>());
     }

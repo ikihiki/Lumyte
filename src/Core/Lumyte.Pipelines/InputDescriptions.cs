@@ -15,7 +15,7 @@ internal static class InputDescriptions
     {
         IEnumerable<SchemaExtent> extents = node.Inputs.Select(index =>
         {
-            SchemaDescriptor? schema = index == 0 ? (default(TInput) is IHostPlacement host ? host.Descriptor : null) : nodes[index - 1].HostSchema;
+            SchemaDescriptor? schema = index == 0 ? SchemaMetadata.For<TInput>() : nodes[index - 1].HostSchema;
             long bytes = index == 0 ? inputByteBudget : requirements[index - 1].MaxHostBytes;
             return new SchemaExtent(index != 0 && requirements[index - 1].OutputMaxElements is { } elements ? elements : schema is null ? 1 : bytes / schema.ElementStride, new Dictionary<string, object> { ["UpperBound"] = true });
         });

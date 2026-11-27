@@ -19,7 +19,9 @@ internal sealed class BrowserRenderEncoder(BrowserCommandBuffer owner, JSObject 
 
     private BrowserRootStorage? _arguments;
     private object? _argumentProgram;
+    private Type? _argumentsType;
     private bool _settingArguments;
+    private BrowserCommandBuffer.PreparedEntry? _preparedArguments;
     private BrowserArgumentTable? _table;
     private BrowserArgumentTable? _currentRootHint;
 
@@ -52,6 +54,17 @@ internal sealed class BrowserRenderEncoder(BrowserCommandBuffer owner, JSObject 
         ThrowIfSettingArguments();
         ValidateRootSelection();
         BrowserGraphicsPipeline program = _pipeline!;
+        if (value.NativePreparationIdentity is { } identity)
+        {
+            BrowserCommandBuffer.PreparedEntry prepared = owner.FindPrepared(identity, typeof(T), program, _table, _state?.Key, _formats, _depthFormat, _indexFormat);
+            _argumentsType = typeof(T);
+            _preparedArguments = prepared;
+            _arguments = prepared.Root;
+            _argumentProgram = program;
+            _currentRootHint = prepared.Root.ImplicitTable;
+            return;
+        }
+
         _settingArguments = true;
         try
         {
@@ -223,6 +236,11 @@ internal sealed class BrowserRenderEncoder(BrowserCommandBuffer owner, JSObject 
         where T : unmanaged
     {
         owner.ValidatePass(this);
+        if (_preparedArguments is { } prepared && !prepared.Matches(_argumentsType!, _pipeline!, _table, _state?.Key, _formats, _depthFormat, format))
+        {
+            throw new InvalidOperationException("Selected index format differs from native preparation.");
+        }
+
         BrowserBuffer<T> buffer = owner.Buffer(indices, BufferUsage.Index);
         BrowserInterop.SetIndexBuffer(handle, buffer.Native, (int)format, indices.OffsetInBytes, indices.SizeInBytes);
         _indexFormat = format;
@@ -292,6 +310,7 @@ internal sealed class BrowserRenderEncoder(BrowserCommandBuffer owner, JSObject 
             throw;
         }
 
+        _preparedArguments = null;
         _currentRootHint = root.ImplicitTable;
         _arguments = root;
         _argumentProgram = program;
@@ -318,6 +337,24 @@ internal sealed class BrowserRenderEncoder(BrowserCommandBuffer owner, JSObject 
         if (_table != null && _currentRootHint != null && !ReferenceEquals(_table, _currentRootHint))
         {
             throw new ArgumentException("Selected table differs from root references.");
+        }
+
+        if (_preparedArguments is { } prepared)
+        {
+            _pipeline.ValidateAlive();
+            if (!prepared.Matches(_argumentsType!, _pipeline, _table, _state.Key, _formats, _depthFormat, indexed ? _indexFormat : null))
+            {
+                throw new InvalidOperationException("Selected execution state differs from native preparation.");
+            }
+
+            prepared.Validate();
+            BrowserInterop.SetRenderPipeline(handle, prepared.Render!);
+            if (prepared.Binding != null)
+            {
+                BrowserInterop.SetShaderBinding(handle, prepared.Binding.Native);
+            }
+
+            return;
         }
 
         BrowserArgumentTable? selectedTable = _table ?? _currentRootHint;

@@ -12,6 +12,9 @@ public sealed class ValueLease<TV> : IValueLeaseMetadata
     }
 
     /// <inheritdoc/>
+    bool IValueLeaseMetadata.IsBundle => Value is IPipelineBundle;
+
+    /// <inheritdoc/>
     IHostPlacement? IValueLeaseMetadata.HostPlacement => Value is IHostPlacement host ? host : null;
 
     /// <inheritdoc/>
@@ -39,4 +42,7 @@ public sealed class ValueLease<TV> : IValueLeaseMetadata
     internal object Run { get; }
 
     internal object Producer { get; }
+
+    /// <inheritdoc/>
+    void IValueLeaseMetadata.ValidateShape(ValueShape expected) => expected.Validate(ValueShape.Capture(Value, actual: true));
 }

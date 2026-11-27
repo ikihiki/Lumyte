@@ -1,4 +1,4 @@
-# Lumyte.Pipelines — Core CPU slice
+# Lumyte.Pipelines — typed graph and backend contracts
 
 Implements the Graphics-independent typed DAG boundary in
 [ADR-GRAPHICS-0046](../../../docs/adr/graphics/GRAPHICS-0046-unified-graphics-execution.md).
@@ -45,8 +45,9 @@ Inputs, arbitrary published values and custom metadata marked immutable are a
 Never mutate them while retained. Dictionary containers are snapshotted; mutable
 arrays as schema metadata are rejected. Host schema data uses an owned byte copy;
 ReadElements exposes only a read-only span. CPU contexts reject non-CPU placement.
-Device values/bundles, Graphics/effect/RenderGraph/table lowering, upload/download,
-GPU submission, caches and Graphics execution sessions are not implemented here.
+Core supplies opaque declaration and recursive bundle contracts, but no GPU implementation.
+Graphics/effect/RenderGraph/table lowering, upload/download, submission, caches and
+Graphics execution sessions remain the responsibility of an explicitly supplied backend.
 
 A context admits only this invocation's input leases and expires after processor
 completion. Publish/Forward creates exactly one output lease. PublishOwned
@@ -127,3 +128,106 @@ does not expose pooled or native storage. A default/uninitialized Host is reject
 
 Core graph/schema/lease code is shared within this library. No Graphics
 owner/runner, Graphics friend assembly or separate legacy execution path is used.
+
+## Captured compiler and same-graph templates
+
+PipelineDefinition.Visit(IPipelineDefinitionVisitor) is a compiler seam separate from
+DescribeDataflow diagnostics. Six generic Stage overloads receive the original typed
+factory instance (including private generic implementations and immutable parameters),
+typed producer edges and the output edge. Edge zero is the input; OutputEdge selects
+the result. No factory reconstruction, reflection or type-name dispatch is required.
+Visitors must not mutate factories.
+
+PipelineGraph.Invoke(definition,input) appends rebound logical nodes to this graph.
+Repeated invocations make distinct bounded instances while retaining intra-template
+sharing. Identity definitions add no node. The input must belong to the open parent;
+schemas validate before append. Flattened nodes share MaxNodes, host budgets and one
+runtime dependency program. Never implement templates by recursively calling independent
+pipelines' PrepareAsync and joining their leases.
+
+## Explicit backend and transactions
+
+Pass a borrowed IPipelineBackend as PipelineBuildHost's third constructor argument.
+Core calls Validate for every compiled requirement before any Create, supplies each
+node's BuildCapabilities to the original factory, and continues to own creation,
+execution, actual host validation, cumulative reservations and cleanup.
+PrepareCapabilities receives compiled and actual requirements: the backend must reject
+unsupported or growing extensions before returning a capability. Null capabilities
+fail rather than selecting a fallback. The default CPU host rejects extension
+requirements before Create.
+
+Use fresh per-invocation capabilities for IStageScopeBinding or IStageBackendCapabilities.
+Core rejects reuse by object identity, including sequential reuse across compiled pipelines. Bind runs inside Core's
+failure boundary; Complete(true) runs only after output identity and schemas validate.
+Any processor, publication or output validation failure calls Complete(false). If
+Complete(true) throws, Core invokes Complete(false) before failing the run. Hook failures
+are aggregated with primary failures. Rollback must handle partial Bind and partial
+commit; it must not undo earlier successful invocations or external GPU effects. This
+is a declaration transaction, not whole-frame atomic submission. All context/backend
+views expire before completion hooks.
+
+IStageBackendCapabilities alone grants nothing: only the exact capability supplied by
+the explicit backend can obtain context.Backend(capability). Its StageBackendScope
+reads exact admitted input leases as immutable declarations, publishes one declaration
+under the same host budget, and Owns an independent cleanup lease before output exists.
+IStageBackendCapabilities also requires IStageBackendValueValidation. Every generic
+StageBackendScope.Read calls `ValidateRead<T>` after expiry and exact-input admission,
+before returning the declaration. Every Publish calls `ValidatePublication<T>` before
+quota charging or lease creation. Implement backend frame/resource provenance checks
+and input-producer registration in these common generic hooks, including all opaque
+children of supported typed bundles; specialized backend facade methods alone are not
+a security boundary. Hooks must respect finite explicit shape traversal and propagate
+validation exceptions. An escaping hook failure uses the same invocation rollback and
+owned cleanup path as processor failures; rejected publication has consumed no quota
+or output slot. Both read and publication hooks run under a common invocation
+reentrancy guard. During either callback, all output routes (CPU Publish/PublishOwned,
+PublishHost, Forward and generic BackendPublish), CopyHostData, PlaceHost, backend
+Own, and recursive backend value validation are rejected before scope state changes.
+Read-only CPU input access is still subject to the ordinary CPU policy. Hooks may
+record backend-specific dependency metadata, but must not mutate the Core invocation
+scope. The guard is always cleared in finally; callbacks that reject or throw do not
+consume quota/output slots, transfer rejected owners or prevent a later legal publish.
+BackendPublish rechecks publication eligibility after the callback. No extra objects
+or callback dispatch were added to the default CPU hot path; only guard checks apply.
+It never exposes ValueLease.Value, run/producer identities or native device access.
+Saved or foreign views cannot read other invocation inputs or publish after expiry.
+Own transfers cleanup immediately, including before publication failure; PublishOwned
+transfers only after successful CPU publication. Rejected resources remain caller-owned.
+CPU publication also checks canonical Host provenance recursively inside bundles; use
+Forward for an admitted bundle rather than repackaging foreign canonical data.
+PlaceHost wraps only data copied by the current invocation, without consuming the
+one output slot, allowing a fresh canonical placement inside a supported output bundle.
+Successful owners live through the result; failed cleanup is retryable via pipeline
+Dispose. Backend resource bytes must be included in finite requirements; Core cannot
+measure arbitrary reference object graphs or sandbox malicious extension allocations.
+
+## Payload shapes and author contracts
+
+CPU Read, Publish and Forward accept known scalars, Host, explicit ICpuPipelineValue
+payloads and recursively CPU-readable supported bundles. Unknown arbitrary composites
+are rejected rather than reflectively inspected. IImmutablePipelineInput certifies only
+metadata/immutability, not absence of opaque placements. Implement ICpuPipelineValue
+only for pure CPU data: every contained field must be immutable and contain no Host,
+opaque placement, ValueLease, SchemaData, resource/session owner or other
+provenance-bearing child at any depth. Placement-containing values must use explicit
+typed recursive bundle shapes so Core can validate every placement. A custom CPU
+wrapper hiding a saved Host violates the marker contract even without any Device.
+Not every provenance-bearing type is a supported bundle leaf: use Host for canonical
+placements and scope-validated ValueLease parameters rather than nesting leases or
+owners in payloads. This marker is an author declaration, not a runtime proof or
+reflective deep validation; as with factory purity, it is not a malicious-code sandbox.
+
+PipelineBundle<A,B> is recursively supported. Device-containing bundles remain opaque
+as a whole: CPU code cannot Read or Forward to extract just the host child. Backend
+code can read their declarations using a genuine scope. Custom shapes implement
+IPipelineBundle.VisitChildren and visit all immediate children exactly once,
+deterministically and with their real generic type, including default children.
+Traversal is bounded to 16 levels and 64 total values. Schema metadata must be
+available before actual input exists: use default-describable immutable value types,
+as with Host. Reference-type placements/bundles unable to describe their default are
+unsupported. Child schemas are captured and revalidated on Visit, Invoke, Build and
+Prepare, and against actual inputs/outputs before commit. Null placement extents are
+uninitialized and rejected, including nested children. Neither shape nor CPU markers
+authorize changing captured shape/schema while retained. INonCpuReadablePlacement
+exposes only schema/extent diagnostics, not a GPU resource capability. Core has no
+Graphics references or friend-only extension path.

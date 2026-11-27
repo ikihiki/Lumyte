@@ -1,7 +1,11 @@
 namespace Lumyte.Pipelines;
 
-internal sealed class StageNode<TA, TB, TC, TD, TO>(IStageFactory<TA, TB, TC, TD, TO> factory, int[] inputs, Type implementationType) : Node(factory, inputs, typeof(TO), default(TO) is IHostPlacement host ? host.Descriptor : default(TO) is INonCpuReadablePlacement device ? device.Descriptor : null, implementationType, default(TO) is IHostPlacement ? "Host" : default(TO) is INonCpuReadablePlacement extension ? extension.DiagnosticPlacement : "Value", SchemaMetadata.For<TO>)
+internal sealed class StageNode<TA, TB, TC, TD, TO>(IStageFactory<TA, TB, TC, TD, TO> factory, int[] inputs, Type implementationType, ValueShape? capturedShape = null) : Node(factory, inputs, typeof(TO), default(TO) is IHostPlacement host ? host.Descriptor : default(TO) is INonCpuReadablePlacement device ? device.Descriptor : null, implementationType, default(TO) is IHostPlacement ? "Host" : default(TO) is INonCpuReadablePlacement extension ? extension.DiagnosticPlacement : "Value", SchemaMetadata.For<TO>, capturedShape ?? ValueShape.Capture(default(TO)), shape => shape.Validate(ValueShape.Capture(default(TO))))
 {
+    internal override void Visit(IPipelineDefinitionVisitor visitor, int output) => visitor.Stage(factory, (new PipelineEdge<TA>(Inputs[0]), new PipelineEdge<TB>(Inputs[1]), new PipelineEdge<TC>(Inputs[2]), new PipelineEdge<TD>(Inputs[3])), new PipelineEdge<TO>(output));
+
+    internal override Node Rebind(int[] inputs) => new StageNode<TA, TB, TC, TD, TO>(factory, inputs, ImplementationType, CapturedShape);
+
     internal override Processor Create(StageBuildContext context) => new TypedProcessor(factory.Create(context) ?? throw new InvalidOperationException("The stage factory returned a null processor."));
 
     private sealed class TypedProcessor(IStageProcessor<TA, TB, TC, TD, TO> processor) : Processor

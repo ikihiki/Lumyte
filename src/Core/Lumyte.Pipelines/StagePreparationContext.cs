@@ -11,23 +11,22 @@ public sealed class StagePreparationContext
     private readonly object[] _inputList;
     private readonly long _maxBytes;
     private readonly RunValueOwners? _owners;
+    private readonly bool _backendAuthorized;
     private long _reserved;
     private bool _closed;
     private bool _outputValidated;
     private bool _published;
+    private bool _validatingBackendValue;
 
-    internal StagePreparationContext(IStageCapabilities capabilities, object run, object producer, object[] inputs, long maxBytes, RunValueOwners? owners = null)
+    internal StagePreparationContext(IStageCapabilities capabilities, object run, object producer, object[] inputs, long maxBytes, RunValueOwners? owners = null, bool backendAuthorized = false)
     {
         Capabilities = capabilities;
+        _backendAuthorized = backendAuthorized;
         _run = run;
         _producer = producer;
         _inputList = inputs;
         _maxBytes = maxBytes;
         _owners = owners;
-        if (capabilities is IStageScopeBinding binding)
-        {
-            binding.Bind(this);
-        }
     }
 
     /// <summary>Gets the explicitly supplied capabilities.</summary>
@@ -45,7 +44,7 @@ public sealed class StagePreparationContext
             throw new InvalidOperationException("This execution domain cannot read CPU payloads.");
         }
 
-        if (value.Value is INonCpuReadablePlacement)
+        if (!PipelineValueSafety.IsCpuReadable(value.Value))
         {
             throw new InvalidOperationException("Device placement is not CPU-readable.");
         }
@@ -60,14 +59,20 @@ public sealed class StagePreparationContext
     public ValueLease<TV> Publish<TV>(TV immutableValue)
     {
         CheckOpen();
+        CheckNotValidatingBackendValue();
         if (Capabilities is IStageCpuPolicy { CanPublishCpu: false })
         {
             throw new InvalidOperationException("This execution domain cannot publish CPU payloads.");
         }
 
-        if (immutableValue is INonCpuReadablePlacement)
+        if (!PipelineValueSafety.IsCpuReadable(immutableValue))
         {
             throw new InvalidOperationException("CPU publication cannot manufacture a device placement.");
+        }
+
+        if (immutableValue is IPipelineBundle)
+        {
+            ValueShape.Capture(immutableValue, actual: true, publicationProducer: _producer);
         }
 
         if (immutableValue is IHostPlacement host && (host.Extent is null || !ReferenceEquals(host.Invocation, _producer)))
@@ -103,12 +108,13 @@ public sealed class StagePreparationContext
     public ValueLease<TV> Forward<TV>(ValueLease<TV> value)
     {
         Validate(value);
+        CheckNotValidatingBackendValue();
         if (Capabilities is IStageCpuPolicy { CanPublishCpu: false })
         {
             throw new InvalidOperationException("This execution domain cannot forward CPU payloads.");
         }
 
-        if (value.Value is INonCpuReadablePlacement || (value.Value is IHostPlacement host && host.Extent is null))
+        if (!PipelineValueSafety.IsCpuReadable(value.Value) || (value.Value is IHostPlacement host && host.Extent is null))
         {
             throw new InvalidOperationException("Forward requires an initialized CPU-readable input.");
         }
@@ -147,6 +153,7 @@ public sealed class StagePreparationContext
         where T : unmanaged
     {
         CheckOpen();
+        CheckNotValidatingBackendValue();
         if (Capabilities is IStageCpuPolicy { CanPublishCpu: false })
         {
             throw new InvalidOperationException("This execution domain cannot allocate canonical CPU data.");
@@ -171,23 +178,127 @@ public sealed class StagePreparationContext
     /// <returns>The host output lease.</returns>
     public ValueLease<Host<TS>> PublishHost<TS>(SchemaData<TS> value)
         where TS : ISchema
+        => Publish(PlaceHost(value));
+
+    /// <summary>Creates a host placement from this invocation's copied canonical data without publishing an output.</summary>
+    /// <typeparam name="TS">The canonical schema.</typeparam>
+    /// <param name="value">The immutable data copied by this invocation.</param>
+    /// <returns>A placement that can be included in this invocation's one supported output bundle.</returns>
+    public Host<TS> PlaceHost<TS>(SchemaData<TS> value)
+        where TS : ISchema
     {
         CheckOpen();
+        CheckNotValidatingBackendValue();
         ArgumentNullException.ThrowIfNull(value);
+        if (Capabilities is IStageCpuPolicy { CanPublishCpu: false })
+        {
+            throw new InvalidOperationException("This execution domain cannot create CPU placements.");
+        }
+
         if (!ReferenceEquals(value.Invocation, _producer))
         {
             throw new ArgumentException("Data belongs to another invocation.", nameof(value));
         }
 
-        return Publish(new Host<TS>(value));
+        return new Host<TS>(value);
     }
+
+    /// <summary>Gets a backend-only expiring declaration view for the exact host-bound capability.</summary>
+    /// <param name="capability">The genuine invocation capability.</param>
+    /// <returns>The bounded backend scope.</returns>
+    public StageBackendScope Backend(IStageBackendCapabilities capability)
+    {
+        CheckOpen();
+        if (!_backendAuthorized || !ReferenceEquals(capability, Capabilities))
+        {
+            throw new InvalidOperationException("The capability is not bound by this backend invocation.");
+        }
+
+        return new StageBackendScope(this);
+    }
+
+    internal TV BackendRead<TV>(ValueLease<TV> value)
+    {
+        Validate(value);
+        BeginBackendValueValidation();
+        try
+        {
+            ((IStageBackendCapabilities)Capabilities).ValidateRead(value.Value);
+        }
+        finally
+        {
+            _validatingBackendValue = false;
+        }
+
+        return value.Value;
+    }
+
+    internal ValueLease<TV> BackendPublish<TV>(TV value)
+    {
+        EnsurePublication();
+        BeginBackendValueValidation();
+        try
+        {
+            ((IStageBackendCapabilities)Capabilities).ValidatePublication(value);
+        }
+        finally
+        {
+            _validatingBackendValue = false;
+        }
+
+        EnsurePublication();
+        Reserve(checked(Requirements.ValueLeaseBytes + Unsafe.SizeOf<TV>()));
+        var output = new ValueLease<TV>(value, _run, _producer);
+        _published = true;
+        return output;
+    }
+
+    internal void BackendOwn(IDisposable owner)
+    {
+        CheckOpen();
+        CheckNotValidatingBackendValue();
+        ArgumentNullException.ThrowIfNull(owner);
+        Reserve(Requirements.ValueLeaseBytes);
+        (_owners ?? throw new InvalidOperationException("No cleanup table is available.")).Add(owner);
+    }
+
+    internal void Bind()
+    {
+        if (Capabilities is IStageScopeBinding binding)
+        {
+            binding.Bind(this);
+        }
+    }
+
+    internal void ConfirmOutput() => _outputValidated = true;
 
     internal void Close()
     {
+        if (_closed)
+        {
+            return;
+        }
+
         _closed = true;
         if (Capabilities is IStageScopeBinding binding)
         {
-            binding.Complete(_outputValidated);
+            try
+            {
+                binding.Complete(_outputValidated);
+            }
+            catch (Exception primary) when (_outputValidated)
+            {
+                try
+                {
+                    binding.Complete(false);
+                }
+                catch (Exception rollback)
+                {
+                    throw new AggregateException(primary, rollback);
+                }
+
+                throw;
+            }
         }
     }
 
@@ -198,8 +309,6 @@ public sealed class StagePreparationContext
         {
             throw new InvalidOperationException("Output belongs to another invocation.");
         }
-
-        _outputValidated = true;
     }
 
     private void Validate<TV>(ValueLease<TV> value)
@@ -225,9 +334,24 @@ public sealed class StagePreparationContext
         return false;
     }
 
+    private void BeginBackendValueValidation()
+    {
+        CheckNotValidatingBackendValue();
+        _validatingBackendValue = true;
+    }
+
+    private void CheckNotValidatingBackendValue()
+    {
+        if (_validatingBackendValue)
+        {
+            throw new InvalidOperationException("Backend value validation cannot reenter validation or mutate the invocation scope.");
+        }
+    }
+
     private void EnsurePublication()
     {
         CheckOpen();
+        CheckNotValidatingBackendValue();
         if (_published)
         {
             throw new InvalidOperationException("One stage invocation publishes exactly one typed output lease.");

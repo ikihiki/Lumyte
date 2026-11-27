@@ -78,6 +78,10 @@ internal sealed unsafe class VulkanShaderBinding : IDisposable
             {
                 _ = sampler.Native;
             }
+            else if (registration.Resource is IVulkanShaderBuffer buffer)
+            {
+                _ = buffer.ShaderAddress;
+            }
         }
     }
 

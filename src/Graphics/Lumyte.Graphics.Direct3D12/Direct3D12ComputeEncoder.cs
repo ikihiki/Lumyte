@@ -10,6 +10,7 @@ internal sealed unsafe class Direct3D12ComputeEncoder(Direct3D12CommandBuffer ow
     private ShaderRootArguments? _arguments;
     private object? _argumentProgram;
     private bool _settingArguments;
+    private Direct3D12CommandBuffer.NativePreparation? _prepared;
     private Direct3D12ArgumentTable? _table;
     private Direct3D12ArgumentTable? _argumentTableHint;
 
@@ -43,6 +44,15 @@ internal sealed unsafe class Direct3D12ComputeEncoder(Direct3D12CommandBuffer ow
         where T : struct, IShaderArguments
     {
         ValidateRootSelection();
+        if (value.NativePreparationIdentity is { } identity)
+        {
+            Direct3D12CommandBuffer.NativePreparation prepared = owner.FindPreparation(identity, typeof(T), _pipeline!, null, [], null, null, _table);
+            SelectRoot(prepared.Root, prepared.Payload, _pipeline!, prepared.Table);
+            _prepared = prepared;
+            return;
+        }
+
+        _prepared = null;
         Direct3D12ComputePipeline pipeline = _pipeline!;
         _settingArguments = true;
         try
@@ -63,6 +73,7 @@ internal sealed unsafe class Direct3D12ComputeEncoder(Direct3D12CommandBuffer ow
         where T : unmanaged
     {
         ValidateRootSelection();
+        _prepared = null;
         Direct3D12ComputePipeline pipeline = _pipeline!;
         _settingArguments = true;
         try
@@ -169,9 +180,12 @@ internal sealed unsafe class Direct3D12ComputeEncoder(Direct3D12CommandBuffer ow
 
         // All managed preparation precedes the first native mutation.
         // Issued driver commands cannot be rolled back after recording.
-        fixed (byte* bytes = payload)
+        if (!payload.IsEmpty)
         {
-            owner.Owner.Check(NativeMethods.RootConstants(owner.Native, (uint*)bytes, checked((uint)(payload.Length / 4)), 1));
+            fixed (byte* bytes = payload)
+            {
+                owner.Owner.Check(NativeMethods.RootConstants(owner.Native, (uint*)bytes, checked((uint)(payload.Length / 4)), 1));
+            }
         }
 
         _arguments = root;
@@ -204,6 +218,25 @@ internal sealed unsafe class Direct3D12ComputeEncoder(Direct3D12CommandBuffer ow
         }
 
         table?.ThrowIfDisposed();
+        if (_prepared is { } prepared)
+        {
+            Direct3D12CommandBuffer.NativePreparation matched = owner.FindPreparation(prepared.Identity, prepared.ArgumentType, _pipeline!, null, [], null, null, _table);
+            if (!ReferenceEquals(matched, prepared))
+            {
+                throw new InvalidOperationException("Prepared selection changed.");
+            }
+
+            _pipeline!.ValidateAlive();
+            owner.Owner.Check(NativeMethods.Pipeline(owner.Native, prepared.Pipeline, 1));
+
+            if (prepared.Binding != null)
+            {
+                NativeMethods.Binding(owner.Native, prepared.Binding.Native, 1);
+            }
+
+            return;
+        }
+
         IShaderReference[]? registrations = table?.SnapshotRegistrations();
 
         _pipeline.ValidateAlive();

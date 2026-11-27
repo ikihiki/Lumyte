@@ -40,6 +40,17 @@ internal sealed class ValidationComputeEncoder : IComputeEncoder
         _checks.BeginArguments();
         try
         {
+            if (arguments.NativePreparationIdentity is { } identity)
+            {
+                ValidationCommandBuffer.NativePreparation prepared = _owner.FindPreparation(identity, _pipeline!);
+                Action<IReadOnlyCollection<IShaderReference>>? admission = _checks.ValidatePrepared(prepared.Metadata);
+                var cached = new ValidationArguments<T>(in arguments, new ValidationWriteContext(_owner.Device));
+                _raw.SetArguments(in cached);
+                _checks.CommitRoot(prepared.Metadata, admission);
+
+                return;
+            }
+
             IShaderReferenceMetadata? metadata = null;
             Action<IReadOnlyCollection<IShaderReference>>? admit = null;
             ValidationWriteContext context = _checks.Context(Diagnostic(T.RootParameter), (value, admission) =>

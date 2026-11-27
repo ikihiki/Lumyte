@@ -22,7 +22,7 @@ RenderGraph、型付きパイプライン、画像効果を、共通のGPU実行
 
 ### 利用者の変更前・変更後
 
-次は同じ画像へぼかしを適用する操作である。変更前は基準コードの実在API、変更後は本ADRで追加・変更する提案APIを使う。初期化済みのdevice、入力画像、shader、予算と資源snapshotを例から省略する。
+次は同じ画像へぼかしを適用する操作である。変更前は基準コードの実在API、変更後は本ADRで追加・変更する提案APIを使う。初期化済みのdevice、入力画像、shaderと予算を例から省略する。GraphicsExecutionModuleを既存ExecutionRuntimeへ登録し、開始とowner phaseのpumpを行う初期化も省略する。
 
 変更前はRenderGraphへ効果を展開し、callback記録中に一時資源と参照を準備する。送信と完了待機は利用側が行う。
 
@@ -48,17 +48,21 @@ using Lumyte.Graphics.Planning;
 using Lumyte.Graphics.RenderGraph;
 using Lumyte.Graphics.ImageEffects;
 
-using var session = new GraphicsDeviceSession(execution, device, artifacts, policy);
-using var frame = session.CreateFrame(resourceSnapshot, frameBudget);
+var session = new GraphicsDeviceSession(graphicsOwner, device, graphicsBudget);
+var frame = session.CreateFrame();
 var graph = frame.AsRenderGraph(); // 同じframe.Planを使う上位APIのview。
 PlanImage input = graph.ImportImage(sourceView, sourceUseLease, sourceDescription);
 PlanImage output = graph.AppendEffect(new GaussianBlurEffect(3, 3), input);
 graph.Export(output);
 using var compiled = await frame.CompileAsync(ct);
-using var prepared = await compiled.PrepareAsync(ct);
+var prepared = await compiled.PrepareAsync(ct);
 var use = session.CreateExecution(prepared);
 await use.ExecuteAsync(ct);
-use.Dispose(); // 実完了とcommand退役を確認した後だけ成功する。
+await use.RetireAsync(); // 実完了後。ExecuteAsyncが退役済みなら同じownerで無操作。
+await prepared.RetireAsync();
+compiled.Dispose();
+await frame.RetireAsync();
+await session.RetireAsync();
 ~~~
 
 `sourceUseLease` は借用画像の独立した使用権であり、画像allocation自体の所有権ではない。実行失敗・待機取消し時はsessionが実行と未回収ownerを保持し、利用側は状態を確認して `DrainAsync` または信頼されたdevice世代の退役後の回収へ進む。scopeやsessionの `Dispose` は暗黙待機せず、使用中や隔離中の解放を拒否する。
@@ -131,11 +135,23 @@ public sealed record TintEffect(Vector4 Scale,
 
 `GraphicsDeviceSession` はdevice世代、artifact/pipeline/sampler cache、資源identity、予算、退役台帳を所有する。global singletonにはしない。`GraphicsFrameScope` は一frameの宣言、資源version、使用lease、実行区間と登録要求を所有する。subscopeはその制限viewであり、独立したallocator、登録表plan、送信権を持たない。
 
-型付きDAGの一般構築とCPU値処理はCoreへ置き、既存の `src/Core/Lumyte.Execution/JobGraphBuilder.cs` と `ExecutionRuntime` を利用する。Coreに画像・device型を逆依存させない。Graphics部品は共通builderへ宣言し、初期CPU計算、GPU処理、明示Upload/Downloadを同じ依存計画へ接続する。独立runのleaseを再帰的なPrepareで継ぎ足さない。
+型付きDAGの一般構築とCPU値処理はCoreへ置き、既存の `src/Core/Lumyte.Execution/ExecutionRuntime.cs` のgraph・workflow実行を利用する。Coreに画像・device型を逆依存させない。Graphics部品は共通builderへ宣言し、初期CPU計算、GPU処理、明示Upload/Downloadを同じ依存計画へ接続する。独立runのleaseを再帰的なPrepareで継ぎ足さない。
 
 公開の `IStage` は不変なfactoryを持ち、factoryが要求を申告して、検証後にprocessorを作る。CPU processorはscopeに属する入力leaseを読み、不変出力を公開する。Graphics processorは宣言scopeへkernel、資源use、argumentsを追加する。外部作者も同じ公開契約を使い、既知型switchによる組込み専用経路を設けない。
 
 `Stage` と単項の `Then` は同じnode追加であり、呼出しごとに別nodeを作る。同じPort参照は同producerを共有する。多入力Stageで分岐と合流を表し、foreign graph、cycle、freeze後の変更を拒否する。templateのBuildは算法・schema・artifactを固定し、frame内のInvokeは同一scopeへ有限個のinstanceを作る。
+
+### Coreの公開backend境界
+
+型付き宣言の利用者と、実行能力を供給するbackendを分ける。CoreのCPU実行hostは明示的に借用したExecutionRuntimeを使い、起動・停止や別schedulerの作成を引き受けない。GPU宣言backendも同じ型付きfactoryと依存関係を使い、画像やdeviceの型をCoreへ逆依存させない。
+
+PipelineDefinitionの公開visitorは、captured factoryそのものと型付きの入力・出力edgeを宣言順に渡す。型名や診断用descriptionからfactoryを再構築せず、不変パラメーターを失わない。templateを別の構築へ挿入するときは同一graphへ展開してproducerを付け直し、独立したPrepareAsyncの結果leaseを再帰的に継ぎ足さない。
+
+backendはbuild時の能力と各invocationの能力を明示的に供給する。Coreは要求検証、processor生成、入力admission、出力検証、scopeの閉鎖と失敗時の後始末を共通実装で所有する。processorはrun間で共有されるため、awaitを跨ぐ場合も再入可能とし、invocation状態をprocessorの可変fieldへ保持しない。
+
+CPUのRead・Publishと、backendによる不透明な宣言参照の操作を分ける。backend scopeはhostが供給した正確な能力instanceにだけ結び付け、scope失効、foreign input、二重出力を拒否する。genericなRead・Publishでもbackendの値検証を必ず通し、Graphicsの便宜APIを使わない場合にも全ての不透明な子のframe所属とread producer依存を照合する。Device値と対応する再帰bundleをCPU可読として扱わず、独立ownerは公開前の失敗でも回収台帳に残す。型を調べて任意objectの内部をreflectionで探索する代わりに、対応するbundleと明示的な値契約を使う。IImmutablePipelineInputは不変metadataの宣言であり、Deviceを含まない証明ではない。独自CPU payloadはICpuPipelineValueでHost・Device・ValueLeaseやownerなどの所属・寿命を持つ値を再帰的に含まないことを申告し、Deviceを含む構造は全ての子を列挙するbundle契約で渡す。
+
+能力が返すGPU宣言viewもinvocationへ束縛する。保持されたviewやpassからscope終了後に宣言を増やすことを拒否し、各操作の前に宣言数と保持量を予約する。宣言失敗後に部分的なGPU計画を実行せず、そのframeを無効とする。
 
 ### 効果の解析と一回のLower
 
@@ -161,6 +177,14 @@ sessionはframeを跨ぐimportの競合も追跡する。受理済submissionへ�
 
 資源をimported、transient、persistent、exported、artifactに分類し、保持と再利用可否を分ける。借用allocationは破棄せず使用leaseだけを保持する。export leaseが残る画像と、GPU使用中のcache資源はalias・evictionしない。同allocationのbytesはowner単位一回、仕事量はinstance単位で課金する。
 
+### native準備と記録の分離
+
+表の確定とtyped uploadのUnmapが完了した後、固定owner上でnative commandのPrepareRender、PrepareCompute、PrepareMeshを呼ぶ。attachment形式、depth、render state、index形式、表の世代と型付き引数を照合し、root storage、PSO、descriptor/bind groupをここで準備する。準備中の失敗でもcommandが新ownerを保持し、回収を再試行できる。
+
+型付き引数はNativePreparationIdentityで不変なwire内容と参照を識別する。tokenはnative ownerではなく、他のcommandへ準備物を移す権限でもない。通常のgeneric SetArgumentsがcommand-localの準備済みentryを選択し、Recordではstatic ABI getterやwriterを再実行せず、資源確保・map/upload・PSO/descriptor生成へfallbackしない。zero-rootでもentry選択を行い、root bytesの省略と準備の省略を混同しない。未知・期限切れtoken、型・state・table世代の不一致は記録を失敗させる。
+
+commandの退役はtable、view、allocationより先に行う。実行せず中止したpreparationにexportが残る場合も、最後のlease解放を同じ再試行可能なcommand-first回収へ通す。待機の取消しやexport保持を、送信済GPU仕事の完了証明に代用しない。
+
 ### 引数登録と物理binding
 
 同じBindingPlannerが全live taskのshader ABI、参照closure、view/range、実行kind、attachment、backend上限を受け取る。共通管理はnative table一枚を意味しない。不可分な一draw/dispatchを単位とし、安全に共有できる単位だけを同table groupへまとめる。groupの範囲を変えても描画順は変えない。
@@ -168,6 +192,8 @@ sessionはframeを跨ぐimportの競合も追跡する。受理済submissionへ�
 既存の `ArgumentTablePlan` の予約、重複除去、partitionと一括公開を再利用する。`ShaderResources` は一draw/dispatchの制限viewにする。componentはtableを作成・所有・直接登録しない。tableは資源ownerや同期器ではなく、共通台帳と同じidentityを使う登録機構である。
 
 C#転送配置と既存wire ABIを維持し、symbolic typed field token、resource use、argument recipe、relocation情報を生成器へ加える。数値は既存配置へcopyし、物理参照だけを後確定する。reflectionとの一致を検査するが、数値の別配置をreflectionから再構築しない。
+
+後確定した引数の転送は、元の型付きshader-data bufferを保ったまま同じwire契約のcodecから行う。別codecを受け取るCopyFromはRootParameter、ShaderTypeName、TransferSizeとReferenceCountを転送前に照合し、実際のwriterにも領域と完了を検査させる。同じwire配置を出力することはcodec作者の契約であり、TransferFieldsは引き続き任意の診断情報とする。CPU転送は明示的なUpload mapping中だけ許可し、記録前にUnmapする。
 
 shader fieldをuse tokenへBindすると、型、scope、version、view/range、shader stage/accessを照合する。これを依存とbinding双方の権威にする。attachment、copy、vertex/index、indirectのようなshader field外の使用は別に宣言する。定数Setによるresource参照の偽装を拒否する。
 
@@ -275,17 +301,95 @@ usvgの正規化結果はgroup/paint/clip/mask/filter/patternの意味をadapter
 +        ValueTask<ValueLease<O>> PrepareAsync(StagePreparationContext context,
 +            ValueLease<A> input, CancellationToken cancellationToken);
 +    }
++    // CPU専用hostにも明示backendを供給できる。native ownerをstageへ公開しない。
++    public interface IPipelineBackend
++    {
++        void Validate(int node, StageRequirements requirements);
++        IStageCapabilities BuildCapabilities(int node);
++        IStageCapabilities PrepareCapabilities(int node, StageRequirements compiled, StageRequirements actual);
++    }
++    public interface IStageBackendValueValidation
++    {
++        // generic scope経由でも全opaque子の同一scopeとread producerを照合する。
++        void ValidateRead<T>(T value);
++        void ValidatePublication<T>(T value);
++    }
++    public interface IStageBackendCapabilities : IStageCapabilities, IStageBackendValueValidation;
++    // 不変metadataの宣言とは別に、opaque値を再帰的に含まない作者契約を表す。
++    public interface ICpuPipelineValue;
++    public interface IPipelineBundle
++    {
++        // default値を含む全ての子を一回ずつ列挙する。探索は深さ16・総数64へ制限する。
++        void VisitChildren(IPipelineBundleVisitor visitor);
++    }
++    public interface IPipelineBundleVisitor { void Child<T>(T value); }
++    public readonly record struct PipelineBundle<A, B>(A First, B Second) : IPipelineBundle;
++    public sealed class StageBackendScope
++    {
++        public T Read<T>(ValueLease<T> value);
++        public ValueLease<T> Publish<T>(T value);
++        public void Own(IDisposable owner);
++    }
++    public sealed class PipelineBuildHost : IDisposable
++    {
++        public PipelineBuildHost(ExecutionRuntime execution, PipelineBudget budget, IPipelineBackend? backend = null);
++        public IPipeline<A, O> Build<A, O>(PipelineDefinition<A, O> definition);
++        public void Dispose();
++    }
++    public interface IPipeline<A, O> : IDisposable
++    {
++        // CPU実行または同scopeへの宣言準備。GPU送信を暗黙に行わない。
++        ValueTask<PipelineResult<O>> PrepareAsync(A input, CancellationToken cancellationToken = default);
++    }
++    public interface IPipelineDefinitionVisitor
++    {
++        // 2〜6入力も同じgeneric契約を持つ。edge番号はこのdefinition内だけで有効。
++        void Stage<A, O>(IStageFactory<A, O> factory, PipelineEdge<A> inputs, PipelineEdge<O> output);
++    }
++    public readonly record struct PipelineEdge<T>(int Index);
++    public sealed class PipelineDefinition<A, O>
++    {
++        public PipelineEdge<O> OutputEdge { get; }
++        public void Visit(IPipelineDefinitionVisitor visitor);
++    }
 +    public sealed class PipelineGraph<TInput>
 +    {
 +        public Port<TInput> Input { get; }
 +        public Port<O> Stage<A, O>(IStage<A, O> stage, Port<A> input);
 +        public Port<O> Stage<A, B, O>(IStage<A, B, O> stage, Port<A> a, Port<B> b);
++        public Port<O> Invoke<A, O>(PipelineDefinition<A, O> definition, Port<A> input);
 +        public PipelineDefinition<TInput, O> Complete<O>(Port<O> output);
 +    }
 +    public sealed class Port<T>
 +    {
 +        public Port<O> Then<O>(IStage<T, O> stage);
 +    }
+ }
+ namespace Lumyte.Graphics.Abstractions
+ {
+     public interface IShaderArguments
+     {
++        // nullは既存raw経路。不変内容のnon-null tokenはcommand-local準備済み経路。
++        object? NativePreparationIdentity => null;
+     }
+     public interface IGraphicsCommandBuffer
+     {
++        void PrepareRender<T>(RenderPassDesc pass, IGraphicsPipeline pipeline,
++            GraphicsRenderStateDesc state, IArgumentTable? table, in T arguments,
++            IndexFormat? indexFormat = null) where T : struct, IShaderArguments;
++        void PrepareCompute<T>(IGraphicsComputePipeline pipeline,
++            IArgumentTable? table, in T arguments) where T : struct, IShaderArguments;
++        void PrepareMesh<T>(RenderPassDesc pass, IMeshPipeline pipeline,
++            GraphicsRenderStateDesc state, IArgumentTable? table, in T arguments)
++            where T : struct, IShaderArguments;
+     }
+     public interface IGraphicsShaderDataBuffer<T> : IDisposable where T : struct, IShaderArguments
+     {
++        // 元bufferの型を保つ。static wire契約不一致は書込前に拒否する。
++        // sourceは同期的に消費し、mapped Upload以外を拒否。未対応実装は明示失敗。
++        void CopyFrom<TSource>(ReadOnlySpan<TSource> source, ulong elementOffset = 0)
++            where TSource : struct, IShaderArguments;
+     }
  }
  namespace Lumyte.Graphics.Planning
  {
@@ -319,12 +423,14 @@ usvgの正規化結果はgroup/paint/clip/mask/filter/patternの意味をadapter
 +    }
 +    public sealed class GraphicsDeviceSession : IDisposable
 +    {
-+        public GraphicsDeviceSession(ExecutionRuntime runtime, IGraphicDevice device,
-+            IStageArtifactProvider artifacts, GraphicsExecutionPolicy policy);
-+        public GraphicsFrameScope CreateFrame(ResourceSnapshot resources, GraphicsBudget budget);
++        // graphicsOwnerは既存ExecutionRuntimeへ登録済みの固定owner。runtime自体は借用する。
++        public GraphicsDeviceSession(GraphicsExecutionModule execution, IGraphicDevice device,
++            GraphicsPlanningBudget? budget = null);
++        public GraphicsFrameScope CreateFrame();
 +        public GraphicsPipelineTemplate<A, O> Build<A, O>(PipelineDefinition<A, O> definition);
 +        public GraphicsExecution CreateExecution(PreparedGraphicsExecution prepared);
 +        public ValueTask DrainAsync();
++        public ValueTask RetireAsync();
 +        // 使用中/隔離中は拒否。暗黙wait/device破壊はしない。
 +        public void Dispose();
 +    }
@@ -333,6 +439,7 @@ usvgの正規化結果はgroup/paint/clip/mask/filter/patternの意味をadapter
 +        // 上位のRenderGraph/効果型へ逆依存しない共通builder。
 +        public GraphicsPlanBuilder Plan { get; }
 +        public ValueTask<CompiledGraphicsPlan> CompileAsync(CancellationToken cancellationToken);
++        public ValueTask RetireAsync();
 +    }
 +    public sealed class CompiledGraphicsPlan : IDisposable
 +    {
@@ -343,6 +450,7 @@ usvgの正規化結果はgroup/paint/clip/mask/filter/patternの意味をadapter
 +    {
 +        // 明示的にrecord/submitする。取消しでも受理済仕事とownerはsessionに残る。
 +        public ValueTask ExecuteAsync(CancellationToken cancellationToken);
++        public ValueTask RetireAsync();
 +        public GraphicsRecoveryState Recovery { get; }
 +        public void Recover(GraphicsDeviceRetirementProof proof);
 +        public void Dispose();

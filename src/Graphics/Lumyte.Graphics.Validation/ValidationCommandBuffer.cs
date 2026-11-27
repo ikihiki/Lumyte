@@ -2,12 +2,13 @@ using Lumyte.Graphics.Abstractions;
 
 namespace Lumyte.Graphics.Validation;
 
-internal sealed class ValidationCommandBuffer : ValidationResource<IGraphicsCommandBuffer>, IGraphicsCommandBuffer
+internal sealed partial class ValidationCommandBuffer : ValidationResource<IGraphicsCommandBuffer>, IGraphicsCommandBuffer
 {
     private readonly Dictionary<IShaderDataSource, IShaderReferenceMetadata> _overlay = new(ReferenceEqualityComparer.Instance);
     private readonly Dictionary<IShaderDataSource, Action<IShaderReferenceMetadata>> _publish = new(ReferenceEqualityComparer.Instance);
     private object? _pass;
     private bool _submitted;
+    private bool _recordingStarted;
 
     internal ValidationCommandBuffer(ValidationDevice device, IGraphicsCommandBuffer raw, CommandBufferDesc desc)
         : base(device, raw, device)
@@ -277,13 +278,24 @@ internal sealed class ValidationCommandBuffer : ValidationResource<IGraphicsComm
         }
 
         Raw.Dispose();
+        _preparations.Clear();
         Device.Tracker.Discard(this);
         _overlay.Clear();
         _publish.Clear();
     }
 
-    private void OutsidePass()
+    private void OutsidePass(bool preparing = false)
     {
+        if (!preparing)
+        {
+            _recordingStarted = true;
+        }
+
+        if (_preparing && !preparing)
+        {
+            throw new InvalidOperationException("Preparation is active.");
+        }
+
         ValidateRecording();
         if (_pass != null)
         {

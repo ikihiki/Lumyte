@@ -97,6 +97,29 @@ internal sealed class VulkanShaderDataBuffer<T> : IGraphicsShaderDataBuffer<T>, 
         VulkanShaderTransfer.CopyFrom(Owner, source, Storage, elementOffset, Count);
     }
 
+    public void CopyFrom<TSource>(ReadOnlySpan<TSource> source, ulong elementOffset = 0)
+        where TSource : struct, IShaderArguments
+    {
+        ValidateAlive();
+        ShaderTransfer.ValidateCompatibility<T, TSource>();
+        if (source.IsEmpty)
+        {
+            if (Memory != MemoryPreference.Upload || !IsMapped)
+            {
+                throw new InvalidOperationException("CopyFrom requires mapped upload staging.");
+            }
+
+            if (elementOffset > Count)
+            {
+                throw new ArgumentOutOfRangeException(nameof(elementOffset));
+            }
+
+            return;
+        }
+
+        VulkanShaderTransfer.CopyFrom(Owner, source, Storage, elementOffset, Count);
+    }
+
     public ShaderDataSlice<T> SliceElements(ulong offset, ulong count)
     {
         ValidateAlive();

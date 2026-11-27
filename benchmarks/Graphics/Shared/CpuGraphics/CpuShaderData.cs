@@ -114,4 +114,31 @@ internal sealed class CpuShaderData<T> : CpuResource, IGraphicsShaderDataBuffer<
 
         Owner.Uploads += checked(source.Length * T.TransferSize);
     }
+
+    public void CopyFrom<TSource>(ReadOnlySpan<TSource> source, ulong elementOffset = 0)
+        where TSource : struct, IShaderArguments
+    {
+        Check();
+        ShaderTransfer.ValidateCompatibility<T, TSource>();
+        if (!IsMapped || Memory != MemoryPreference.Upload)
+        {
+            throw new InvalidOperationException("Requires mapped upload storage.");
+        }
+
+        if (elementOffset > Count || (ulong)source.Length > Count - elementOffset)
+        {
+            throw new ArgumentOutOfRangeException(nameof(elementOffset));
+        }
+
+        for (int i = 0;
+        i < source.Length;
+        i++)
+        {
+            var writer = new CpuWriter(Owner, Bytes.AsSpan(checked((int)((elementOffset + (ulong)i) * ShaderElementStrideInBytes)), T.TransferSize));
+            source[i].Write(ref writer);
+            writer.Complete();
+        }
+
+        Owner.Uploads += checked(source.Length * T.TransferSize);
+    }
 }

@@ -136,60 +136,7 @@ internal sealed unsafe partial class VulkanCommandBuffer : IGraphicsCommandBuffe
     public IRenderEncoder BeginRenderPass(RenderPassDesc desc)
     {
         RequireRecording();
-        ArgumentNullException.ThrowIfNull(desc);
-        ArgumentNullException.ThrowIfNull(desc.ColorAttachments);
-        RenderColorAttachmentDesc[] attachments = desc.ColorAttachments.ToArray();
-        if ((attachments.Length == 0 && desc.DepthStencilAttachment == null) || (uint)attachments.Length > _owner.Caps.MaxColorAttachments)
-        {
-            throw new ArgumentException("Invalid color attachment count.");
-        }
-
-        (uint Width, uint Height)? size = null;
-        foreach (RenderColorAttachmentDesc attachment in attachments)
-        {
-            ArgumentNullException.ThrowIfNull(attachment);
-            if (attachment.View is not VulkanTextureView view || !ReferenceEquals(view.Owner, _owner))
-            {
-                throw new ArgumentException("Attachment belongs to another device.");
-            }
-
-            _ = view.Native;
-            TextureViewInfo info = view.Info;
-            VulkanTexture texture = OwnTexture(view.Texture);
-            (uint width, uint height) = texture.GetMipSize(info.BaseMipLevel);
-            ClearColor clear = attachment.ClearValue;
-            if (info.Format is TextureFormat.Depth32Float or TextureFormat.Depth24Stencil8 || (texture.Usage & TextureUsage.RenderAttachment) == 0 || info.Dimension != TextureViewDimension.D2 || info.MipLevelCount != 1 || info.ArrayLayerCount != 1 ||
-                (size is { } expected && expected != (width, height)) ||
-                !Enum.IsDefined(attachment.LoadOp) || !Enum.IsDefined(attachment.StoreOp) || !double.IsFinite(clear.Red) || !double.IsFinite(clear.Green) || !double.IsFinite(clear.Blue) || !double.IsFinite(clear.Alpha))
-            {
-                throw new ArgumentException("Invalid color attachment, operation or dimensions.");
-            }
-
-            size = (width, height);
-        }
-
-        RenderDepthStencilAttachmentDesc? depth = desc.DepthStencilAttachment;
-        if (depth != null)
-        {
-            if (depth.View is not VulkanTextureView view || !ReferenceEquals(view.Owner, _owner))
-            {
-                throw new ArgumentException("Depth attachment belongs to another device.");
-            }
-
-            _ = view.Native;
-            TextureViewInfo info = view.Info;
-            VulkanTexture texture = OwnTexture(view.Texture);
-            (uint width, uint height) = texture.GetMipSize(info.BaseMipLevel);
-            if (info.Format is not (TextureFormat.Depth32Float or TextureFormat.Depth24Stencil8) ||
-                (texture.Usage & TextureUsage.RenderAttachment) == 0 || info.Dimension != TextureViewDimension.D2 || info.MipLevelCount != 1 || info.ArrayLayerCount != 1 ||
-                (size is { } expected && expected != (width, height)) || !Enum.IsDefined(depth.DepthLoadOp) || !Enum.IsDefined(depth.DepthStoreOp) ||
-                !Enum.IsDefined(depth.StencilLoadOp) || !Enum.IsDefined(depth.StencilStoreOp) || !float.IsFinite(depth.DepthClearValue) ||
-                depth.DepthClearValue < 0 || depth.DepthClearValue > 1 || depth.StencilClearValue > 255)
-            {
-                throw new ArgumentException("Invalid depth/stencil attachment, operation or dimensions.");
-            }
-        }
-
+        (RenderColorAttachmentDesc[] attachments, RenderDepthStencilAttachmentDesc? depth) = ValidateRenderPass(desc);
         IRenderEncoder pass = BeginRenderNative(attachments, depth);
         _active = pass;
         return pass;
@@ -233,6 +180,7 @@ internal sealed unsafe partial class VulkanCommandBuffer : IGraphicsCommandBuffe
 
         _bindings.Clear();
         _registrationSnapshots.Clear();
+        _prepared.Clear();
         State = CommandBufferState.Disposed;
     }
 
@@ -296,13 +244,74 @@ internal sealed unsafe partial class VulkanCommandBuffer : IGraphicsCommandBuffe
         return buffer;
     }
 
+    private (RenderColorAttachmentDesc[] Attachments, RenderDepthStencilAttachmentDesc? Depth) ValidateRenderPass(RenderPassDesc desc)
+    {
+        ArgumentNullException.ThrowIfNull(desc);
+        ArgumentNullException.ThrowIfNull(desc.ColorAttachments);
+        RenderColorAttachmentDesc[] attachments = desc.ColorAttachments.ToArray();
+        if ((attachments.Length == 0 && desc.DepthStencilAttachment == null) || (uint)attachments.Length > _owner.Caps.MaxColorAttachments)
+        {
+            throw new ArgumentException("Invalid color attachment count.");
+        }
+
+        (uint Width, uint Height)? size = null;
+        foreach (RenderColorAttachmentDesc attachment in attachments)
+        {
+            ArgumentNullException.ThrowIfNull(attachment);
+            if (attachment.View is not VulkanTextureView view || !ReferenceEquals(view.Owner, _owner))
+            {
+                throw new ArgumentException("Attachment belongs to another device.");
+            }
+
+            _ = view.Native;
+            TextureViewInfo info = view.Info;
+            VulkanTexture texture = OwnTexture(view.Texture);
+            (uint width, uint height) = texture.GetMipSize(info.BaseMipLevel);
+            ClearColor clear = attachment.ClearValue;
+            if (info.Format is TextureFormat.Depth32Float or TextureFormat.Depth24Stencil8 || (texture.Usage & TextureUsage.RenderAttachment) == 0 || info.Dimension != TextureViewDimension.D2 || info.MipLevelCount != 1 || info.ArrayLayerCount != 1 ||
+                (size is { } expected && expected != (width, height)) ||
+                !Enum.IsDefined(attachment.LoadOp) || !Enum.IsDefined(attachment.StoreOp) || !double.IsFinite(clear.Red) || !double.IsFinite(clear.Green) || !double.IsFinite(clear.Blue) || !double.IsFinite(clear.Alpha))
+            {
+                throw new ArgumentException("Invalid color attachment, operation or dimensions.");
+            }
+
+            size = (width, height);
+        }
+
+        RenderDepthStencilAttachmentDesc? depth = desc.DepthStencilAttachment;
+        if (depth != null)
+        {
+            if (depth.View is not VulkanTextureView view || !ReferenceEquals(view.Owner, _owner))
+            {
+                throw new ArgumentException("Depth attachment belongs to another device.");
+            }
+
+            _ = view.Native;
+            TextureViewInfo info = view.Info;
+            VulkanTexture texture = OwnTexture(view.Texture);
+            (uint width, uint height) = texture.GetMipSize(info.BaseMipLevel);
+            if (info.Format is not (TextureFormat.Depth32Float or TextureFormat.Depth24Stencil8) ||
+                (texture.Usage & TextureUsage.RenderAttachment) == 0 || info.Dimension != TextureViewDimension.D2 || info.MipLevelCount != 1 || info.ArrayLayerCount != 1 ||
+                (size is { } expected && expected != (width, height)) || !Enum.IsDefined(depth.DepthLoadOp) || !Enum.IsDefined(depth.DepthStoreOp) ||
+                !Enum.IsDefined(depth.StencilLoadOp) || !Enum.IsDefined(depth.StencilStoreOp) || !float.IsFinite(depth.DepthClearValue) ||
+                depth.DepthClearValue < 0 || depth.DepthClearValue > 1 || depth.StencilClearValue > 255)
+            {
+                throw new ArgumentException("Invalid depth/stencil attachment, operation or dimensions.");
+            }
+        }
+
+        return (attachments, depth);
+    }
+
     private void RequireRecording()
     {
         ObjectDisposedException.ThrowIf(State == CommandBufferState.Disposed, this);
-        if (State != CommandBufferState.Recording || _active != null)
+        if (State != CommandBufferState.Recording || _active != null || _preparingNative)
         {
             throw new InvalidOperationException("Commands require Recording state outside a pass.");
         }
+
+        _recordingStarted = true;
     }
 
     private VulkanTexture OwnTexture(IGraphicsTexture resource)

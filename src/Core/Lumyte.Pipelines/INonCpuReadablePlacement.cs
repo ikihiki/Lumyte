@@ -1,7 +1,8 @@
 namespace Lumyte.Pipelines;
 
-/// <summary>Describes an extension placement that cannot be read by CPU callbacks.</summary>
-internal interface INonCpuReadablePlacement
+/// <summary>Describes an immutable opaque declaration that cannot be read by CPU callbacks.</summary>
+/// <remarks>Use a default-describable immutable value type so schemas can be captured before input admission. Extent may be null only for an uninitialized value, which cannot be admitted.</remarks>
+public interface INonCpuReadablePlacement
 {
     /// <summary>Gets the canonical descriptor.</summary>
     SchemaDescriptor Descriptor { get; }

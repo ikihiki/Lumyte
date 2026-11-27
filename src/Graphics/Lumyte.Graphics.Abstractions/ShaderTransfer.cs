@@ -9,6 +9,24 @@ namespace Lumyte.Graphics.Abstractions;
 /// <summary>Copies ordinary unmanaged values without interfaces, generated code or conversion.</summary>
 public static class ShaderTransfer
 {
+    /// <summary>Validates the static wire identity of an alternate codec before writing.</summary>
+    /// <typeparam name="TTarget">The allocation's declared shader type.</typeparam>
+    /// <typeparam name="TSource">The alternate encoding type.</typeparam>
+    /// <remarks>Metadata providers must be immutable and instance independent. Equal metadata does not prove field layout equality, which remains the codec author's precondition. TransferFields is optional diagnostics and is never consulted.</remarks>
+    /// <exception cref="ArgumentException">The codecs declare different wire identities.</exception>
+    public static void ValidateCompatibility<TTarget, TSource>()
+        where TTarget : struct, IShaderArguments
+        where TSource : struct, IShaderArguments
+    {
+        if (!string.Equals(TTarget.RootParameter, TSource.RootParameter, StringComparison.Ordinal)
+            || !string.Equals(TTarget.ShaderTypeName, TSource.ShaderTypeName, StringComparison.Ordinal)
+            || TTarget.TransferSize != TSource.TransferSize
+            || TTarget.ReferenceCount != TSource.ReferenceCount)
+        {
+            throw new ArgumentException("Alternate shader codec must declare the target wire identity.");
+        }
+    }
+
     /// <summary>Copies the complete C# representation, including padding, into an independent snapshot.</summary>
     /// <typeparam name="T">The unmanaged value type.</typeparam>
     /// <param name="value">The value to copy.</param>

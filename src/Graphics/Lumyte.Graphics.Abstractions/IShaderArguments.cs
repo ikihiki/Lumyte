@@ -3,6 +3,10 @@ namespace Lumyte.Graphics.Abstractions;
 /// <summary>Provides an AOT-safe bulk transfer of C#-authoritative shader wire bytes from argument structs.</summary>
 public interface IShaderArguments
 {
+    /// <summary>Gets an optional stable token identifying immutable arguments for command-local native preparation.</summary>
+    /// <remarks>A non-null token promises immutable wire bytes, references and ABI. Missing command-local entries are rejected instead of invoking the writer. Never reuse a token for changed data or another ABI.</remarks>
+    object? NativePreparationIdentity => null;
+
     /// <summary>Gets the logical root parameter name.</summary>
     static virtual string RootParameter => "arguments";
 

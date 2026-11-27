@@ -7,6 +7,7 @@ public sealed class PipelineDefinition<TInput, TOutput>
 {
     private readonly PipelineDescription _description;
     private readonly SchemaDescriptor? _inputSchema = SchemaMetadata.For<TInput>();
+    private readonly ValueShape _inputShape = ValueShape.Capture(default(TInput));
 
     internal PipelineDefinition(Node[] nodes, int output)
     {
@@ -14,6 +15,9 @@ public sealed class PipelineDefinition<TInput, TOutput>
         Output = output;
         _description = new PipelineDescription(nodes, typeof(TInput), output);
     }
+
+    /// <summary>Gets the selected typed output edge for a visitor.</summary>
+    public PipelineEdge<TOutput> OutputEdge => new(Output);
 
     internal Node[] Nodes { get; }
 
@@ -23,9 +27,26 @@ public sealed class PipelineDefinition<TInput, TOutput>
     /// <returns>The captured declaration topology.</returns>
     public PipelineDescription DescribeDataflow() => _description;
 
+    /// <summary>Visits the captured typed factories in topological order.</summary>
+    /// <param name="visitor">The external compiler.</param>
+    public void Visit(IPipelineDefinitionVisitor visitor)
+    {
+        ArgumentNullException.ThrowIfNull(visitor);
+        ValidateSchemas();
+        for (int i = 0; i < Nodes.Length; i++)
+        {
+            Nodes[i].Visit(visitor, i + 1);
+        }
+    }
+
     internal void ValidateSchemas()
     {
         SchemaMetadata.Validate(_inputSchema, SchemaMetadata.For<TInput>());
+        if (_inputShape.IsComposite)
+        {
+            _inputShape.Validate(ValueShape.Capture(default(TInput)));
+        }
+
         foreach (Node node in Nodes)
         {
             node.ValidateSchema();
@@ -37,5 +58,15 @@ public sealed class PipelineDefinition<TInput, TOutput>
         SchemaDescriptor? expected = producer == 0 ? _inputSchema : Nodes[producer - 1].HostSchema;
         var value = (IValueLeaseMetadata)input;
         SchemaMetadata.Validate(expected, value.PlacementSchema);
+        if (value.PlacementSchema is not null && value.PlacementExtent is null)
+        {
+            throw new InvalidOperationException("Uninitialized canonical placement.");
+        }
+
+        ValueShape shape = producer == 0 ? _inputShape : Nodes[producer - 1].CapturedShape;
+        if (shape.IsComposite || value.IsBundle)
+        {
+            value.ValidateShape(shape);
+        }
     }
 }

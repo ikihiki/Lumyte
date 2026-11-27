@@ -36,6 +36,25 @@ internal sealed class GraphStorage
         }
     }
 
+    internal Port<TO> Append<TA, TO>(Node[] nodes, int output, Port<TA> input)
+    {
+        Validate(input);
+        foreach (Node existing in _nodes)
+        {
+            existing.ValidateSchema();
+        }
+
+        int offset = _nodes.Count;
+        Node[] rebound = nodes.Select(node => node.Rebind(node.Inputs.Select(index => index == 0 ? input.Index : offset + index).ToArray())).ToArray();
+        foreach (Node node in rebound)
+        {
+            node.ValidateSchema();
+        }
+
+        _nodes.AddRange(rebound);
+        return new Port<TO>(this, output == 0 ? input.Index : offset + output);
+    }
+
     internal Node[] Freeze()
     {
         CheckOpen();

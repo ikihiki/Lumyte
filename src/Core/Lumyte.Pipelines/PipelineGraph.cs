@@ -138,6 +138,20 @@ public sealed class PipelineGraph<TInput>
         return _storage.Add<TO>(new StageNode<TA, TB, TC, TD, TE, TF, TO>(implementation.Factory, [a.Index, b.Index, c.Index, d.Index, e.Index, f.Index], implementation.GetType()), [a, b, c, d, e, f]);
     }
 
+    /// <summary>Flattens a reusable template into this graph without building or preparing a nested run.</summary>
+    /// <typeparam name="TA">The template input.</typeparam>
+    /// <typeparam name="TO">The template output.</typeparam>
+    /// <param name="definition">The immutable template.</param>
+    /// <param name="input">An edge in this graph.</param>
+    /// <returns>The rebound output edge.</returns>
+    public Port<TO> Invoke<TA, TO>(PipelineDefinition<TA, TO> definition, Port<TA> input)
+    {
+        ArgumentNullException.ThrowIfNull(definition);
+        _storage.Validate(input);
+        definition.ValidateSchemas();
+        return _storage.Append<TA, TO>(definition.Nodes, definition.Output, input);
+    }
+
     /// <summary>Captures the definition and permanently freezes the graph.</summary>
     /// <typeparam name="TOutput">The arbitrary output payload.</typeparam>
     /// <param name="output">The selected output edge.</param>

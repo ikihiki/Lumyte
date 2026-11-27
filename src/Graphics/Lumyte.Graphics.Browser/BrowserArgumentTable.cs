@@ -7,6 +7,7 @@ internal sealed class BrowserArgumentTable(BrowserDevice owner, ArgumentTableDes
     private readonly Dictionary<uint, ArgumentRegistration> _textures = new();
     private readonly Dictionary<uint, ArgumentRegistration> _samplers = new();
     private readonly Dictionary<uint, ArgumentRegistration> _buffers = new();
+    private long _generation;
     private bool _disposed;
 
     public uint TextureCapacity { get; } = desc.TextureCapacity;
@@ -14,6 +15,8 @@ internal sealed class BrowserArgumentTable(BrowserDevice owner, ArgumentTableDes
     public uint SamplerCapacity { get; } = desc.SamplerCapacity;
 
     public uint BufferCapacity { get; } = desc.BufferCapacity;
+
+    internal long Generation => _generation;
 
     public IGpuRef<IGraphicsTextureView> WriteTexture(uint slot, IGraphicsTextureView view)
     {
@@ -108,6 +111,7 @@ internal sealed class BrowserArgumentTable(BrowserDevice owner, ArgumentTableDes
         var entry = new ArgumentRegistration(this, slot, resource, offset, size, count, access);
         var reference = new GpuReference<T>(entry, count, stride, offset, size);
         slots[slot] = entry;
+        _generation++;
         return reference;
     }
 
@@ -115,7 +119,10 @@ internal sealed class BrowserArgumentTable(BrowserDevice owner, ArgumentTableDes
     {
         ThrowIfDisposed();
         ValidateSlot(capacity, slot);
-        slots.Remove(slot);
+        if (slots.Remove(slot))
+        {
+            _generation++;
+        }
     }
 
     private void ValidateSlot(uint capacity, uint slot)
