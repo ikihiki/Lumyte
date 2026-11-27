@@ -21,6 +21,7 @@
 
 RenderGraph・型付きPipeline・画像効果・2Dを、同じ資源と引数の宣言を持つ共通GPU実行計画へ変換する。
 
+- **Stageの依存**: 各StageがGPU・Execution等の必要能力をcontext型で宣言し、Pipeline本体は具象サービスに依存しない。
 - **入口**: RenderGraphは資源とpass、Pipelineは型付き算法、効果と2Dは画像・描画の意味を宣言する。
 - **変換**: 効果は領域と色を解析した後、一つのLower実装から共通passを宣言する。
 - **実行の責務**: 資源、引数table、barrier、準備、送信、実完了、退役を共通実行基盤へ集約する。
@@ -84,7 +85,7 @@ using Lumyte.Pipelines;
 using Lumyte.Graphics.Planning;
 using Lumyte.Graphics.ImageEffects;
 
-var g = new PipelineGraph<Device<ImageSchema>>();
+var g = new PipelineGraph<IGraphicsStageContext, Device<ImageSchema>>();
 var blurred = g.Input.Then(Effects.Stage(new GaussianBlurEffect(3, 3)));
 using var template = session.Build(g.Complete(blurred));
 var value = graph.Invoke(template, graph.ImageValue(input));
@@ -150,7 +151,7 @@ PipelineのStage/Then → template展開 → processor ───┘
 
 - **共通IR**: native commandではなく、producer、内容version、view/range、stage/access/layout、typed argument recipeを持つ宣言である。
 - **CPUとGPUの違い**: CPU stageはCPU値を計算する。Graphics stageはGPU仕事を宣言し、この時点ではGPU上でdraw/dispatchしない。
-- **実行主体**: 既存ExecutionRuntimeがCPUのdispatch・await後の再開・owner phaseを担い、Graphics実行hostが明示送信と完了待機を担う。
+- **実行主体**: 各Stageが型付きcontextから必要なサービスを要求し、CPU処理やExecutionへの配送を選ぶ。Pipeline本体はGPU・Executionの具象型へ依存しない。Graphics実行hostは別接続の固定ownerから明示送信と完了待機を担う。
 - **例の読み方**: 以下は本ADRの変更後の契約を説明するコードである。初期化済みのframe、kernel、schema、入力の使用leaseを省略し、上位のAsRenderGraphやEffects.Stageと、低水準の宣言APIを区別する。基準ソースの実在APIは「変更前」と明記する。
 
 ### RenderGraphを直書きした場合の変換
@@ -234,7 +235,7 @@ using Lumyte.Graphics.Drawing2D;
 // Coverage: Host<GeometrySchema> → Device<CoverageSchema>
 // Paint: (Device<CoverageSchema>, DrawRequest2D) → Device<SamplePaintSchema>
 // Resolve: Device<SamplePaintSchema> → Device<ImageSchema>
-var g = new PipelineGraph<DrawRequest2D>();
+var g = new PipelineGraph<IGraphicsStageContext, DrawRequest2D>();
 var geometry = g.Input.Then(stages.Geometry);
 var coverage = geometry.Then(stages.Coverage);
 var paint = g.Stage(stages.Paint, coverage, g.Input);
@@ -255,7 +256,7 @@ Stage/ThenとInvokeで作った型付きDAGから、各processorが同じframe�
 
 - **定義の保存**: Completeはfactoryと不変パラメーター、型付きedge、schema/extent、producer依存を固定する。
 - **templateの挿入**: Invokeは同じgraphへnodeを複製しproducerを付け直す。別pipelineを一nodeとして実行し、結果leaseだけを渡す方式ではない。
-- **backendの仕事**: PipelineBuildHostがfactoryを検証・生成し、GraphicsPipelineBackendがframeへ束縛した有限能力を渡す。backendそのものが別のDefine/Compileを実行するわけではない。
+- **hostの仕事**: PipelineBuildHostがfactoryを検証・生成し、GraphicsContextFactoryが同frameへ束縛した型付きサービスを呼出しごとに貸す。別のDefine/Compileを実行しない。
 - **宣言と実行**: pipeline.PrepareAsyncはCPU processor評価とGPU宣言の追加である。その後のframe.ExecuteAsyncが全体compile、区間のnative準備、記録・送信・実完了待機をまとめる。高度な低水準経路のcompiled.PrepareAsyncとは役割を区別する。
 
 次はRenderGraphを使わず、copy部品を二回同じframeへ展開する利用例である。
@@ -264,17 +265,17 @@ Stage/ThenとInvokeで作った型付きDAGから、各processorが同じframe�
 using Lumyte.Pipelines;
 using Lumyte.Graphics.Planning;
 
-var t = new PipelineGraph<Device<IntSchema>>();
+var t = new PipelineGraph<IGraphicsStageContext, Device<IntSchema>>();
 var definition = t.Complete(t.Input.Then(new CopyStage()));
-var g = new PipelineGraph<Device<IntSchema>>();
+var g = new PipelineGraph<IGraphicsStageContext, Device<IntSchema>>();
 var first = g.Invoke(definition, g.Input);
 var expanded = g.Complete(g.Invoke(definition, first));
 
-using var build = new PipelineBuildHost(
-    runtime, pipelineBudget, new GraphicsPipelineBackend(frame));
+using var build = new PipelineBuildHost(pipelineBudget);
+using var contexts = new GraphicsContextFactory(frame);
 using var pipeline = build.Build(expanded);
 // inputはframeに属する4要素bufferのDevice<IntSchema>宣言。
-using var result = await pipeline.PrepareAsync(input, ct);
+using var result = await pipeline.PrepareAsync(contexts, input, ct);
 frame.Plan.Export(frame.Plan.Resource(result.Value));
 
 await frame.ExecuteAsync(ct);
@@ -288,28 +289,29 @@ using Lumyte.Pipelines;
 using Lumyte.Graphics.Abstractions;
 using Lumyte.Graphics.Planning;
 
-sealed class CopyStage : IStage<Device<IntSchema>, Device<IntSchema>>,
-    IStageFactory<Device<IntSchema>, Device<IntSchema>>
+sealed class CopyStage : IStage<IGraphicsStageContext, Device<IntSchema>, Device<IntSchema>>,
+    IStageFactory<IGraphicsStageContext, Device<IntSchema>, Device<IntSchema>>
 {
-    public IStageFactory<Device<IntSchema>, Device<IntSchema>> Factory => this;
+    public IStageFactory<IGraphicsStageContext, Device<IntSchema>, Device<IntSchema>> Factory => this;
     public StageRequirements Describe(StageInputDescriptions inputs)
         => new(4096, [new GraphicsStageRequirement(1, 1)])
             { OutputMaxElements = 4 };
-    public IStageProcessor<Device<IntSchema>, Device<IntSchema>>
+    public IStageProcessor<IGraphicsStageContext, Device<IntSchema>, Device<IntSchema>>
         Create(StageBuildContext context) => new Processor();
 
-    sealed class Processor : IStageProcessor<Device<IntSchema>, Device<IntSchema>>
+    sealed class Processor : IStageProcessor<IGraphicsStageContext, Device<IntSchema>, Device<IntSchema>>
     {
         public ValueTask<ValueLease<Device<IntSchema>>> PrepareAsync(
-            StagePreparationContext context, ValueLease<Device<IntSchema>> input,
+            StagePreparationContext lifecycle, IGraphicsStageContext services,
+            ValueLease<Device<IntSchema>> input,
             CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            var gpu = (GraphicsStageCapabilities)context.Capabilities;
+            var gpu = services.Graphics;
             var source = (PlanBuffer<int>)gpu.Read(input); // 宣言を読む。GPU bytesは読まない。
             var storage = gpu.Plan.CreateBuffer<int>(new()
             {
-                Count = 4,                Usage = BufferUsage.CopySource | BufferUsage.CopyDestination
+                Count = 4, Usage = BufferUsage.CopySource | BufferUsage.CopyDestination
             });
             var pass = gpu.Plan.AddPass("copy");
             pass.Read(source, source.Range,
@@ -345,10 +347,12 @@ using Lumyte.Pipelines;
 using Lumyte.Graphics.Planning;
 using Lumyte.Graphics.ImageEffects;
 
+// cpu.Normalize / AdjustはIPipelineContext（またはIExecutionStageContext）を要求。
+// transferはIGraphicsStageContextを要求。graphは両者を明示的に合成する。
 // cpu.Normalize / Adjust: Host<ImageSchema> → Host<ImageSchema>
 // transfer.Upload: Host<ImageSchema> → Device<ImageSchema>
 // transfer.Download: Device<ImageSchema> → Host<ImageSchema>
-var g = new PipelineGraph<Host<ImageSchema>>();
+var g = new PipelineGraph<IGraphicsExecutionContext, Host<ImageSchema>>();
 var cpuInput = g.Input.Then(cpu.Normalize);
 var gpuInput = cpuInput.Then(transfer.Upload);
 var gpuResult = gpuInput.Then(Effects.Stage(new GaussianBlurEffect(3, 3)));
@@ -405,7 +409,7 @@ sessionと処理templateを起動時に用意し、毎frameの不変snapshotを�
 
 - **起動時**: アプリがdevice・surface・ExecutionRuntimeを用意し、GraphicsExecutionModuleとowner phaseを接続する。session、kernel、sampler、処理template、rendererは対応する寿命の間保持し、毎frame作り直さない。
 - **毎frame**: 入力とsimulation更新から不変snapshotを切り出し、session.CreateFrameで取得した新しいscopeへ宣言する。通常経路はframe.ExecuteAsyncで一回だけ実行する。内容versionと使用範囲の変化に対する内部Compile/Prepareは省略せず、session/templateだけを再利用する。
-- **担当thread**: window/入力のthread規則とnative操作の固定ownerを守る。CPU処理のdispatchとawait後の再開は既存ExecutionRuntimeへ任せ、Graphics用の別schedulerやThreadPoolを増設しない。
+- **担当thread**: window/入力のthread規則とnative操作の固定ownerを守る。Executionを要求するStageだけが明示供給されたruntimeへdispatchと再開を任せ、Core hostやGraphicsが隠れたschedulerやThreadPoolを増設しない。
 - **待機中のループ**: 不完了のTaskをowner threadで同期waitせず、windowイベントと必要なExecution phaseをpumpし続ける。ownerへ戻る継続を同じthreadのawait/GetResultで塞ぐ構成を避ける。
 - **frame数の上限**: 下の例は描画中のframeを一つに制限する。slotが空くまではsimulationとイベント処理だけ進め、GPU仕事とsnapshotのqueueを無制限に積まない。複数frameを許す構成では、上限とframe間資源競合・保持予算を明示する。
 - **snapshotの寿命**: simulationが次tickへ進んでも、宣言・準備・GPU使用中のsnapshot、upload領域、cache entryを変更しない。最新snapshotだけを採るか全snapshotを描くかは入場前の明示policyとし、受理済GPU仕事を黙って破棄しない。
@@ -512,6 +516,8 @@ frameを一回描く接続点は、次の手順を既存の宣言・実行契約
 
 主要判断はGPU実行基盤の統合である。次の一部を変更し、既存ADRの判断本文は保持する。
 
+- **未実装設計との区分**: [RESOURCES-0001](../resources/RESOURCES-0001-typed-pipelines.md#型の解決と責務)の型付きStageをResourcesへ置く案とは異なり、一般DAGとcontext型の要件をCoreへ分離する。同ADRの構築から公開まで・所有権と解放で示す借用と公開後の保持、失敗時cleanup再試行は継続する。基準コミットで同ADRは提案であり、これは旧設計との差分であって実在するCore Pipeline APIの削除ではない。
+
 - **[GRAPHICS-0015](GRAPHICS-0015-render-graph.md#決定)の「責務と実装範囲」「実用版の所有権とculling」**
   - **変更**: RenderGraph独自のcompile・一時資源・記録ownerを共通実行計画へ移す。
   - **維持**: 宣言に基づく依存・barrier・生存判定、明示送信。
@@ -538,23 +544,41 @@ frameを一回描く接続点は、次の手順を既存の宣言・実行契約
 - **入口の責務**: sceneは何を描くか、Pipelineはどの算法を接続するか、RenderGraphはGPU資源とpassをどう使うかを宣言する。一意味論nodeと一GPU passの一対一対応は要求しない。
 - **sessionの所有**: GraphicsDeviceSessionがdevice世代、artifact/pipeline/sampler cache、資源identity、予算、退役台帳を所有する。global singletonにはしない。
 - **frameの所有**: GraphicsFrameScopeが一frameの宣言、内容version、使用lease、実行区間、登録要求を保持する。subscopeは制限viewであり、独立allocator・登録表plan・送信権を持たない。
-- **依存方向**: 一般的な型付きDAGとCPU値処理はCoreへ置き、基準コミットの src/Core/Lumyte.Execution/ExecutionRuntime.cs のgraph/workflow実行を利用する。画像・device型をCoreへ逆依存させない。
+- **依存方向**: 一般的な型付きDAG・lease・評価と回収はCoreへ置く。Coreは画像・device型とExecutionRuntimeへ依存せず、Executionを使うStageだけがその型付きサービスへ依存する。
 - **接続**: Graphics部品は共通builderへ初期CPU計算、GPU処理、明示Upload/Downloadを宣言する。独立runのleaseを再帰的なPrepareで継ぎ足さない。
-- **部品の拡張**: 公開IStageは不変factoryを持つ。factoryの要求申告を検証してからprocessorを作る。CPU processorは入力leaseを読み不変出力を公開し、Graphics processorは宣言scopeへkernel・resource use・argumentsを追加する。外部作者にも同じ契約を適用し、既知型switchで組込み専用経路を作らない。- **構築と再利用**: Stageと単項Thenは同じnode追加で、呼出しごとに別nodeを作る。同じPortはproducerを共有し、多入力Stageで分岐・合流する。foreign graph、cycle、freeze後の変更を拒否する。Buildは算法・schema・artifactを固定し、frameのInvokeは同一scopeへ有限個のinstanceを作る。
+- **部品の拡張**: 公開IStageは不変factoryを持つ。factoryの要求申告を検証してからprocessorを作る。CPU processorは入力leaseを読み不変出力を公開し、Graphics processorは宣言scopeへkernel・resource use・argumentsを追加する。外部作者にも同じ契約を適用し、既知型switchで組込み専用経路を作らない。
+- **構築と再利用**: Stageと単項Thenは同じnode追加で、呼出しごとに別nodeを作る。同じPortはproducerを共有し、多入力Stageで分岐・合流する。foreign graph、cycle、freeze後の変更を拒否する。Buildは算法・schema・artifactを固定し、frameのInvokeは同一scopeへ有限個のinstanceを作る。
 
-### Coreの公開backend境界
+### 型付きcontextとCoreの公開境界
 
-型付き宣言を作る側と、実行能力を供給するbackendを公開契約で分離する。
+Stageが必要とするサービスをcontext型へ固定し、Coreの評価・所有権とサービス供給を分離する。
 
-- **実行host**: CPU hostは明示的に借用したExecutionRuntimeを使い、起動・停止や別scheduler作成を引き受けない。GPU宣言backendも同じfactoryと型付き依存を使い、Graphics型をCoreへ持ち込まない。
-- **宣言の受渡し**: PipelineDefinitionのvisitorはcaptured factoryそのものと型付き入出力edgeを宣言順に渡す。型名や診断descriptionからfactoryを再構築せず、不変パラメーターを保持する。
+- **要求の型**: IStage<in TContext, A, O>は必要サービスだけをinterfaceで要求する。TContextは参照型、payload A/Oはinvariantとする。IStageFactoryとIStageProcessorもcontextだけを反変にする。
+- **接続の方向**: IGraphicsStageContextだけを要求するStageは、それを継承するIGraphicsExecutionContextのgraphへ接続できる。逆方向と必要能力のないgraphへの接続はコンパイルエラーにする。複数能力は作者がcomposite interfaceを明示し、Stage列からinterfaceのunionを自動推論しない。
+- **要件の保持**: PipelineGraph<TContext, TInput>、Port<TContext, T>、読み取り専用IPipelineDefinition<in TContext, A, O>、IPipelineとtemplate/Invokeまでcontext要件を保持する。class自体はvariantにしない。definitionは反変、factoryを引数に取るvisitorは共変とし、型付きfactoryとedgeの受渡しでもvarianceを成立させる。1〜6入力は同じ一つのTContextを使う。
+- **構築と呼出し**: factoryのconstructorがshader/artifactなど不変のbuild依存をcaptureし、CreateはStageBuildContextだけを受ける。毎回のframe/ExecutionサービスはPrepareAsyncの独立したTContext services引数で受け、processor fieldへ保存しない。StagePreparationContextは非genericのlifecycle境界とし、invariantな`StagePreparationContext<TContext>`で反変性を壊さない。
+- **型保証の範囲**: context型が保証するのは宣言されたサービス能力のavailabilityであり、security sandboxではない。factory constructorへの明示依存注入は自由であり、captureされたruntime依存までgraphの型制約が検出・禁止するとはしない。graph側でRuntime利用を型付き契約として制御するStageは、constructor captureだけで済ませずIExecutionStageContextのinvocation capabilityを必須にする。
+- **実行の選択**: 純粋CPU Stageは空のIPipelineContextだけを要求できる。Execution利用StageはIExecutionStageContextを要求し、そのサービスでdispatchとawait後の再開を行う。Core hostに必須runtime引数・型判定・サービス探索・隠れたschedulerを置かず、起動・停止を引き受けない。
+- **供給と権限**: `IPipelineContextFactory<out TContext>`が呼出し単位のbindingを貸す。bindingのlifecycle authorityは要求検証・opaque値検証・owner台帳への接続だけを担い、サービス取得口ではない。純粋CPUではauthorityを省略でき、その場合opaque値を拒否する。Graphicsでは同frameのauthorityを必須にし、公開前にownerを必ず台帳へ登録する。contextの型検査はframe所属・scope期限の動的検証を代替しない。CoreのOwnとauthorityのOwnは同じ台帳への一回の移管であり、二重所有・二重Disposeを作らない。binding.Disposeは使用leaseの返却だけで、GPU使用中のownerを解放しない。
+- **native ownerとの区別**: GraphicsDeviceSessionのGraphicsExecutionModuleと固定owner pumpは、Stageが任意にExecutionを使う契約とは別接続である。本判断だけでframeのnative hostからExecutionRuntimeが不要になるとはしない。
+- **宣言の受渡し**: IPipelineDefinitionのvisitorはcaptured factoryそのものと型付き入出力edgeを宣言順に渡す。型名や診断descriptionからfactoryを再構築せず、不変パラメーターを保持する。
 - **template展開**: 別構築へ挿入するtemplateは同一graphへ展開してproducerを付け直す。独立PrepareAsyncの結果leaseを再帰的に接続しない。
-- **backendとCoreの責務**: backendはbuild時・invocation時の能力を明示供給する。Coreは要求検証、processor生成、入力admission、出力検証、scope閉鎖と失敗時回収を所有する。processorはrun間共有なのでawaitを跨いでも再入可能とし、invocation状態を可変fieldへ保持しない。
-- **CPUとopaque値**: CPUのRead/Publishとbackendの不透明な宣言参照を分ける。backend scopeはhostが渡した正確な能力instanceだけへ結び付け、失効scope・foreign input・二重出力を拒否する。
-- **検証の迂回禁止**: generic Read/Publishもbackendの値検証を通す。Graphics便宜APIを使わなくても全opaque子のframe所属とread producer依存を照合する。独立ownerは公開前に失敗しても回収台帳へ残す。
+- **backendとCoreの責務**: context factoryはinvocationサービスを明示供給する。Coreは要求検証、processor生成、入力admission、出力検証、scope閉鎖と失敗時回収を所有する。processorはrun間共有なのでawaitを跨いでも再入可能とし、invocation状態を可変fieldへ保持しない。
+- **所属検査の期限**: 入力に含まれる全opaque子のframe・世代・producer所属は、最初のCPU processorを呼ぶ前のadmissionで検査する。出力は公開前、GPU宣言viewは各操作前に再検証し、不正入力でCPU副作用を先に起こさない。
+- **CPUとopaque値**: CPUのRead/Publishとbackendの不透明な宣言参照を分ける。lifecycle scopeはhostが貸した正確なbindingだけへ結び付け、失効scope・foreign input・二重出力を拒否する。
+- **検証の迂回禁止**: generic Read/Publishもbinding authorityの値検証を通す。Graphics便宜APIを使わなくても全opaque子のframe所属とread producer依存を照合する。独立ownerは公開前に失敗しても回収台帳へ残す。
 - **再帰bundle**: DeviceとDeviceを含むbundleはCPU可読にしない。任意objectをreflection探索せず、対応するbundleが全ての子を列挙する。IImmutablePipelineInputは不変metadataの宣言であり、Device不在の証明ではない。
 - **CPU作者契約**: 独自payloadはICpuPipelineValueで、Host・Device・ValueLease・ownerなど所属や寿命を持つ値を再帰的に含まないことを申告する。Deviceを含む構造はbundle契約で渡す。
 - **宣言viewの寿命と予約**: GPU宣言viewとpassもinvocationへ束縛する。終了後の追加を拒否し、各操作の前に宣言数と保持量を予約する。宣言失敗時はframeを無効化し、部分計画を実行しない。
+
+### lease・予算・非同期失敗の共通保証
+
+型付きサービスへ変更しても、全ての評価を同じprovenanceと回収台帳で管理する。
+
+- **provenance**: ValueLeaseは生成run・node・scope・世代とproducerを保持する。既定値、期限切れ、foreign run/node、無関係な出力の再公開を拒否し、generic経路にも同じ検証を適用する。borrowした入力を新しい所有出力として偽装しない。
+- **scope**: StagePreparationContextのRead/Publish/Ownは一invocationだけ有効である。入力leaseは評価完了まで借用し、出力は公開前から独立ownerを登録する。終了後の読書き・二重Publishを拒否し、結果lease保持中は必要な依存とbindingを生存させる。
+- **上限**: build時のDescribeからcompiled上限を固定する。実入力によるactual requirementsは各項目でactual <= compiledを要求し、超過を確保・宣言前に拒否する。node数、値の保持bytes、schema extent、pass/resource数、in-flightとcacheのpeakを別計上し、追加前に有限予算を予約する。
+- **失敗と取消し**: 最初の失敗で後続の開始を止めても、既に開始した全ての非同期処理をdrainし、その出力とownerを回収する。一つのawait失敗や待機取消しで兄弟taskを置き去りにしない。cleanup失敗でも主例外と未返却owner・予約を保持し、成功済み返却を繰り返さず同じ台帳から再試行する。bindingとサービスはdrain・回収まで生存させる。
 
 ### 効果の解析と一回のLower
 
@@ -639,7 +663,8 @@ table確定とtyped uploadのUnmap後、固定owner上でnative root・PSO・bin
 
 CPU記録とGPU算法を分離し、共通計画へ変換してもpainter順・sample・色・各形式の意味を維持する。
 
-- **Canvasとcoverage**: CanvasのCPU記録は不変内容と描画順を保持する。shape/clipは同sample位置で評価し、未resolveのmembership/paint、ResolvedImage、raw MaskImageを別schemaにする。半pixelを覆う不透明描画二回はdrawごとresolveしてsource-overするprofileではalpha 0.75であり、scene末尾一回resolveへ移して0.5に変えない。- **合成と背景効果**: paint内の隔離Composite、背景とのlayer blend、完成groupへのopacity、背景snapshotのeffect置換を別演算にする。背景効果の境界はeffect*c + original*(1-c)で、単純source-overへ置換しない。
+- **Canvasとcoverage**: CanvasのCPU記録は不変内容と描画順を保持する。shape/clipは同sample位置で評価し、未resolveのmembership/paint、ResolvedImage、raw MaskImageを別schemaにする。半pixelを覆う不透明描画二回はdrawごとresolveしてsource-overするprofileではalpha 0.75であり、scene末尾一回resolveへ移して0.5に変えない。
+- **合成と背景効果**: paint内の隔離Composite、背景とのlayer blend、完成groupへのopacity、背景snapshotのeffect置換を別演算にする。背景効果の境界はeffect*c + original*(1-c)で、単純source-overへ置換しない。
 - **SVG・文字**: SVG用paint/filterとCOLR paintの補間空間・alpha・座標・ClipBox・有限領域を保持し、無条件に同じ画像演算へ潰さない。usvgのgroup/paint/clip/mask/filter/patternをadapterで維持し、文字のpaint DAG・foreground座標・同内容の別配置を区別する。
 - **地図**: 全tileのcasing→全tileの内線というglobal順、camera-relative精度、ownership clipとAA clipの区別、dash距離、pattern位相を渡す。style評価・label衝突回避・font解析は共通実行基盤に持ち込まない。
 - **明示的な融合**: 統合するのは所有と計画であり、自動shader融合ではない。明示fused実装にも分離実装と同じtyped入出力、sample/resolve、color、precision、資源契約を要求する。
@@ -648,6 +673,7 @@ CPU記録とGPU算法を分離し、共通計画へ変換してもpainter順・s
 
 判断対象の公開契約を、基準コミットとの差分として示す。
 
+- **比較の区分**: 基準コミットに下記のLumyte.Pipelines APIは存在しないため、全て追加として示す。旧Resources設計の変更範囲は前節に分離する。
 - **追加の範囲**: Planning/Coreを含む以下の追加は本ADRの変更後APIであり、基準時点の実装として扱わない。上位frontendの利用例も同じ設計契約を表す。
 - **抜粋**: descriptor/field tokenの全accessorと低水準backend APIの全体は省略する。
 - **移行**: 旧APIを委譲して残すのではなく、呼出し側も新しい宣言・所有契約へ移行する。
@@ -685,84 +711,112 @@ CPU記録とGPU算法を分離し、共通計画へ変換してもpainter順・s
 +    public static class Effects
 +    {
 +        // 単項画像用。多入力/0入力も同じ基盤で入力数を検証する。
-+        public static IStage<Device<ImageSchema>, Device<ImageSchema>> Stage(ImageEffectDefinition effect);
++        public static IStage<IGraphicsStageContext, Device<ImageSchema>, Device<ImageSchema>> Stage(ImageEffectDefinition effect);
 +    }
  }
  namespace Lumyte.Pipelines
  {
-+    public interface IStage<A, O> { IStageFactory<A, O> Factory { get; } }
-+    public interface IStageFactory<A, O>
++    public interface IPipelineContext;
++    public interface IStage<in TContext, A, O> where TContext : class
++    { IStageFactory<TContext, A, O> Factory { get; } }
++    public interface IStageFactory<in TContext, A, O> where TContext : class
 +    {
 +        StageRequirements Describe(StageInputDescriptions inputs);
-+        IStageProcessor<A, O> Create(StageBuildContext context);
++        IStageProcessor<TContext, A, O> Create(StageBuildContext build);
 +    }
-+    public interface IStageProcessor<A, O> : IDisposable
++    public interface IStageProcessor<in TContext, A, O> : IDisposable where TContext : class
 +    {
-+        ValueTask<ValueLease<O>> PrepareAsync(StagePreparationContext context,
-+            ValueLease<A> input, CancellationToken cancellationToken);
++        ValueTask<ValueLease<O>> PrepareAsync(StagePreparationContext lifecycle,
++            TContext services, ValueLease<A> input, CancellationToken cancellationToken);
 +    }
-+    // CPU専用hostにも明示backendを供給できる。native ownerをstageへ公開しない。
-+    public interface IPipelineBackend
++    // 2〜6入力もcontextだけ反変。同じTContextを全入力に適用する。
++    public interface IStage<in TContext, A, B, O> where TContext : class
++    { IStageFactory<TContext, A, B, O> Factory { get; } }
++    public interface IStageFactory<in TContext, A, B, O> where TContext : class
 +    {
-+        void Validate(int node, StageRequirements requirements);
-+        IStageCapabilities BuildCapabilities(int node);
-+        IStageCapabilities PrepareCapabilities(int node, StageRequirements compiled, StageRequirements actual);
++        StageRequirements Describe(StageInputDescriptions inputs);
++        IStageProcessor<TContext, A, B, O> Create(StageBuildContext build);
 +    }
-+    public interface IStageBackendValueValidation
++    public interface IStageProcessor<in TContext, A, B, O> : IDisposable where TContext : class
 +    {
-+        // generic scope経由でも全opaque子の同一scopeとread producerを照合する。
-+        void ValidateRead<T>(T value);
-+        void ValidatePublication<T>(T value);
++        ValueTask<ValueLease<O>> PrepareAsync(StagePreparationContext lifecycle, TContext services,
++            ValueLease<A> a, ValueLease<B> b, CancellationToken cancellationToken);
 +    }
-+    public interface IStageBackendCapabilities : IStageCapabilities, IStageBackendValueValidation;
-+    // 不変metadataの宣言とは別に、opaque値を再帰的に含まない作者契約を表す。
-+    public interface ICpuPipelineValue;
-+    public interface IPipelineBundle
++    public sealed class StageBuildContext; // build寿命だけ。不変captureと予算を検証する。
++    public sealed class StagePreparationContext
 +    {
-+        // default値を含む全ての子を一回ずつ列挙する。探索は深さ16・総数64へ制限する。
-+        void VisitChildren(IPipelineBundleVisitor visitor);
-+    }
-+    public interface IPipelineBundleVisitor { void Child<T>(T value); }
-+    public readonly record struct PipelineBundle<A, B>(A First, B Second) : IPipelineBundle;
-+    public sealed class StageBackendScope
-+    {
++        // 全経路でprovenance、opaque子、producerを照合する。scope終了後は拒否。
 +        public T Read<T>(ValueLease<T> value);
 +        public ValueLease<T> Publish<T>(T value);
 +        public void Own(IDisposable owner);
 +    }
++    public interface IPipelineContextFactory<out TContext> where TContext : class
++    { IPipelineContextBinding<TContext> Bind(StagePreparationContext lifecycle); }
++    public interface IPipelineContextBinding<out TContext> : IDisposable where TContext : class
++    {
++        TContext Services { get; }
++        IStageLifecycleAuthority? Authority { get; }
++    }
++    public interface IStageLifecycleAuthority
++    {
++        // サービス取得機能は持たない。確保前にactual <= compiledを検証する。
++        void Validate(StageRequirements compiled, StageRequirements actual);
++        void ValidateRead<T>(T value);
++        void ValidatePublication<T>(T value);
++        void Own(IDisposable owner);
++    }
++    public interface ICpuPipelineValue;
++    public interface IPipelineBundle
++    {
++        // default値を含む全ての子を一回ずつ列挙。深さ16・総数64を上限とする。
++        void VisitChildren(IPipelineBundleVisitor visitor);
++    }
++    public interface IPipelineBundleVisitor { void Child<T>(T value); }
++    public readonly record struct PipelineBundle<A, B>(A First, B Second) : IPipelineBundle;
 +    public sealed class PipelineBuildHost : IDisposable
 +    {
-+        public PipelineBuildHost(ExecutionRuntime execution, PipelineBudget budget, IPipelineBackend? backend = null);
-+        public IPipeline<A, O> Build<A, O>(PipelineDefinition<A, O> definition);
++        // GPU/Execution具象依存なし。processor生成とCore台帳を所有する。
++        public PipelineBuildHost(PipelineBudget budget);
++        public IPipeline<TContext, A, O> Build<TContext, A, O>(
++            IPipelineDefinition<TContext, A, O> definition) where TContext : class;
 +        public void Dispose();
 +    }
-+    public interface IPipeline<A, O> : IDisposable
++    public interface IPipeline<TContext, A, O> : IDisposable where TContext : class
 +    {
-+        // CPU実行または同scopeへの宣言準備。GPU送信を暗黙に行わない。
-+        ValueTask<PipelineResult<O>> PrepareAsync(A input, CancellationToken cancellationToken = default);
-+    }
-+    public interface IPipelineDefinitionVisitor
-+    {+        // 2〜6入力も同じgeneric契約を持つ。edge番号はこのdefinition内だけで有効。
-+        void Stage<A, O>(IStageFactory<A, O> factory, PipelineEdge<A> inputs, PipelineEdge<O> output);
++        // CPU評価または同frameへの宣言。bindingをdrain・回収まで保持する。
++        ValueTask<PipelineResult<O>> PrepareAsync(IPipelineContextFactory<TContext> contexts,
++            A input, CancellationToken cancellationToken = default);
 +    }
 +    public readonly record struct PipelineEdge<T>(int Index);
-+    public sealed class PipelineDefinition<A, O>
++    public interface IPipelineDefinitionVisitor<out TContext> where TContext : class
 +    {
-+        public PipelineEdge<O> OutputEdge { get; }
-+        public void Visit(IPipelineDefinitionVisitor visitor);
++        // captured factoryと正確なtyped edgeを渡す。多入力も同じcontext。
++        void Stage<A, O>(IStageFactory<TContext, A, O> factory,
++            PipelineEdge<A> input, PipelineEdge<O> output);
 +    }
-+    public sealed class PipelineGraph<TInput>
++    public interface IPipelineDefinition<in TContext, A, O> where TContext : class
 +    {
-+        public Port<TInput> Input { get; }
-+        public Port<O> Stage<A, O>(IStage<A, O> stage, Port<A> input);
-+        public Port<O> Stage<A, B, O>(IStage<A, B, O> stage, Port<A> a, Port<B> b);
-+        public Port<O> Invoke<A, O>(PipelineDefinition<A, O> definition, Port<A> input);
-+        public PipelineDefinition<TInput, O> Complete<O>(Port<O> output);
++        PipelineEdge<O> OutputEdge { get; }
++        void Visit(IPipelineDefinitionVisitor<TContext> visitor);
 +    }
-+    public sealed class Port<T>
++    public sealed class PipelineGraph<TContext, TInput> where TContext : class
 +    {
-+        public Port<O> Then<O>(IStage<T, O> stage);
++        public Port<TContext, TInput> Input { get; }
++        public Port<TContext, O> Stage<A, O>(IStage<TContext, A, O> stage, Port<TContext, A> input);
++        public Port<TContext, O> Stage<A, B, O>(IStage<TContext, A, B, O> stage,
++            Port<TContext, A> a, Port<TContext, B> b);
++        public Port<TContext, O> Invoke<A, O>(IPipelineDefinition<TContext, A, O> definition,
++            Port<TContext, A> input);
++        public IPipelineDefinition<TContext, TInput, O> Complete<O>(Port<TContext, O> output);
 +    }
++    public sealed class Port<TContext, T> where TContext : class
++    { public Port<TContext, O> Then<O>(IStage<TContext, T, O> stage); }
+ }
+ namespace Lumyte.Pipelines.Execution
+ {
++    // 任意のStageサービス。CoreではなくExecution接続assemblyが所有する。
++    public interface IExecutionStageContext : IPipelineContext
++    { ExecutionRuntime Execution { get; } }
  }
  namespace Lumyte.Graphics.Abstractions
  {
@@ -795,16 +849,18 @@ CPU記録とGPU算法を分離し、共通計画へ変換してもpainter順・s
 +    // 以下は直接Pipeline/低水準copy例で使う本ADRの追加API。
 +    public sealed record GraphicsStageRequirement(int MaximumPasses,
 +        int MaximumResources) : IStageExtensionRequirement;
-+    public sealed class GraphicsPipelineBackend : IPipelineBackend
++    public interface IGraphicsStageContext : IPipelineContext
++    { GraphicsStageCapabilities Graphics { get; } }
++    // 複合能力は作者が明示する。自動union推論は行わない。
++    public interface IGraphicsExecutionContext : IGraphicsStageContext, IExecutionStageContext;
++    public sealed class GraphicsContextFactory : IPipelineContextFactory<IGraphicsStageContext>, IDisposable
 +    {
-+        // 一つのbuildを同じframeへ束縛。別frameの宣言やnative送信は行わない。
-+        public GraphicsPipelineBackend(GraphicsFrameScope frame);
-+        public void Validate(int node, StageRequirements requirements);
-+        public IStageCapabilities BuildCapabilities(int node);
-+        public IStageCapabilities PrepareCapabilities(int node,
-+            StageRequirements compiled, StageRequirements actual);
++        // 同frameのauthority、scope期限、予約とowner台帳を必須で接続する。
++        public GraphicsContextFactory(GraphicsFrameScope frame);
++        public IPipelineContextBinding<IGraphicsStageContext> Bind(StagePreparationContext lifecycle);
++        public void Dispose();
 +    }
-+    public sealed class GraphicsStageCapabilities : IStageBackendCapabilities
++    public sealed class GraphicsStageCapabilities
 +    {
 +        // invocation限定。CPU bytesではなく同frameの宣言を読みproducerを登録する。
 +        public GraphicsDeclarationScope Plan { get; }
@@ -877,10 +933,10 @@ CPU記録とGPU算法を分離し、共通計画へ変換してもpainter順・s
 +        public PlanImage ColorOutput(ImageDescription description, AttachmentLoadOp load);
 +        public void Draw(ArgumentRecipe<TArguments> arguments, uint vertexCount);
 +    }
-+    public interface IGraphicsPlanSource<A, O>
++    public interface IGraphicsPlanSource<TContext, A, O> where TContext : class
 +    {
 +        // 意味論node/templateを同scopeへ宣言。effectのGPU Lowerはここで先行実行しない。
-+        PlanValue<O> Declare(GraphicsPlanBuilder builder, PlanValue<A> input);
++        PlanValue<O> Declare(GraphicsPlanBuilder builder, IPipelineContextFactory<TContext> contexts, PlanValue<A> input);
 +    }
 +    // アプリがExecutionRuntimeへ登録し、Host配置なら同じthreadからphaseをpumpする。
 +    public sealed class GraphicsExecutionModule : IExecutionModule
@@ -893,11 +949,20 @@ CPU記録とGPU算法を分離し、共通計画へ変換してもpainter順・s
 +        public GraphicsDeviceSession(GraphicsExecutionModule execution, IGraphicDevice device,
 +            GraphicsPlanningBudget? budget = null);
 +        public GraphicsFrameScope CreateFrame();
-+        public GraphicsPipelineTemplate<A, O> Build<A, O>(PipelineDefinition<A, O> definition);
++        public GraphicsPipelineTemplate<TContext, A, O> Build<TContext, A, O>(
++            IPipelineDefinition<TContext, A, O> definition) where TContext : class;
 +        public GraphicsExecution CreateExecution(PreparedGraphicsExecution prepared);
 +        public ValueTask DrainAsync();
 +        public ValueTask RetireAsync();
 +        // 使用中/隔離中は拒否。暗黙wait/device破壊はしない。
++        public void Dispose();
++    }
++    public sealed class GraphicsPipelineTemplate<TContext, A, O> :
++        IGraphicsPlanSource<TContext, A, O>, IDisposable where TContext : class
++    {
++        // definitionのcontext要件を保持。別pipelineを実行するopaque nodeではない。
++        public PlanValue<O> Declare(GraphicsPlanBuilder builder,
++            IPipelineContextFactory<TContext> contexts, PlanValue<A> input);
 +        public void Dispose();
 +    }
 +    public sealed class GraphicsFrameScope : IDisposable
@@ -912,7 +977,8 @@ CPU記録とGPU算法を分離し、共通計画へ変換してもpainter順・s
 +        public ValueTask RetireAsync();
 +    }
 +    public sealed class CompiledGraphicsPlan : IDisposable
-+    {+        // 現実行区間のallocation→registration→payload patchを完了して公開する。
++    {
++        // 現実行区間のallocation→registration→payload patchを完了して公開する。
 +        public ValueTask<PreparedGraphicsExecution> PrepareAsync(CancellationToken cancellationToken);
 +    }
 +    public sealed class GraphicsExecution : IDisposable
@@ -942,7 +1008,7 @@ CPU記録とGPU算法を分離し、共通計画へ変換してもpainter順・s
 +        // 同frame scopeの宣言view。生command callbackの拡張口は置換する。
 +        public PlanImage ImportImage(IGraphicsTextureView view, IDisposable useLease, ImageDescription description);
 +        public PlanImage AppendEffect(ImageEffectDefinition effect, PlanImage input);
-+        public PlanValue<O> Invoke<A, O>(IGraphicsPlanSource<A, O> source, PlanValue<A> input);
++        public PlanValue<O> Invoke<A, O>(IGraphicsPlanSource<IGraphicsStageContext, A, O> source, PlanValue<A> input);
 +        public PlanValue<Device<ImageSchema>> ImageValue(PlanImage image);
 +        public PlanImage Image(PlanValue<Device<ImageSchema>> value);
 +        public void Export(PlanImage image);
@@ -1003,7 +1069,7 @@ CPU記録とGPU算法を分離し、共通計画へ変換してもpainter順・s
 -        public DrawingArgumentTableMode ArgumentTableMode { get; init; }
 -        public DrawingRetentionStatistics2D RetentionStatistics { get; }
 +        // 構築済みの型付き処理を直接借用。資源・table・実行ownerはsessionへ集約する。
-+        public Renderer2D(GraphicsDeviceSession session, GraphicsPipelineTemplate<DrawRequest2D, Device<ImageSchema>> pipeline);
++        public Renderer2D(GraphicsDeviceSession session, GraphicsPipelineTemplate<IGraphicsStageContext, DrawRequest2D, Device<ImageSchema>> pipeline);
 +        public PlanImage Declare(GraphicsFrameScope frame, DrawingSceneSnapshot2D scene);
      }
  }
@@ -1011,7 +1077,7 @@ CPU記録とGPU算法を分離し、共通計画へ変換してもpainter順・s
 
 共通契約は、template・上位frontend・低水準backendの全てへ適用する。
 
-- **template**: GraphicsPipelineTemplateはIGraphicsPlanSourceを実装する。factory/processorは公開契約であり、外部作者も同じ宣言・検証を通す。DeviceをCPU可読にせず、Deviceを含むbundleも再帰的に制限し、Graphics能力のviewから宣言を追加する。
+- **template**: GraphicsPipelineTemplate<TContext, A, O>は同じcontextのIGraphicsPlanSourceを実装する。RenderGraphの簡易Invokeは同frameのIGraphicsStageContextだけを供給し、それ以上の能力を要求するtemplateを受け取らない。複合contextでは型付きfactoryを渡すDeclareを使う。factory/processorは公開契約であり、外部作者も同じ宣言・検証を通す。DeviceをCPU可読にせず、Deviceを含むbundleも再帰的に制限し、Graphics能力のviewから宣言を追加する。
 - **効果と2Dの移行**: ImageEffectGraphは再利用可能な不変DAGとして保持するが実行器やownerにしない。ImageEffectSubgraph、EffectImage、AppendEffectsWithContext/AppendEffectWithContext、旧RenderGraphContextのGPU参照取得、PreparedDraw2D/PreparedDrawingPasses2Dの分散所有をPlanImageと共通executionへ移す。全Renderer2D constructorと旧Prepare/Recordを利用側も含めて変更し、旧overloadを残さない。
 - **低水準**: IArgumentTable、IGpuRef、IShaderArguments、Graphics command APIは共通基盤が使用する。既存wire ABIを変えず、componentへ独立所有を戻さない。session外ではinterop境界を守る。
 
@@ -1021,6 +1087,7 @@ CPU記録とGPU算法を分離し、共通計画へ変換してもpainter順・s
 - allocatorだけ共通化する: 確保の重複を減らせるが、生存判定と登録表の世代、payload、送信証跡が別計画のままで不十分である。
 - 全処理を一つのtableへ登録する: 管理は単純だが、whole-tableの物理露出、attachment競合、binding上限、不要な保持を解決できない。
 - 効果へGraph用Appendとpipeline用Encodeを実装する: shaderを共有しても領域・引数・useと所有が二重になる。単一Lowerを選ぶ。
+- Core hostへExecutionRuntimeとruntime capability castを必須化する: 単一hostへ配送を集められるが、CPUだけの構成にも具象依存を強制し、能力不足を実行時まで隠す。Stageの型付き要件と明示bindingを選ぶ。
 - typed処理をなくしRenderGraphだけにする: resource依存は表せるが、CPU値を含む型付き部品交換と非描画処理の再利用を失う。入口を分け、実行基盤だけを統合する。
 - 全効果を自動でshader融合する: pass削減の余地はあるが、色・resolve・clip・filter順序と精度の別判断になる。本判断では明示構成を使う。
 
@@ -1030,7 +1097,8 @@ CPU記録とGPU算法を分離し、共通計画へ変換してもpainter順・s
 
 - **得られる効果**: 重複管理と不整合な所有境界をなくす。table数やpass数を一律に減らす保証ではない。
 - **移行の負担**: 実装と利用側を一緒に変更し、custom effect、独自batch、DI登録、shader payload接続も書き換える。互換adapterや二重実行経路を維持しない。
-- **依存方向**: Coreの型付き構築・Execution→共通Graphics計画→RenderGraph・画像効果・Drawing2Dとする。RenderGraphとtyped Graphicsの循環を作らず、Resources連携は共通sessionへartifact leaseとpublication snapshotを供給する。
+- **依存方向**: Coreの型付き構築からGPU/Executionへの具象依存を除き、各Stageと接続assemblyが必要サービスへ依存する。共通Graphics計画の上にRenderGraph・画像効果・Drawing2Dを置く。RenderGraphとtyped Graphicsの循環を作らず、Resources連携は共通sessionへartifact leaseとpublication snapshotを供給する。
+- **型の受入条件**: 小さい要求のStage・factoryを豊かなcontextへ接続でき、逆方向・能力不足・異なるpayload・要件を失ったInvokeはコンパイルエラーになることを確認する。1〜6入力とtemplateでも同じ契約を確認する。CPUのみの構成はGPU/Executionを供給せず評価できる。factory/processorの反変性とdefinition visitorの二重反変位置もC# compilerで確認し、native統合の成立とは分ける。
 - **構造の受入条件**: Graph・typed構築・2D・単独実行が同じ効果のLower/kernel recipeを使い、効果ごとの別recordを持たない。2D→effect→composite→3D/postprocessが共通計画に見え、dead taskはallocation/table/uploadを作らない。
 - **資源の受入条件**: sharingと異context/ROI、旧version保持、partial RMW、frame間import競合、range/view差を検証する。全table登録のPhysicalBindingUse、RO/RW、attachment/combined制限、binding域を跨ぐshader-data、relocation、immutable table全owner保持を含める。
 - **画素の受入条件**: 二つの半coverage描画のalpha 0.75、shape/clip相関、group opacity、mask、色補間差、blur halo、backdrop置換、地図の順序・継ぎ目を独立期待値で検証する。
