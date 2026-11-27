@@ -223,32 +223,98 @@ using PreparedDrawingPasses2D drawing = await parent.Append2D(renderer, ct);
 // drawingはGPU完了とplan解放まで保持する。
 ~~~
 
-変更後の2D算法は、作者が供給する型付きstageの組合せとして記述する。
+変更後は、command種類ごとの型付き既定経路と、同じ種類の個々の記録への明示overrideを、不変の経路登録表で選ぶ。
+
+- **比較元**: 基準コミットの src/Graphics/Lumyte.Graphics.Drawing2D/Execution/DrawingCommandRenderers2D.cs はFillRect、FillRoundedRect、FillCircle、DrawLine、FillPath、StrokePath、DrawImage、DrawCoverageMask、DrawDistanceField、DrawMesh、DrawPaintGraphの11個の型付きslotを持つ。種類別選択は既存であり、追加するのはtyped Pipeline templateへの接続と記録単位のoverrideである。
+- **記録の型**: 同コミットの src/Graphics/Lumyte.Graphics.Drawing2D/Model/DrawingCommand2D.cs はcaptured Stateを持つ不変record、同ディレクトリのFillRectCommand2D.cs はRect・Paint・Stateを持つsealed recordである。geometryだけへ落としてPaintやclipを失わない。
+
+### 2Dコマンド別の経路と再利用
+
+作者が一度Buildしたtemplateを複数command・複数frameから借用し、既定経路またはsnapshotへ束縛したoverrideから同じframeへ展開する。
+
+- **登録と型**: `Register<TCommand>`は正確な`DrawingCommandPipelineRequest2D<TCommand>`入力、DrawingCommandResult2D出力、TContextを持つtemplateから型付きkeyを返す。`SetDefault<TCommand>`で種類ごとの既定を一つ指定してFreezeする。異なるcommand入力や不足したcontext能力はコンパイルエラーとし、object選択やruntime castへ逃がさない。登録・Freezeは送信しない。
+- **個別選択**: DrawingPipelineOverrideBuilder2D(scene, routes)はsnapshot identityと不変registry identity/revisionへ束縛する。`Set<TCommand>`(ordinal, key)はscene全体の記録順ordinalで対象を指し、actual command型を検証する。Freezeしたmanifestへ型付きroute keyとordinalを保存し、immutable command payloadへnative ownerやIDisposable templateを格納しない。同じindexの別snapshotへの再利用は禁止する。
+- **検証と失敗**: default値key、未登録・foreign・stale key、異session/世代、異registry、範囲外ordinal、actual command型不一致、重複Set、重複default、missing routeを明示的に拒否する。builderで可能な検査を即時に行い、Declareは全command・manifest・templateの所属と必要能力を部分宣言より前に再検証する。未対応commandを飛ばしたり単一算法へfallbackしたりしない。拡張commandも明示登録を要する。
+- **背景入力とprojection**: frame-local requestはCPU可読metadataとoptional `Device<ImageSchema>` Backdrop、その対応BackdropVersionを持つopaque IPipelineBundleとする。immutable sceneへDeviceを格納しない。共通側が必要な背景snapshot copyを同じframeのparent passとして宣言し、そのproducerからrouteの背景readへ依存を張る。RequiredBackdropVersionと実入力version・frame/target/ROIを一致させ、背景が必要なのに欠ける場合は拒否する。背景なしはImageとVersionの双方なしとして表す。DrawingCommandInputs2D.Metadata/Backdropは本ADRで追加する公開typed projection stageであり、前者だけがCPU可読metadata portを公開し、後者はopaque背景portを保持する。CPU geometryはmetadata portのみを受け、request全体をlifecycle.Readで読むことは禁止する。
+- **公開境界**: projectionのprocessorはGraphicsStageCapabilities.ReadBundle(lifecycle, input)を使う。Planning assembly側がCore assemblyの公開ReadDeclarationへBind時の正確なauthorityを渡し、Coreがleaseのrun/node/scopeを確認してValidateDeclarationReadで全opaque子のframe/世代・producerを検証する。通常Readはこの宣言view経路を使わずDevice/bundleを拒否し続ける。Metadata projectionは検証済みmetadataだけを新しいCPU値として公開し、背景projectionは依存を引き継ぐopaque値を公開する。任意CPU stageが背景を画素として読めるAPIではなく、GPU bytesは明示Downloadなしに得られない。
+- **入力scope**: `DrawingCommandPipelineRequest2D<TCommand>`はcommandとcaptured DrawRequest2Dを含むMetadataを持つ。後者はdrawing state、clip ancestry、sample座標とtarget、color/alpha、ROI、painter order、必要backdrop versionを全て含む不変の意味論入力である。Geometry/Coverage/Paintの分離でもこの入力を必要stageまで渡し、geometry-only入力で代用しない。
+- **出力と合成**: 全routeはDrawingCommandResult2Dへ揃える。これは`Device<ImageSchema>` Image、明示的なComposition2D（SourceOver / ReplaceWithBackdrop）、BackdropVersion?を持つopaque IPipelineBundleであり、CPU可読ではない。共通合成側が実際のsample/target、ROI、color/alpha、resolve scope、順序とbackdrop versionを照合してから合成する。SourceOverは背景を含まないresolved画像、ReplaceWithBackdropは要求された正確な背景versionを既に含む画像とする。背景不足・古いversion・矛盾するtagを拒否し、単なる`Device<ImageSchema>`ではこの区別を隠さない。unresolved coverageはこの結果型に入れず、route内部でper-draw resolveを完了する。
+- **共通の描画意味**: clip、save/restore、layer、group opacity、backdrop、painter orderは共通2D contextが所有する構造であり、leaf routeが独立実行・再配列しない。同一routeごとにscene全体をsortせず、隣接commandまたは独立性を証明できるものだけbatch化する。重なる二つの半coverage不透明描画はper-draw resolve後のsource-overでalpha 0.75を維持する。既存11 leafにDrawTextはなく、文字はglyphをpath/image/mask等へ正規化した後のroute、または明示登録した拡張型で扱う。
+- **所有と失効**: registryはtemplateを借用する不変metadataである。session・template一式をloop外で保持し、frameのbindingと使用leaseは正常退役または失敗後のdrain/回収まで保持する。batch/cache identityはregistry identity/revision、選択routeとtemplate identity、snapshot/override identity、captured state、device世代を含み、route変更ではsnapshotに関連する準備結果とretained cacheをstaleにして再評価する。新registryを同じsnapshotへ使う場合もmanifestを作り直し、cache missにする。
+- **有限性と実行**: registry/manifest挿入、snapshotコピー、template展開の前に有限予算を予約する。宣言中の失敗はframeを無効化して部分実行を拒否し、開始済み仕事とownerを台帳で保持・回収する。独立tableやexecutorは作らず、最後のframe.ExecuteAsyncだけが一回の実行を所有する。
+
+~~~text
+不変scene（snapshot identity + 全体ordinal + captured state）
+  → 構造解析（clip/layer/backdrop/orderを保持）
+  → 全選択の検証 → 個別override優先、なければcommand型のdefault
+  → parent背景snapshot copy producer → frame-local opaque request（metadata + 背景/version）
+  → Metadata projection（CPU可読） / Backdrop projection（opaque、producer read依存）
+  → 借用templateのGeometry/Coverage/Paint/Resolve/Contribute
+  → DrawingCommandResult2D → versionと合成modeの検証
+  → 元のpainter順で共通layer/effect/composite → 同じframe.Plan
+  → frame.ExecuteAsync一回 → 実完了・退役（templateは次frameでも借用）
+~~~
+
+次の変更後例ではFillRectの高速・精密経路を同じ入力型で構成する。stagesは作者が供給する初期化済みIStage群、schemaは作者定義である。
 
 ~~~csharp
 using Lumyte.Pipelines;
 using Lumyte.Graphics.Planning;
 using Lumyte.Graphics.Drawing2D;
 
-// stagesは作者が選んだIStage群。下の型を持つものを初期化済みとする。
-// Geometry: DrawRequest2D → Host<GeometrySchema>
-// Coverage: Host<GeometrySchema> → Device<CoverageSchema>
-// Paint: (Device<CoverageSchema>, DrawRequest2D) → Device<SamplePaintSchema>
+// metadata = DrawingCommandMetadata2D<FillRectCommand2D>（CPU可読）
+// Geometry: metadata → Host<GeometrySchema>
+// Coverage: (Host<GeometrySchema>, metadata) → Device<CoverageSchema>
+// Paint: (Device<CoverageSchema>, metadata) → Device<SamplePaintSchema>
 // Resolve: Device<SamplePaintSchema> → Device<ImageSchema>
-var g = new PipelineGraph<IGraphicsStageContext, DrawRequest2D>();
-var geometry = g.Input.Then(stages.Geometry);
-var coverage = geometry.Then(stages.Coverage);
-var paint = g.Stage(stages.Paint, coverage, g.Input);
+// Contribute: (Device<ImageSchema>, metadata, DrawingBackdrop2D) → DrawingCommandResult2D
+// 背景を必要とする算法はopaque背景portをPaint等にも明示的に接続する。
+// Contributeも作者提供stage。合成mode/versionを明示し共通結果へ揃える。
+var g = new PipelineGraph<IGraphicsStageContext,
+    DrawingCommandPipelineRequest2D<FillRectCommand2D>>();
+var metadata = g.Input.Then(DrawingCommandInputs2D.Metadata<FillRectCommand2D>());
+var backdrop = g.Input.Then(DrawingCommandInputs2D.Backdrop<FillRectCommand2D>());
+var geometry = metadata.Then(stages.Geometry);
+var coverage = g.Stage(stages.Coverage, geometry, metadata);
+var paint = g.Stage(stages.Paint, coverage, metadata);
 var image = paint.Then(stages.Resolve);
-using var algorithm = session.Build(g.Complete(image));
-var renderer = new Renderer2D(session, algorithm);
-PlanImage output = renderer.Declare(frame, immutableScene);
-// layer/effect/compositeもframe.Planへ宣言し、最後に共通compileへ進む。
+var contribution = g.Stage(stages.Contribute, image, metadata, backdrop);
+var fastFillTemplate = session.Build(g.Complete(contribution));
+// preciseFillDefinitionは同じrequest/result型、imageDefinitionはDrawImageCommand2D入力。
+var preciseFillTemplate = session.Build(preciseFillDefinition);
+var imageTemplate = session.Build(imageDefinition);
+var registry = new DrawingPipelineRoutesBuilder2D<IGraphicsStageContext>(session);
+var fastFill = registry.Register<FillRectCommand2D>(fastFillTemplate);
+var preciseFill = registry.Register<FillRectCommand2D>(preciseFillTemplate);
+var drawImage = registry.Register<DrawImageCommand2D>(imageTemplate);
+registry.SetDefault<FillRectCommand2D>(fastFill);
+registry.SetDefault<DrawImageCommand2D>(drawImage);
+var drawingRoutes = registry.Freeze();
+var renderer = new Renderer2D<IGraphicsStageContext>(session, drawingRoutes);
+// template三つとdrawingRoutesは、以後の全frameのdrain/回収までloop外で保持する。
 ~~~
 
-- **型の意味**: GeometrySchema等は算法作者のschema例である。HostはCPUが読めるcanonical内容、DeviceはGPU資源の配置とproducer宣言であり、画素配列ではない。
-- **描画の制約**: coverageとpaintを別stageにしてもresolve位置は自由に動かせない。sample相関、色、clip、group opacity、backdrop置換は後述の意味契約を守る。
-- **算法交換**: CPU geometry→GPU coverageはこの例で選んだ構成である。共通実行基盤が別方式へ自動fallbackする指定ではない。
+次の例ではsceneのordinal 0がFillRect、1がDrawImage、2がFillRectである。0だけ精密経路にし、1と2は種類別の既定を使う。scene生成と独立使用lease取得は省略する。
+
+~~~csharp
+using Lumyte.Graphics.Drawing2D;
+using Lumyte.Graphics.Planning;
+
+var choices = new DrawingPipelineOverrideBuilder2D<IGraphicsStageContext>(immutableScene, drawingRoutes);
+choices.Set<FillRectCommand2D>(0, preciseFill);
+var overrides = choices.Freeze();
+var frame = session.CreateFrame();
+var contexts = new GraphicsContextFactory(frame); // frameごとに新しく束縛する。
+PlanImage output = renderer.Declare(frame, immutableScene, contexts, overrides);
+frame.AsRenderGraph().Export(output);
+await frame.ExecuteAsync(ct); // precise FillRect → DrawImage → fast FillRectの順。
+contexts.Dispose(); // 正常退役後。失敗時はDrain/世代退役の回収まで保持する。
+// 次frameは新しいframeとfactoryを作る。同一snapshot/routesのmanifestは再利用できる。
+~~~
+
+- **例の寿命**: 失敗・取消し時もfactoryとbindingを未回収ownerより先に解放せず、アプリの回収経路へ保持する。factoryはDeclareへ渡したframeと同じframeへ束縛し、result leaseとdrainまで保持する。
+- **型と算法の意味**: HostはCPUが読めるcanonical内容、DeviceはGPU配置とproducer宣言であり画素配列ではない。この例のCPU geometry→GPU coverageは作者の明示選択であり、sample相関・色・clip・group opacity・backdrop契約を保つ。resolve位置を自由に移す指定でも自動fallbackでもない。
+- **型の拡張**: 自由なStage contextは`Renderer2D<TContext>`と`DrawingPipelineRoutes2D<TContext>`まで保持する。複合contextのrouteには同じTContextのfactoryを明示供給し、既定GraphicsContextFactoryが追加能力を供給するとは扱わない。
 
 ### Pipelineを直接書いた場合の変換
 
@@ -396,9 +462,11 @@ var definition = g.Complete(final);
 ~~~csharp
 // 各描画要求で新しいframeを取得する。sessionとrendererはloop外で構築済み。
 var frame = session.CreateFrame();
-PlanImage image = renderer.Declare(frame, immutableScene);
+var contexts = new GraphicsContextFactory(frame);
+PlanImage image = renderer.Declare(frame, immutableScene, contexts);
 frame.AsRenderGraph().Export(image);
 await frame.ExecuteAsync(ct);
+contexts.Dispose(); // 失敗時はdrain/回収まで保持する。
 // await frame.ExecuteAsync(ct); // 二度目は拒否。失敗/取消し後の再呼出しも不可。
 // 次回は新しいframeへ宣言する。
 ~~~
@@ -429,14 +497,15 @@ sessionと処理templateを起動時に用意し、毎frameの不変snapshotを�
 - **例の範囲**: RenderAndPresentFrameAsyncはライブラリの既存APIではない。下記のAPI抜粋が示すExecuteAsyncだけではSubmitとCPU完了待機の間にPresentを接続できず、この抜粋だけで表示を実装できる例とはしない。必要な明示同期を共通executionへ接続できない経路は拒否する。
 
 ~~~csharp
+using System;
 using System.Threading.Tasks;
 using Lumyte.Graphics.Drawing2D;
 using Lumyte.Graphics.Planning;
 
 // runtime/moduleの開始、owner thread、device/surfaceの初期化は省略。
 var session = new GraphicsDeviceSession(graphicsOwner, device, graphicsBudget);
-var template = session.Build(drawingDefinition);
-var renderer = new Renderer2D(session, template);
+// 前節のtemplate一式とfreeze済みdrawingRoutesをloop外で構築・保持する。
+var renderer = new Renderer2D<IGraphicsStageContext>(session, drawingRoutes);
 Task? rendering = null;
 bool admitRendering = true;
 
@@ -466,7 +535,8 @@ while (!ExitRequested())
     WaitForEventOrWorkWithFiniteTimeout(); // ownerの仕事もwakeさせる。GPU fenceは待たない。
 }
 
-Task shutdown = StopAdmissionAndDrainAsync(rendering, renderer, template, session);
+Task shutdown = StopAdmissionAndDrainAsync(rendering, renderer, drawingRoutes,
+    new IDisposable[] { fastFillTemplate, preciseFillTemplate, imageTemplate }, session);
 while (!shutdown.IsCompleted)
 {
     PollWindowEvents();
@@ -478,6 +548,7 @@ shutdown.GetAwaiter().GetResult();
 ~~~
 
 - **接続点の意味**: ExitRequested/PollWindowEvents/AdvanceSimulation/CaptureImmutableSceneはゲーム側の入力・時間・snapshot処理である。PumpExecutionPhasesはhostが選んだExecutionのpumpを正しいowner threadで回す。待機関数はイベント・owner仕事で起床する有限待機であり、CPUのbusy loopやGPU同期waitを指定するものではない。
+- **contextの接続**: RenderAndPresentFrameAsyncは各frameへ新しいGraphicsContextFactoryを束縛し、同じframeとともにrenderer.Declareへ渡す。factoryとbindingはGPU完了またはdrain/回収まで保持し、別frameへ流用しない。drawingRoutesと借用template一式はloop外で所有する。
 - **描画Taskの意味**: RenderAndPresentFrameAsyncは下記のframe手順を非同期で進めるアプリの制御フローであり、共通計画に埋める不透明なGPU nodeではない。内部の個々のpass・use・argumentsは共通IRに見せる。Taskの終了はGPU完了・必要なsurface release・退役を含み、Presentを呼んだ時点では終了させない。
 - **終了Taskの意味**: StopAdmissionAndDrainAsyncは新規frameを止め、描画Taskの成功・失敗を観測し、既知submissionのDrainと保留ownerの回収、frame/import、template、sessionの順の退役まで進める。受理不明時は通常Drainだけで安全とせず、信頼されたdevice世代退役証明を要求する。shutdown失敗時もownerと回収経路を保持し、外側のusing/finallyでGPU使用中のdeviceやleaseを強制解放しない。例は入力・表示backendの全実装、simulation例外時も同じ回収経路へ入るtry/finally、障害復旧UIを省略している。これらの接続点を新しいライブラリAPIとして追加する指定ではない。
 
@@ -742,11 +813,27 @@ CPU記録とGPU算法を分離し、共通計画へ変換してもpainter順・s
 +        ValueTask<ValueLease<O>> PrepareAsync(StagePreparationContext lifecycle, TContext services,
 +            ValueLease<A> a, ValueLease<B> b, CancellationToken cancellationToken);
 +    }
++    // 例の三入力Contributeもpayload型を消さずに接続する。
++    public interface IStage<in TContext, A, B, C, O> where TContext : class
++    { IStageFactory<TContext, A, B, C, O> Factory { get; } }
++    public interface IStageFactory<in TContext, A, B, C, O> where TContext : class
++    {
++        StageRequirements Describe(StageInputDescriptions inputs);
++        IStageProcessor<TContext, A, B, C, O> Create(StageBuildContext build);
++    }
++    public interface IStageProcessor<in TContext, A, B, C, O> : IDisposable where TContext : class
++    {
++        ValueTask<ValueLease<O>> PrepareAsync(StagePreparationContext lifecycle, TContext services,
++            ValueLease<A> a, ValueLease<B> b, ValueLease<C> c, CancellationToken cancellationToken);
++    }
 +    public sealed class StageBuildContext; // build寿命だけ。不変captureと予算を検証する。
 +    public sealed class StagePreparationContext
 +    {
 +        // 全経路でprovenance、opaque子、producerを照合する。scope終了後は拒否。
++        // Deviceを含むbundleはCPU Read不可。authorityが存在してもこの禁止は変わらない。
 +        public T Read<T>(ValueLease<T> value);
++        // backend用宣言view。Bindで結んだ同一authority以外は拒否。CPU bytesは公開しない。
++        public T ReadDeclaration<T>(ValueLease<T> value, IStageLifecycleAuthority authority);
 +        public ValueLease<T> Publish<T>(T value);
 +        public void Own(IDisposable owner);
 +    }
@@ -762,6 +849,8 @@ CPU記録とGPU算法を分離し、共通計画へ変換してもpainter順・s
 +        // サービス取得機能は持たない。確保前にactual <= compiledを検証する。
 +        void Validate(StageRequirements compiled, StageRequirements actual);
 +        void ValidateRead<T>(T value);
++        // 全opaque子のprovenance・frame/世代・producer readを検証/登録する。
++        void ValidateDeclarationRead<T>(T value);
 +        void ValidatePublication<T>(T value);
 +        void Own(IDisposable owner);
 +    }
@@ -802,7 +891,10 @@ CPU記録とGPU算法を分離し、共通計画へ変換してもpainter順・s
 +    public sealed class PipelineGraph<TContext, TInput> where TContext : class
 +    {
 +        public Port<TContext, TInput> Input { get; }
++        // 三入力もedgeとfactoryを型付きで保持し、framework tupleへの型消去はしない。
 +        public Port<TContext, O> Stage<A, O>(IStage<TContext, A, O> stage, Port<TContext, A> input);
++        public Port<TContext, O> Stage<A, B, C, O>(IStage<TContext, A, B, C, O> stage,
++            Port<TContext, A> a, Port<TContext, B> b, Port<TContext, C> c);
 +        public Port<TContext, O> Stage<A, B, O>(IStage<TContext, A, B, O> stage,
 +            Port<TContext, A> a, Port<TContext, B> b);
 +        public Port<TContext, O> Invoke<A, O>(IPipelineDefinition<TContext, A, O> definition,
@@ -864,6 +956,10 @@ CPU記録とGPU算法を分離し、共通計画へ変換してもpainter順・s
 +    {
 +        // invocation限定。CPU bytesではなく同frameの宣言を読みproducerを登録する。
 +        public GraphicsDeclarationScope Plan { get; }
++        // assemblyを跨ぐ公開境界。lifecycle.ReadDeclarationと正確なbinding authorityを使う。
++        // opaque wrapper/metadataを検査するだけでDeviceの画素取得を許さない。
++        public T ReadBundle<T>(StagePreparationContext lifecycle, ValueLease<T> input)
++            where T : IPipelineBundle;
 +        public PlanResource Read<TSchema>(ValueLease<Device<TSchema>> input)
 +            where TSchema : ISchema;
 +        public ValueLease<Device<TSchema>> Publish<TSchema, T>(
@@ -1053,8 +1149,8 @@ CPU記録とGPU算法を分離し、共通計画へ変換してもpainter順・s
 -        public void AbortUnsubmitted();
 -        public void Dispose();
 -    }
-     public sealed partial class Renderer2D
-     {
+-    public sealed partial class Renderer2D
+-    {
 -        public Renderer2D(IGraphicDevice device, DrawingCommandRenderers2D renderers,
 -            DrawingResources2D? resources = null, IDisposable? resourceOwner = null,
 -            Action? validateResources = null, DrawingRetentionOptions2D? retentionOptions = null);
@@ -1068,10 +1164,85 @@ CPU記録とGPU算法を分離し、共通計画へ変換してもpainter順・s
 -            RenderTarget2D target, CancellationToken cancellationToken = default);
 -        public DrawingArgumentTableMode ArgumentTableMode { get; init; }
 -        public DrawingRetentionStatistics2D RetentionStatistics { get; }
-+        // 構築済みの型付き処理を直接借用。資源・table・実行ownerはsessionへ集約する。
-+        public Renderer2D(GraphicsDeviceSession session, GraphicsPipelineTemplate<IGraphicsStageContext, DrawRequest2D, Device<ImageSchema>> pipeline);
-+        public PlanImage Declare(GraphicsFrameScope frame, DrawingSceneSnapshot2D scene);
-     }
+-    }
++    // 不変sceneは全体ordinalとsnapshot identityを持つ。既存Canvas記録から切り出す追加型。
++    public sealed class DrawingSceneSnapshot2D;
++    // 実際の型定義は意味論metadataのみ。native ownerを持たない。
++    public sealed class DrawRequest2D
++    {
++        public DrawingState2D DrawingState { get; }
++        public IReadOnlyList<DrawingCommand2D> ClipAncestry { get; }
++        // target/sample/color/ROIの正確な記述を保持する不変metadata。
++        public DrawingSampleTarget2D SampleTarget { get; }
++        public DrawingColorDescription2D Color { get; }
++        public ImageRegion RegionOfInterest { get; }
++        public int PainterOrder { get; }
++        public BackdropVersion? RequiredBackdropVersion { get; }
++    }
++    public sealed class DrawingSampleTarget2D; // sample配置・座標写像・target identity。
++    public sealed class DrawingColorDescription2D; // format・色空間・alpha・精度。
++    public readonly record struct BackdropVersion; // frame/target/内容versionに束縛。defaultは無効。
++    // CPU metadataにはDevice/lease/ownerを再帰的に含めない。
++    public sealed record DrawingCommandMetadata2D<TCommand>(
++        TCommand Command, DrawRequest2D Drawing) : ICpuPipelineValue where TCommand : DrawingCommand2D;
++    // Image/Versionは双方あり、または双方なし。存在する全Device子を列挙する。
++    public readonly record struct DrawingBackdrop2D(Device<ImageSchema>? Image,
++        BackdropVersion? Version) : IPipelineBundle
++    { public void VisitChildren(IPipelineBundleVisitor visitor); }
++    // frame-local。MetadataとBackdropを列挙。全体はCPU Read不可。
++    public sealed record DrawingCommandPipelineRequest2D<TCommand>(
++        DrawingCommandMetadata2D<TCommand> Metadata, DrawingBackdrop2D Backdrop)
++        : IPipelineBundle where TCommand : DrawingCommand2D
++    { public void VisitChildren(IPipelineBundleVisitor visitor); }
++    public static class DrawingCommandInputs2D
++    {
++        // 公開adapter。Graphics能力で宣言viewを借用し、検証後metadataだけを公開。
++        public static IStage<IGraphicsStageContext, DrawingCommandPipelineRequest2D<TCommand>,
++            DrawingCommandMetadata2D<TCommand>> Metadata<TCommand>() where TCommand : DrawingCommand2D;
++        // 背景をopaqueのまま公開し、snapshot copy producerへのread依存を継承する。
++        public static IStage<IGraphicsStageContext, DrawingCommandPipelineRequest2D<TCommand>,
++            DrawingBackdrop2D> Backdrop<TCommand>() where TCommand : DrawingCommand2D;
++    }
++    public enum Composition2D { SourceOver, ReplaceWithBackdrop }
++    // Deviceを含むopaque bundle。Imageを必ずVisitChildrenへ渡す。CPU可読にしない。
++    public readonly record struct DrawingCommandResult2D(Device<ImageSchema> Image,
++        Composition2D Composition, BackdropVersion? BackdropVersion) : IPipelineBundle
++    { public void VisitChildren(IPipelineBundleVisitor visitor); }
++    // 値はregistryだけが発行する。default/foreign/stale keyを拒否する。
++    public readonly struct DrawingPipelineRoute2D<TContext, TCommand>
++        where TContext : class where TCommand : DrawingCommand2D;
++    public sealed class DrawingPipelineRoutesBuilder2D<TContext> where TContext : class
++    {
++        public DrawingPipelineRoutesBuilder2D(GraphicsDeviceSession session);
++        public DrawingPipelineRoute2D<TContext, TCommand> Register<TCommand>(
++            GraphicsPipelineTemplate<TContext, DrawingCommandPipelineRequest2D<TCommand>,
++                DrawingCommandResult2D> template) where TCommand : DrawingCommand2D;
++        // 同一command型の重複default、foreign keyを拒否する。
++        public void SetDefault<TCommand>(DrawingPipelineRoute2D<TContext, TCommand> route)
++            where TCommand : DrawingCommand2D;
++        // 以後builderを変更できない。不変registryはtemplateを借用し送信しない。
++        public DrawingPipelineRoutes2D<TContext> Freeze();
++    }
++    public sealed class DrawingPipelineRoutes2D<TContext> where TContext : class;
++    public sealed class DrawingPipelineOverrides2D<TContext> where TContext : class;
++    public sealed class DrawingPipelineOverrideBuilder2D<TContext> where TContext : class
++    {
++        public DrawingPipelineOverrideBuilder2D(DrawingSceneSnapshot2D scene,
++            DrawingPipelineRoutes2D<TContext> routes);
++        // snapshot全体ordinalのactual型を照合。重複/範囲外/異registryは拒否する。
++        public void Set<TCommand>(int ordinal, DrawingPipelineRoute2D<TContext, TCommand> route)
++            where TCommand : DrawingCommand2D;
++        public DrawingPipelineOverrides2D<TContext> Freeze();
++    }
++    public sealed class Renderer2D<TContext> where TContext : class
++    {
++        // registryを借用する。単一算法のfallback overloadは設けない。
++        public Renderer2D(GraphicsDeviceSession session, DrawingPipelineRoutes2D<TContext> routes);
++        // 全選択を部分宣言前に検証。contextsは同frameのauthorityを必須とする。
++        // 以後の宣言失敗はframeを無効化。bindingとownerはdrain/回収まで保持する。
++        public PlanImage Declare(GraphicsFrameScope frame, DrawingSceneSnapshot2D scene,
++            IPipelineContextFactory<TContext> contexts, DrawingPipelineOverrides2D<TContext>? overrides = null);
++    }
  }
 ~~~
 
@@ -1099,6 +1270,8 @@ CPU記録とGPU算法を分離し、共通計画へ変換してもpainter順・s
 - **移行の負担**: 実装と利用側を一緒に変更し、custom effect、独自batch、DI登録、shader payload接続も書き換える。互換adapterや二重実行経路を維持しない。
 - **依存方向**: Coreの型付き構築からGPU/Executionへの具象依存を除き、各Stageと接続assemblyが必要サービスへ依存する。共通Graphics計画の上にRenderGraph・画像効果・Drawing2Dを置く。RenderGraphとtyped Graphicsの循環を作らず、Resources連携は共通sessionへartifact leaseとpublication snapshotを供給する。
 - **型の受入条件**: 小さい要求のStage・factoryを豊かなcontextへ接続でき、逆方向・能力不足・異なるpayload・要件を失ったInvokeはコンパイルエラーになることを確認する。1〜6入力とtemplateでも同じ契約を確認する。CPUのみの構成はGPU/Executionを供給せず評価できる。factory/processorの反変性とdefinition visitorの二重反変位置もC# compilerで確認し、native統合の成立とは分ける。
+- **背景入力の受入条件**: parent背景copy→route read→ReplaceWithBackdropの依存とversion一致、背景欠落・foreign frame・stale versionの拒否、metadata projection後だけCPU geometryが読めること、request/背景bundleへのgeneric CPU Read拒否と全Device子の列挙を確認する。
+- **2D経路の受入条件**: 三種類以上の異種commandと同型二経路を混在させ、既定と個別overrideの双方で元のpainter順を保つ。command入力型/context能力不一致のコンパイル失敗、ordinal/actual型不一致、default・foreign・stale key、別snapshot/registry/世代、重複とmissing routeの部分宣言前の拒否を確認する。templateを複数command・複数frameで再利用し、新registry/route変更でretained cacheがmissすること、backdrop mode/version不整合とunresolved出力を拒否することも検証する。
 - **構造の受入条件**: Graph・typed構築・2D・単独実行が同じ効果のLower/kernel recipeを使い、効果ごとの別recordを持たない。2D→effect→composite→3D/postprocessが共通計画に見え、dead taskはallocation/table/uploadを作らない。
 - **資源の受入条件**: sharingと異context/ROI、旧version保持、partial RMW、frame間import競合、range/view差を検証する。全table登録のPhysicalBindingUse、RO/RW、attachment/combined制限、binding域を跨ぐshader-data、relocation、immutable table全owner保持を含める。
 - **画素の受入条件**: 二つの半coverage描画のalpha 0.75、shape/clip相関、group opacity、mask、色補間差、blur halo、backdrop置換、地図の順序・継ぎ目を独立期待値で検証する。
