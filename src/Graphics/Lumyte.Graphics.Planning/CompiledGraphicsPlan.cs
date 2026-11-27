@@ -73,7 +73,7 @@ public sealed class CompiledGraphicsPlan : IDisposable
                 cancellationToken: cancellationToken).ConfigureAwait(false);
             return result;
         }
-        catch (Exception primary)
+        catch
         {
             if (result is not null)
             {
@@ -81,9 +81,9 @@ public sealed class CompiledGraphicsPlan : IDisposable
                 {
                     await _frame.Session.Execution.RunAsync(result.Dispose, retiring: true).ConfigureAwait(false);
                 }
-                catch (Exception cleanup)
+                catch
                 {
-                    throw new AggregateException(primary, cleanup);
+                    // Preserve the primary failure; _preparation retains its cleanup ledger.
                 }
             }
 
@@ -107,6 +107,8 @@ public sealed class CompiledGraphicsPlan : IDisposable
         _disposed = true;
         _frame.Release();
     }
+
+    internal void CleanupPreparation() => _preparation?.Dispose();
 
     internal bool IsExported(PlanResource resource) => _exports.Contains(resource);
 
@@ -195,15 +197,15 @@ public sealed class CompiledGraphicsPlan : IDisposable
             resources.CurrentPass = null;
             return _preparation;
         }
-        catch (Exception primary)
+        catch
         {
             try
             {
                 _preparation.Dispose();
             }
-            catch (Exception cleanup)
+            catch
             {
-                throw new AggregateException(primary, cleanup);
+                // Preserve the primary failure; _preparation retains its cleanup ledger.
             }
 
             throw;

@@ -37,6 +37,10 @@ internal sealed class ManagedDevice : IGraphicDevice, IGraphicsQueue
 
     internal bool UnknownSubmission { get; set; }
 
+    internal Action? OnSubmit { get; set; }
+
+    internal Action? OnCreateCommands { get; set; }
+
     internal int CommandDisposeFailures { get; set; }
 
     internal ManagedCommands? Commands { get; private set; }
@@ -75,6 +79,7 @@ internal sealed class ManagedDevice : IGraphicDevice, IGraphicsQueue
     {
         Events.Add("allocate-commands");
         Commands = new(this);
+        OnCreateCommands?.Invoke();
         return Commands;
     }
 
@@ -86,6 +91,7 @@ internal sealed class ManagedDevice : IGraphicDevice, IGraphicsQueue
             throw new InvalidOperationException("Acceptance unknown.");
         }
 
+        OnSubmit?.Invoke();
         return new ManagedSubmission((ManagedCommands)commandBuffers.Single(), Events);
     }
 

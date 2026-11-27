@@ -325,12 +325,12 @@ public sealed partial class GraphicsPlanBuilder
     internal bool IsInitialized(PlanResource resource, PlanRange range)
         => Covered(resource.Initialized, range) && (resource.Producer is null || !resource.Producer.DiscardedContents.Any(d => d.Resource.SameVersion(resource) && d.Range.Overlaps(range)));
 
-    internal void Mutable()
+    internal void Mutable(bool compiling = false)
     {
         Frame.ValidateDeclarations();
         Frame.Session.Validate();
         ObjectDisposedException.ThrowIf(Frame.IsDisposed, Frame);
-        if (_frozen)
+        if (_frozen || (Frame.IsConsumed && !compiling))
         {
             throw new InvalidOperationException("The plan is frozen.");
         }
@@ -387,7 +387,7 @@ public sealed partial class GraphicsPlanBuilder
 
     internal CompiledGraphicsPlan Compile()
     {
-        Mutable();
+        Mutable(compiling: true);
         _frozen = true;
         var live = new HashSet<PlanPass>();
         void Visit(PlanPass p)
