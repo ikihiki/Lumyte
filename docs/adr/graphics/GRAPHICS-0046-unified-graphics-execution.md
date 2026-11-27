@@ -67,14 +67,7 @@ var graph = frame.AsRenderGraph(); // 同じframe.Planを使う上位APIのview�
 PlanImage input = graph.ImportImage(sourceView, sourceUseLease, sourceDescription);
 PlanImage output = graph.AppendEffect(new GaussianBlurEffect(3, 3), input);
 graph.Export(output);
-using var compiled = await frame.CompileAsync(ct);
-var prepared = await compiled.PrepareAsync(ct);
-var use = session.CreateExecution(prepared);
-await use.ExecuteAsync(ct);
-await use.RetireAsync(); // 実完了後。ExecuteAsyncが退役済みなら同じownerで無操作。
-await prepared.RetireAsync();
-compiled.Dispose();
-await frame.RetireAsync();
+await frame.ExecuteAsync(ct); // Compile→Prepare→実行→内部ownerとframeの退役。
 await session.RetireAsync();
 ~~~
 
@@ -96,7 +89,7 @@ var blurred = g.Input.Then(Effects.Stage(new GaussianBlurEffect(3, 3)));
 using var template = session.Build(g.Complete(blurred));
 var value = graph.Invoke(template, graph.ImageValue(input));
 PlanImage output = graph.Image(value);
-// Export、CompileAsync、PrepareAsync、明示ExecuteAsyncは上と同じ。
+// Export後のframe.ExecuteAsyncは上と同じ。毎回新しいframeを取得する。
 ~~~
 
 Graph経由とtyped構築で、同じ効果定義を共有する。
@@ -203,7 +196,7 @@ PlanBuffer<int> output = copy.Write(storage, new PlanRange(0, 4),
     PlanWriteMode.Discard, new(PipelineStage.Copy, ResourceAccess.CopyWrite));
 copy.Copy(source, new PlanRange(0, 4), output, new PlanRange(0, 4));
 frame.Plan.Export(output, new(PipelineStage.Host, ResourceAccess.HostRead));
-// この後だけframe全体をCompile/Prepareし、明示ExecuteAsyncで送信する。
+// 宣言完了後のframe.ExecuteAsyncが全体Compile/Prepareと明示実行を一回だけ行う。
 ~~~
 
 - **内部結果**: 一つのcopy command、sourceのread use、新versionのwrite use、export rootが共通計画に見える。旧contextやcompiled Graphを保持して後からRunする宣言ではない。
@@ -263,7 +256,7 @@ Stage/ThenとInvokeで作った型付きDAGから、各processorが同じframe�
 - **定義の保存**: Completeはfactoryと不変パラメーター、型付きedge、schema/extent、producer依存を固定する。
 - **templateの挿入**: Invokeは同じgraphへnodeを複製しproducerを付け直す。別pipelineを一nodeとして実行し、結果leaseだけを渡す方式ではない。
 - **backendの仕事**: PipelineBuildHostがfactoryを検証・生成し、GraphicsPipelineBackendがframeへ束縛した有限能力を渡す。backendそのものが別のDefine/Compileを実行するわけではない。
-- **二種類のPrepare**: pipeline.PrepareAsyncはCPU processor評価とGPU宣言の追加、compiled.PrepareAsyncはnative資源とbinding準備であり、同じ操作名でも対象が異なる。
+- **宣言と実行**: pipeline.PrepareAsyncはCPU processor評価とGPU宣言の追加である。その後のframe.ExecuteAsyncが全体compile、区間のnative準備、記録・送信・実完了待機をまとめる。高度な低水準経路のcompiled.PrepareAsyncとは役割を区別する。
 
 次はRenderGraphを使わず、copy部品を二回同じframeへ展開する利用例である。
 
@@ -284,11 +277,8 @@ using var pipeline = build.Build(expanded);
 using var result = await pipeline.PrepareAsync(input, ct);
 frame.Plan.Export(frame.Plan.Resource(result.Value));
 
-using var compiled = await frame.CompileAsync(ct);
-var prepared = await compiled.PrepareAsync(ct);
-var execution = session.CreateExecution(prepared);
-await execution.ExecuteAsync(ct);
-// 正常時は共通の退役契約に従う。失敗時もsessionが未回収ownerを保持する。
+await frame.ExecuteAsync(ct);
+// 正常完了後は次のframeを取得できる。失敗時はsessionの回収契約へ進む。
 ~~~
 
 CopyStageのprocessorはnative copyを即時実行せず、sourceと出力versionを宣言して公開する。
@@ -386,12 +376,35 @@ var definition = g.Complete(final);
 - **失敗の範囲**: 区間1の失敗は区間0の外部書込みを取り消さない。全体atomic性が必要ならprivate targetと最終commitを明示する。
 - **単一区間との区別**: 最初のCPU計算→Upload→GPU完了だけなら一GPU区間である。Download→CPU→Uploadを含む契約を、一回のnative Prepareや一つのopaque callbackで代用しない。
 
+### frameごとの一回限りの実行
+
+毎回取得したframeに宣言を集め、frame.ExecuteAsync一回でCompile・Prepare・実行と正常時の退役を完了する。
+
+- **統合する処理**: 全体compile→必要な区間のprepare→Record/Finish/Submit→実GPU完了確認→内部command/prepared/compiledとframeの退役を順に進める。資源と登録の準備をRecordへ戻さない。
+- **高々一回**: 有効なframeへの最初の呼出しで、最初のawaitより前に実行権を原子的に消費する。成功後・失敗後・取消し後も同じframeを再実行しない。同時呼出しの敗者と二度目はInvalidOperationExceptionで拒否し、同じ仕事の別Taskを作らない。既に取消されたtokenでの呼出しもframeを消費する。
+- **宣言の終了**: 実行開始時に宣言をfreezeし、以後のpass/resource/argument追加を拒否する。typed宣言が未完了なら実行を拒否し、壊れた部分計画を実行しない。
+- **毎回の取得**: 次の描画にはsession.CreateFrameで新しいscopeを得る。完了したframeをResetして再使用する方式にはしない。sessionと不変templateは再利用する。
+- **低水準との排他**: CompileAsync等を使う明示的な低水準経路は保持できるが、同じframeの実行権を共有する。手動Compile後に統合ExecuteAsyncを呼んだり、統合実行中に手動Compileへ入り直したりできない。compiled/preparedの再利用で再送信する迂回も認めない。
+- **正常完了**: Taskの成功は単なる送信受理ではなく、実GPU完了と統合経路の内部owner/frame退役までを含む。使用中のleaseが残る場合は保持規則を優先し、安全に退役できる前に次frameの枠を解放しない。
+- **失敗と取消し**: 再実行ではなくDrain・Retire・信頼されたdevice世代退役の回収へ進む。受理不明・送信済未完了・進行中mapのownerをsessionに残す。cleanup失敗で主例外を隠さず、同台帳から回収を再試行する。回収の再試行はframeの実行回数に含めず、compile/submitをやり直さない。
+- **戻り値と出力**: 統合メソッドはValueTaskで完了を返す。Plan.Exportの宣言だけを独立した使用leaseの取得と扱わない。準備済export leaseの取得や手動の送信接続が必要な利用は、保持・回収を明示する低水準経路を選び、同frameで両経路を混在させない。
+
+~~~csharp
+// 各描画要求で新しいframeを取得する。sessionとrendererはloop外で構築済み。
+var frame = session.CreateFrame();
+PlanImage image = renderer.Declare(frame, immutableScene);
+frame.AsRenderGraph().Export(image);
+await frame.ExecuteAsync(ct);
+// await frame.ExecuteAsync(ct); // 二度目は拒否。失敗/取消し後の再呼出しも不可。
+// 次回は新しいframeへ宣言する。
+~~~
+
 ### ゲームループへの組込み
 
 sessionと処理templateを起動時に用意し、毎frameの不変snapshotを宣言して、イベント処理とowner pumpを継続しながらGPU完了と退役を回収する。
 
 - **起動時**: アプリがdevice・surface・ExecutionRuntimeを用意し、GraphicsExecutionModuleとowner phaseを接続する。session、kernel、sampler、処理template、rendererは対応する寿命の間保持し、毎frame作り直さない。
-- **毎frame**: 入力とsimulation更新から不変の描画snapshotを切り出す。使用leaseと資源publicationを固定し、新しいframeへ2D・effect・3D/postprocessを宣言する。内容versionや使用範囲がframeごとに変わるため、template再利用をframeのCompile/Prepare省略と同一視しない。
+- **毎frame**: 入力とsimulation更新から不変snapshotを切り出し、session.CreateFrameで取得した新しいscopeへ宣言する。通常経路はframe.ExecuteAsyncで一回だけ実行する。内容versionと使用範囲の変化に対する内部Compile/Prepareは省略せず、session/templateだけを再利用する。
 - **担当thread**: window/入力のthread規則とnative操作の固定ownerを守る。CPU処理のdispatchとawait後の再開は既存ExecutionRuntimeへ任せ、Graphics用の別schedulerやThreadPoolを増設しない。
 - **待機中のループ**: 不完了のTaskをowner threadで同期waitせず、windowイベントと必要なExecution phaseをpumpし続ける。ownerへ戻る継続を同じthreadのawait/GetResultで塞ぐ構成を避ける。
 - **frame数の上限**: 下の例は描画中のframeを一つに制限する。slotが空くまではsimulationとイベント処理だけ進め、GPU仕事とsnapshotのqueueを無制限に積まない。複数frameを許す構成では、上限とframe間資源競合・保持予算を明示する。
@@ -483,11 +496,11 @@ frameを一回描く接続点は、次の手順を既存の宣言・実行契約
 
 1. 非同期準備を跨いで保持可能なsurface imageを取得し、その世代・view・acquire同期と独立使用leaseを確保する。取得できない場合はGPU仕事を作らずloopへ戻す。
 2. session.CreateFrameから同じframeを作り、renderer.Declareでsnapshotを共通宣言へ変換する。effect/postprocessと取得imageへのcopy/drawも同frameへ載せ、最後のuseをPresentへexportする。
-3. frame.CompileAsyncで全passを検査し、compiled.PrepareAsyncでnative資源・upload・table・PSO/bindingを確定する。
+3. 通常の描画要求はframe.ExecuteAsyncを一回だけ呼び、内部で全passのcompileとnative資源・upload・table・PSO/binding準備を行う。以下の表示同期が必要な経路は、同じframeの権利を消費する低水準接続として区別する。
 4. 明示実行hostがRecord/Finish/Submitを進め、acquire semaphoreを送信のwaitへ、描画完了signalをPresentのwaitへ接続する。CPUのGPU完了待機を挟まずPresentを要求できるが、必要なqueue同期まで省略しない。native surface操作はowner規則に従う。単一ExecuteAsyncはこの途中接続を自動提供せず、接続不能なbackend/表示経路は未対応として拒否する。
 5. submissionとcommandの実完了、surface imageのWaitForReleaseAsyncをそれぞれ確認し、依存するcommand・lease・frameを安全な順で退役する。独立export/cacheを保持する場合はそのownerを残す。
 
-- **コードとの対応**: CreateFrame、Declare、CompileAsync、PrepareAsync、CreateExecutionと退役の利用例は前節の変更後コードと同じである。Presentとswapchain同期は、基準コミットの src/Graphics/Lumyte.Graphics.Abstractions/IGraphicsSurfaceFrame.cs、IGraphicsSwapchain.cs、IGraphicsQueue.cs の明示契約に従う。ExecuteAsyncだけでPresentまで自動実行したと扱わない。
+- **コードとの対応**: 通常利用はCreateFrame→Declare→frame.ExecuteAsyncである。内部のCompile/Prepare/CreateExecutionと退役の意味は前節と同じである。Presentとswapchain同期は、基準コミットの src/Graphics/Lumyte.Graphics.Abstractions/IGraphicsSurfaceFrame.cs、IGraphicsSwapchain.cs、IGraphicsQueue.cs の明示契約に従う。ExecuteAsyncだけでPresentまで自動実行したと扱わない。
 - **Browserの取得寿命**: 基準コミットの src/UI/Lumyte.UI.Application/UiHostPresenter.cs はcanvas imageがrendering turnで失効するため、非同期準備を取得前に終える。上の取得→非同期Prepareの順をそのまま適用しない。offscreen準備と表示imageの遅延取得・最終転送など、寿命と同一turn内の記録/Presentを満たす明示接続が必要であり、存在しないlate-binding APIを既存機能として扱わない。
 - **API抜粋の限界**: 後述のGraphicsExecutionが示すExecuteAsyncだけでは、Submit受理直後・GPU完了のCPU待機前へPresentを接続できない。このloopはアプリの制御フローを説明する骨格であり、当該公開抜粋だけでRenderAndPresentFrameAsyncを実装できる例ではない。acquire/rendered semaphoreとPresentを共通executionの送信・退役台帳へ接続できない表示経路は未対応として拒否し、アプリが共通台帳外で別Queue.Submitして回避しない。
 - **GPU結果が必要なsimulation**: 同frameのreadbackが必要なら明示DownloadとCPU依存を置き、実完了までその処理を開始しない。前回完了結果を次tickで使うなら、遅延とversionをゲーム側の明示policyにする。いずれもイベント処理とowner pumpを止める理由にはしない。
@@ -891,6 +904,10 @@ CPU記録とGPU算法を分離し、共通計画へ変換してもpainter順・s
 +    {
 +        // 上位のRenderGraph/効果型へ逆依存しない共通builder。
 +        public GraphicsPlanBuilder Plan { get; }
++        // 通常経路。呼出し時に一回だけframeを消費し、compile/prepare/execute/正常退役を統合。
++        // 失敗/取消し後の再実行も拒否。受理不明のownerはsessionの回収台帳に残す。
++        public ValueTask ExecuteAsync(CancellationToken cancellationToken = default);
++        // 高度な明示経路。同じ実行権を消費し、統合ExecuteAsyncとの併用を拒否する。
 +        public ValueTask<CompiledGraphicsPlan> CompileAsync(CancellationToken cancellationToken);
 +        public ValueTask RetireAsync();
 +    }
@@ -1017,6 +1034,6 @@ CPU記録とGPU算法を分離し、共通計画へ変換してもpainter順・s
 - **構造の受入条件**: Graph・typed構築・2D・単独実行が同じ効果のLower/kernel recipeを使い、効果ごとの別recordを持たない。2D→effect→composite→3D/postprocessが共通計画に見え、dead taskはallocation/table/uploadを作らない。
 - **資源の受入条件**: sharingと異context/ROI、旧version保持、partial RMW、frame間import競合、range/view差を検証する。全table登録のPhysicalBindingUse、RO/RW、attachment/combined制限、binding域を跨ぐshader-data、relocation、immutable table全owner保持を含める。
 - **画素の受入条件**: 二つの半coverage描画のalpha 0.75、shape/clip相関、group opacity、mask、色補間差、blur halo、backdrop置換、地図の順序・継ぎ目を独立期待値で検証する。
-- **失敗の受入条件**: 部分prepare/record失敗、後続区間失敗、待機取消し、送信受理不明、device世代退役、export/cache eviction、cleanup再試行を検証する。
+- **失敗の受入条件**: 部分prepare/record失敗、後続区間失敗、待機取消し、送信受理不明、device世代退役、export/cache eviction、cleanup再試行を検証する。frame.ExecuteAsyncの二度目・同時呼出し・手動Compileとの競合、失敗/取消し後の再実行拒否と正常完了後の新frame取得も検証する。
 - **検証の分離**: CPU構造・所有権、native統合、GPU画像、Browser/AOTを別に確認する。文書検査だけで実装成立・画素一致・速度改善を認定しない。
 - **不足時の扱い**: 数値予算、対応backend、filter集合は構築時に明示する。黙った省略や別方式への切替を認めない。
