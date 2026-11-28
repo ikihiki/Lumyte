@@ -22,7 +22,7 @@ internal sealed class Direct3D12ShaderDataBuffer<T> : IGraphicsShaderDataBuffer<
         }
 
         Memory = memory;
-        Storage = owner.CreateBuffer<byte>(new() { Count = checked(count * (ulong)Layout.Size), Memory = memory, Usage = memory == MemoryPreference.Upload ? BufferUsage.CopySource : BufferUsage.CopyDestination | BufferUsage.ShaderRead });
+        Storage = owner.CreateBuffer<byte>(new() { Count = checked(count * (ulong)Layout.Size), Memory = memory, Usage = memory == MemoryPreference.Upload ? BufferUsage.CopySource : BufferUsage.CopySource | BufferUsage.CopyDestination | BufferUsage.ShaderRead });
         Owner = owner;
         Count = count;
     }

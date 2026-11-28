@@ -343,6 +343,11 @@ internal sealed unsafe class VulkanRenderEncoder(VulkanCommandBuffer owner, Rend
     private void PrepareDraw(bool indexed, bool mesh = false)
     {
         owner.ValidatePass(this);
+        if (indexed && _indexFormat == null)
+        {
+            throw new InvalidOperationException("Set an index buffer before indexed execution.");
+        }
+
         if (_pipeline != null && _pipeline.IsMesh != mesh)
         {
             throw new InvalidOperationException("Draw command does not match the selected program kind.");
@@ -384,14 +389,6 @@ internal sealed unsafe class VulkanRenderEncoder(VulkanCommandBuffer owner, Rend
         else
         {
             IShaderReference[]? registrations = table?.SnapshotRegistrations();
-
-            if (indexed)
-            {
-                if (_indexFormat == null)
-                {
-                    throw new InvalidOperationException("Set an index buffer before indexed execution.");
-                }
-            }
 
             _pipeline.ValidateAlive();
 

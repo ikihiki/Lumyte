@@ -369,6 +369,11 @@ internal sealed unsafe class Direct3D12RenderEncoder(Direct3D12CommandBuffer own
     private void PrepareDraw(bool indexed, bool mesh = false)
     {
         owner.ValidatePass(this);
+        if (indexed && _indexFormat == null)
+        {
+            throw new InvalidOperationException("Set an index buffer before indexed execution.");
+        }
+
         if ((mesh ? _meshPipeline == null : _pipeline == null) || _state == null || !_viewport || !_scissor || !_blend || !_stencil)
         {
             throw new InvalidOperationException("Set a program, draw state and all dynamic state before drawing.");
@@ -415,14 +420,6 @@ internal sealed unsafe class Direct3D12RenderEncoder(Direct3D12CommandBuffer own
         }
 
         IShaderReference[]? registrations = table?.SnapshotRegistrations();
-
-        if (indexed)
-        {
-            if (_indexFormat == null)
-            {
-                throw new InvalidOperationException("Set an index buffer before indexed execution.");
-            }
-        }
 
         ValidateProgramAlive(SelectedProgram!);
 

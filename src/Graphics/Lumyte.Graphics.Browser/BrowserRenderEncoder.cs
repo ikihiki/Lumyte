@@ -319,6 +319,11 @@ internal sealed class BrowserRenderEncoder(BrowserCommandBuffer owner, JSObject 
     private void PrepareDraw(bool indexed)
     {
         owner.ValidatePass(this);
+        if (indexed && _indexFormat == null)
+        {
+            throw new InvalidOperationException("Set an index buffer before indexed execution.");
+        }
+
         if (_pipeline == null || _state == null || !_viewport || !_scissor || !_blend || !_stencil)
         {
             throw new InvalidOperationException("Set a program, draw state and all dynamic state before drawing.");
@@ -364,14 +369,6 @@ internal sealed class BrowserRenderEncoder(BrowserCommandBuffer owner, JSObject 
         if (_pipeline.RequiresArguments || selectedTable != null)
         {
             bindingData = new(registrations, _pipeline.RequiresArguments ? ShaderDataLayout.RootTarget(_pipeline.VertexData, _pipeline.FragmentData, _arguments!.Arguments.RootParameter) : _pipeline.VertexData, owner.Owner.Caps);
-        }
-
-        if (indexed)
-        {
-            if (_indexFormat == null)
-            {
-                throw new InvalidOperationException("Set an index buffer before indexed execution.");
-            }
         }
 
         _pipeline.ValidateAlive();

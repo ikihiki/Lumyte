@@ -22,7 +22,7 @@ internal sealed class WgpuShaderDataBuffer<T> : IGraphicsShaderDataBuffer<T>, IS
         }
 
         Memory = memory;
-        Storage = owner.CreateBuffer<byte>(new() { Count = checked(count * (ulong)Layout.Size), Memory = memory, Usage = memory == MemoryPreference.Upload ? BufferUsage.CopySource : BufferUsage.CopyDestination | BufferUsage.ShaderRead });
+        Storage = owner.CreateBuffer<byte>(new() { Count = checked(count * (ulong)Layout.Size), Memory = memory, Usage = memory == MemoryPreference.Upload ? BufferUsage.CopySource : BufferUsage.CopySource | BufferUsage.CopyDestination | BufferUsage.ShaderRead });
         Owner = owner;
         Count = count;
     }

@@ -44,6 +44,16 @@ internal sealed unsafe partial class VulkanCommandBuffer
         PrepareNative(program, table, in arguments, null, [], null, null);
     }
 
+    internal static ShaderTargetData PreparationRootTarget(ShaderTargetData vertex, ShaderTargetData? task, ShaderTargetData? fragment, string name)
+    {
+        if (task != null && ShaderDataLayout.HasRoot(task, name) && !ShaderDataLayout.HasRoot(vertex, name))
+        {
+            return task;
+        }
+
+        return ShaderDataLayout.RootTarget(vertex, fragment, name);
+    }
+
     internal NativePreparation FindPreparation(object identity, Type argumentType, object program, VulkanArgumentTable? table, RenderStateSnapshot? state, TextureFormat[] formats, TextureFormat? depth, IndexFormat? index)
     {
         if (State != CommandBufferState.Recording)
@@ -139,7 +149,7 @@ internal sealed unsafe partial class VulkanCommandBuffer
         {
             if (program is VulkanGraphicsPipeline graphicsProgram && graphicsProgram.RequiresArguments)
             {
-                ValidatePreparationAbi<T>(ShaderDataLayout.Root(ShaderDataLayout.RootTarget(graphicsProgram.VertexData, graphicsProgram.FragmentData, T.RootParameter), T.RootParameter));
+                ValidatePreparationAbi<T>(ShaderDataLayout.Root(PreparationRootTarget(graphicsProgram.VertexData, graphicsProgram.TaskData, graphicsProgram.FragmentData, T.RootParameter), T.RootParameter));
             }
             else if (program is VulkanComputePipeline computeProgram && computeProgram.RequiresArguments)
             {
