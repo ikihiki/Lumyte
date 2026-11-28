@@ -26,6 +26,14 @@ public interface IGraphicsShaderDataBuffer<T> : IDisposable
     /// <remarks>Creating buffers, slices, or registrations does not capture these values. Successful CopyFrom owns an independent staging copy; later application mutations require another CopyFrom. A command-buffer CopyBuffer reads that staging allocation, which must remain unchanged until its GPU use completes.</remarks>
     void CopyFrom(ReadOnlySpan<T> source, ulong elementOffset = 0);
 
+    /// <summary>Writes an alternate codec with the same static wire contract into mapped upload staging.</summary>
+    /// <typeparam name="TSource">The alternate codec type.</typeparam>
+    /// <param name="source">Values synchronously encoded into independent staging bytes.</param>
+    /// <param name="elementOffset">The first logical target element.</param>
+    /// <remarks>Matching static metadata is necessary; matching field layout remains the codec author's precondition. TransferFields remains optional diagnostics. Mapping, idle-use, bounds, writer completion and reference fixups remain mandatory.</remarks>
+    void CopyFrom<TSource>(ReadOnlySpan<TSource> source, ulong elementOffset = 0)
+        where TSource : struct, IShaderArguments => throw new NotSupportedException("This shader buffer does not support alternate codecs.");
+
     /// <summary>Maps idle upload staging for explicit CPU writes.</summary>
     /// <param name="cancellationToken">Cancels retaining the mapping after native completion.</param>
     /// <returns>The mapping operation.</returns>

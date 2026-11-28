@@ -5,12 +5,13 @@ namespace Lumyte.Execution;
 public sealed class JobGraph<TContext>
     where TContext : struct
 {
-    internal JobGraph(GraphNode<TContext>[] nodes, int[] incoming, int[][] outgoing, int edgeCount)
+    internal JobGraph(GraphNode<TContext>[] nodes, int[] incoming, int[][] outgoing, int edgeCount, long retainedBytes = 0)
     {
         Nodes = nodes;
         Incoming = incoming;
         Outgoing = outgoing;
         EdgeCount = edgeCount;
+        RetainedBytes = retainedBytes;
     }
 
     /// <summary>Gets the node count.</summary>
@@ -23,4 +24,6 @@ public sealed class JobGraph<TContext>
     internal int[][] Outgoing { get; }
 
     internal int EdgeCount { get; }
+
+    internal long RetainedBytes { get; }
 }

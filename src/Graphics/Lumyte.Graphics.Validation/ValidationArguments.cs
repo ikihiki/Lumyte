@@ -17,6 +17,8 @@ internal readonly struct ValidationArguments<T>(in T value, ValidationWriteConte
 
     public static IReadOnlyList<ShaderTransferField> TransferFields => T.TransferFields;
 
+    public object? NativePreparationIdentity => _value.NativePreparationIdentity;
+
     public void Write<TWriter>(ref TWriter writer)
         where TWriter : IShaderValueWriter, allows ref struct
     {

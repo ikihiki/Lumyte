@@ -9,7 +9,9 @@ internal sealed unsafe class WgpuComputeEncoder(WgpuCommandBuffer owner, WGPUCom
 
     private WgpuRootStorage? _arguments;
     private object? _argumentProgram;
+    private Type? _argumentsType;
     private bool _settingArguments;
+    private WgpuCommandBuffer.PreparedEntry? _preparedArguments;
     private WgpuArgumentTable? _table;
     private WgpuArgumentTable? _currentRootHint;
 
@@ -42,6 +44,17 @@ internal sealed unsafe class WgpuComputeEncoder(WgpuCommandBuffer owner, WGPUCom
         ThrowIfSettingArguments();
         ValidateRootSelection();
         WgpuComputePipeline program = _pipeline!;
+        if (value.NativePreparationIdentity is { } identity)
+        {
+            WgpuCommandBuffer.PreparedEntry prepared = owner.FindPrepared(identity, typeof(T), program, _table, null, [], null, null);
+            _argumentsType = typeof(T);
+            _preparedArguments = prepared;
+            _arguments = prepared.Root;
+            _argumentProgram = program;
+            _currentRootHint = prepared.Root.ImplicitTable;
+            return;
+        }
+
         _settingArguments = true;
         try
         {
@@ -181,6 +194,7 @@ internal sealed unsafe class WgpuComputeEncoder(WgpuCommandBuffer owner, WGPUCom
             throw;
         }
 
+        _preparedArguments = null;
         _currentRootHint = root.ImplicitTable;
         _arguments = root;
         _argumentProgram = program;
@@ -207,6 +221,24 @@ internal sealed unsafe class WgpuComputeEncoder(WgpuCommandBuffer owner, WGPUCom
         if (_table != null && _currentRootHint != null && !ReferenceEquals(_table, _currentRootHint))
         {
             throw new ArgumentException("Selected table differs from root references.");
+        }
+
+        if (_preparedArguments is { } prepared)
+        {
+            _pipeline.ValidateAlive();
+            if (!prepared.Matches(_argumentsType!, _pipeline, _table, null, [], null, null))
+            {
+                throw new InvalidOperationException("Selected execution state differs from native preparation.");
+            }
+
+            prepared.Validate();
+            WGPU.wgpuComputePassEncoderSetPipeline(handle, prepared.Compute);
+            if (prepared.Binding != null)
+            {
+                WGPU.wgpuComputePassEncoderSetBindGroup(handle, 0, prepared.Binding.Native, 0, null);
+            }
+
+            return;
         }
 
         WgpuArgumentTable? selectedTable = _table ?? _currentRootHint;

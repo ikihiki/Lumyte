@@ -88,6 +88,15 @@
     ]
   },
   {
+    "Project": "tests/Core/Lumyte.Pipelines.Tests/Lumyte.Pipelines.Tests.csproj",
+    "Default": "Cpu",
+    "IntegrationClasses": [],
+    "Lanes": [
+      "Cpu",
+      "Integration"
+    ]
+  },
+  {
     "Project": "tests/Core/Lumyte.Resources.Tests/Lumyte.Resources.Tests.csproj",
     "Default": "Cpu",
     "IntegrationClasses": [],
@@ -214,6 +223,14 @@
   },
   {
     "Project": "tests/Graphics/Lumyte.Graphics.ImageEffects.Tests/Lumyte.Graphics.ImageEffects.Tests.csproj",
+    "Default": "Cpu",
+    "IntegrationClasses": [],
+    "Lanes": [
+      "Cpu"
+    ]
+  },
+  {
+    "Project": "tests/Graphics/Lumyte.Graphics.Planning.Tests/Lumyte.Graphics.Planning.Tests.csproj",
     "Default": "Cpu",
     "IntegrationClasses": [],
     "Lanes": [

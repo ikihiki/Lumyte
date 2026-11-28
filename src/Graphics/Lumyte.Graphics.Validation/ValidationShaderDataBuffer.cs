@@ -145,6 +145,61 @@ internal sealed class ValidationShaderDataBuffer<T> : ValidationResource<IGraphi
         }
     }
 
+    public void CopyFrom<TSource>(ReadOnlySpan<TSource> source, ulong elementOffset = 0)
+        where TSource : struct, IShaderArguments
+    {
+        ValidateAlive();
+        ShaderTransfer.ValidateCompatibility<T, TSource>();
+        if (elementOffset > Count || (ulong)source.Length > Count - elementOffset)
+        {
+            throw new ArgumentOutOfRangeException(nameof(elementOffset));
+        }
+
+        if (!IsMapped || Memory != MemoryPreference.Upload)
+        {
+            throw new InvalidOperationException("Validation: writes require mapped Upload memory.");
+        }
+
+        ulong offset = checked(elementOffset * ShaderElementStrideInBytes);
+        ulong length = checked((ulong)source.Length * ShaderElementStrideInBytes);
+        if (offset > SizeInBytes || length > SizeInBytes - offset)
+        {
+            throw new ArgumentOutOfRangeException(nameof(elementOffset));
+        }
+
+        if (source.IsEmpty)
+        {
+            return;
+        }
+
+        _ = checked((int)offset);
+        _ = checked((int)length);
+        using GraphicsValidation.HostWriteLease lease = Device.Tracker.BeginHostWrite(this, offset, length);
+        bool full = elementOffset == 0 && (ulong)source.Length == Count;
+        var context = new ValidationWriteContext(Device, _diagnostic);
+        var native = new AlternateValidationArguments<TSource>[source.Length];
+        for (int i = 0; i < source.Length; ++i)
+        {
+            native[i] = new AlternateValidationArguments<TSource>(in source[i], context);
+        }
+
+        try
+        {
+            Raw.CopyFrom<AlternateValidationArguments<TSource>>(native, elementOffset);
+            if (full || _dependenciesValid)
+            {
+                IEnumerable<IShaderReference> references = full ? context.References : _dependencies.References.Concat(context.References);
+                _dependencies = new ShaderDependencyMetadata(references.Distinct<IShaderReference>(ReferenceEqualityComparer.Instance));
+                _dependenciesValid = true;
+            }
+        }
+        catch
+        {
+            _dependenciesValid = false;
+            throw;
+        }
+    }
+
     public async ValueTask MapAsync(CancellationToken cancellationToken = default)
     {
         ValidateAlive();
@@ -173,4 +228,31 @@ internal sealed class ValidationShaderDataBuffer<T> : ValidationResource<IGraphi
     }
 
     internal void InvalidateDependencies() => _dependenciesValid = false;
+
+    private readonly struct AlternateValidationArguments<TSource>(in TSource value, ValidationWriteContext context) : IShaderArguments
+        where TSource : struct, IShaderArguments
+    {
+        private readonly TSource _value = value;
+
+        public static string RootParameter => T.RootParameter;
+
+        public static string ShaderTypeName => T.ShaderTypeName;
+
+        public static int TransferSize => T.TransferSize;
+
+        public static int ReferenceCount => T.ReferenceCount;
+
+        public static IReadOnlyList<ShaderTransferField> TransferFields => T.TransferFields;
+
+        public void Write<TWriter>(ref TWriter writer)
+            where TWriter : IShaderValueWriter, allows ref struct
+        {
+            // Diagnose the target schema, not optional alternate-codec field descriptions.
+            context.Diagnostic?.ValidateTransferLayout(TransferSize, TransferFields, ShaderTypeName);
+            var adapter = new ValidationWriter<TWriter>(writer, context, TransferSize, ReferenceCount);
+            _value.Write(ref adapter);
+            adapter.Complete();
+            writer = adapter.Inner;
+        }
+    }
 }

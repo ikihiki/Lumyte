@@ -2,7 +2,7 @@ using Lumyte.Graphics.Abstractions;
 
 namespace Lumyte.Graphics.Benchmarks.Testing;
 
-internal sealed class CpuCommands(CpuGraphicsDevice owner) : CpuResource(owner), IGraphicsCommandBuffer
+internal sealed partial class CpuCommands(CpuGraphicsDevice owner) : CpuResource(owner), IGraphicsCommandBuffer
 {
     private bool _pass;
 
@@ -136,6 +136,8 @@ internal sealed class CpuCommands(CpuGraphicsDevice owner) : CpuResource(owner),
 
         PassWidth = PassHeight = 0;
         IsCompute = false;
+        PassColors = desc.ColorAttachments.Select(a => a.View.Texture.Format).ToArray();
+        PassDepth = desc.DepthStencilAttachment?.View.Texture.Format;
         foreach (RenderColorAttachmentDesc a in desc.ColorAttachments)
         {
             Attachment(a.View);
@@ -178,6 +180,7 @@ internal sealed class CpuCommands(CpuGraphicsDevice owner) : CpuResource(owner),
             throw new InvalidOperationException("End the _pass before disposing commands.");
         }
 
+        _preparations.Clear();
         State = CommandBufferState.Disposed;
         base.Dispose();
     }
@@ -188,6 +191,11 @@ internal sealed class CpuCommands(CpuGraphicsDevice owner) : CpuResource(owner),
         if (State != CommandBufferState.Recording || _pass != inside)
         {
             throw new InvalidOperationException("Invalid recording/_pass state.");
+        }
+
+        if (!inside && !_preparing)
+        {
+            _recordingStarted = true;
         }
     }
 

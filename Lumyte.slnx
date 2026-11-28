@@ -136,6 +136,7 @@
     <Project Path="src/Animation/Lumyte.Animation/Lumyte.Animation.csproj" />
   </Folder>
   <Folder Name="/src/Core/">
+    <Project Path="src/Core/Lumyte.Pipelines/Lumyte.Pipelines.csproj" />
     <Project Path="src/Core/Lumyte.Signals/Lumyte.Signals.csproj" />
     <Project Path="src/Core/Lumyte.TextEditing/Lumyte.TextEditing.csproj" />
     <Project Path="src/Core/Lumyte.Worlds/Lumyte.Worlds.csproj" />
@@ -171,6 +172,7 @@
     <Project Path="src/Diagnostics/Lumyte.Diagnostics.Generators/Lumyte.Diagnostics.Generators.csproj" />
   </Folder>
   <Folder Name="/src/Graphics/">
+    <Project Path="src/Graphics/Lumyte.Graphics.Planning/Lumyte.Graphics.Planning.csproj" />
     <Project Path="src/Graphics/Lumyte.Graphics.Validation/Lumyte.Graphics.Validation.csproj" />
     <Project Path="src/Graphics/Lumyte.Graphics.Text/Lumyte.Graphics.Text.csproj" />
     <Project Path="src/Graphics/Lumyte.Graphics.Svg/Lumyte.Graphics.Svg.csproj" />
@@ -238,6 +240,7 @@
     <Project Path="tests/Animation/Lumyte.Animation.Tests/Lumyte.Animation.Tests.csproj" />
   </Folder>
   <Folder Name="/tests/Core/">
+    <Project Path="tests/Core/Lumyte.Pipelines.Tests/Lumyte.Pipelines.Tests.csproj" />
     <Project Path="tests/Core/Lumyte.Core.Benchmark.Tests/Lumyte.Core.Benchmark.Tests.csproj" />
     <Project Path="tests/Core/Lumyte.Signals.Benchmarks.Tests/Lumyte.Signals.Benchmarks.Tests.csproj" />
     <Project Path="tests/Core/Lumyte.Signals.Tests/Lumyte.Signals.Tests.csproj" />
@@ -267,6 +270,7 @@
     <Project Path="tests/Diagnostics/Lumyte.Diagnostics.Tests/Lumyte.Diagnostics.Tests.csproj" />
   </Folder>
   <Folder Name="/tests/Graphics/">
+    <Project Path="tests/Graphics/Lumyte.Graphics.Planning.Tests/Lumyte.Graphics.Planning.Tests.csproj" />
     <Project Path="tests/Graphics/Lumyte.Graphics.Wgpu.Tests/Lumyte.Graphics.Wgpu.Tests.csproj" />
     <Project Path="tests/Graphics/Lumyte.Graphics.Benchmark.Tests/Lumyte.Graphics.Benchmark.Tests.csproj" />
     <Project Path="tests/Graphics/Lumyte.Graphics.Validation.Tests/Lumyte.Graphics.Validation.Tests.csproj" />

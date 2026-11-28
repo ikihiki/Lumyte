@@ -9,7 +9,9 @@ internal sealed class BrowserComputeEncoder(BrowserCommandBuffer owner, JSObject
 
     private BrowserRootStorage? _arguments;
     private object? _argumentProgram;
+    private Type? _argumentsType;
     private bool _settingArguments;
+    private BrowserCommandBuffer.PreparedEntry? _preparedArguments;
     private BrowserArgumentTable? _table;
     private BrowserArgumentTable? _currentRootHint;
 
@@ -42,6 +44,17 @@ internal sealed class BrowserComputeEncoder(BrowserCommandBuffer owner, JSObject
         ThrowIfSettingArguments();
         ValidateRootSelection();
         BrowserComputePipeline program = _pipeline!;
+        if (value.NativePreparationIdentity is { } identity)
+        {
+            BrowserCommandBuffer.PreparedEntry prepared = owner.FindPrepared(identity, typeof(T), program, _table, null, [], null, null);
+            _argumentsType = typeof(T);
+            _preparedArguments = prepared;
+            _arguments = prepared.Root;
+            _argumentProgram = program;
+            _currentRootHint = prepared.Root.ImplicitTable;
+            return;
+        }
+
         _settingArguments = true;
         try
         {
@@ -172,6 +185,7 @@ internal sealed class BrowserComputeEncoder(BrowserCommandBuffer owner, JSObject
             throw;
         }
 
+        _preparedArguments = null;
         _currentRootHint = root.ImplicitTable;
         _arguments = root;
         _argumentProgram = program;
@@ -198,6 +212,24 @@ internal sealed class BrowserComputeEncoder(BrowserCommandBuffer owner, JSObject
         if (_table != null && _currentRootHint != null && !ReferenceEquals(_table, _currentRootHint))
         {
             throw new ArgumentException("Selected table differs from root references.");
+        }
+
+        if (_preparedArguments is { } prepared)
+        {
+            _pipeline.ValidateAlive();
+            if (!prepared.Matches(_argumentsType!, _pipeline, _table, null, [], null, null))
+            {
+                throw new InvalidOperationException("Selected execution state differs from native preparation.");
+            }
+
+            prepared.Validate();
+            BrowserInterop.SetComputePipeline(handle, prepared.Compute!);
+            if (prepared.Binding != null)
+            {
+                BrowserInterop.SetShaderBinding(handle, prepared.Binding.Native);
+            }
+
+            return;
         }
 
         BrowserArgumentTable? selectedTable = _table ?? _currentRootHint;

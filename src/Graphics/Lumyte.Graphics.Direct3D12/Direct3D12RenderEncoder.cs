@@ -21,6 +21,7 @@ internal sealed unsafe class Direct3D12RenderEncoder(Direct3D12CommandBuffer own
     private ShaderRootArguments? _arguments;
     private object? _argumentProgram;
     private bool _settingArguments;
+    private Direct3D12CommandBuffer.NativePreparation? _prepared;
     private Direct3D12ArgumentTable? _table;
     private Direct3D12ArgumentTable? _argumentTableHint;
 
@@ -58,6 +59,15 @@ internal sealed unsafe class Direct3D12RenderEncoder(Direct3D12CommandBuffer own
         where T : struct, IShaderArguments
     {
         ValidateRootSelection();
+        if (value.NativePreparationIdentity is { } identity)
+        {
+            Direct3D12CommandBuffer.NativePreparation prepared = owner.FindPreparation(identity, typeof(T), SelectedProgram!, _state, _formats, _depthFormat, _meshPipeline == null ? _indexFormat : null, _table);
+            SelectRoot(prepared.Root, prepared.Payload, SelectedProgram!, prepared.Table);
+            _prepared = prepared;
+            return;
+        }
+
+        _prepared = null;
         object pipeline = SelectedProgram!;
         _settingArguments = true;
         try
@@ -78,6 +88,7 @@ internal sealed unsafe class Direct3D12RenderEncoder(Direct3D12CommandBuffer own
         where T : unmanaged
     {
         ValidateRootSelection();
+        _prepared = null;
         object pipeline = SelectedProgram!;
         _settingArguments = true;
         try
@@ -334,9 +345,12 @@ internal sealed unsafe class Direct3D12RenderEncoder(Direct3D12CommandBuffer own
 
         // All managed preparation precedes the first native mutation.
         // Issued driver commands cannot be rolled back after recording.
-        fixed (byte* bytes = payload)
+        if (!payload.IsEmpty)
         {
-            owner.Owner.Check(NativeMethods.RootConstants(owner.Native, (uint*)bytes, checked((uint)(payload.Length / 4)), 0));
+            fixed (byte* bytes = payload)
+            {
+                owner.Owner.Check(NativeMethods.RootConstants(owner.Native, (uint*)bytes, checked((uint)(payload.Length / 4)), 0));
+            }
         }
 
         _arguments = root;
@@ -355,6 +369,11 @@ internal sealed unsafe class Direct3D12RenderEncoder(Direct3D12CommandBuffer own
     private void PrepareDraw(bool indexed, bool mesh = false)
     {
         owner.ValidatePass(this);
+        if (indexed && _indexFormat == null)
+        {
+            throw new InvalidOperationException("Set an index buffer before indexed execution.");
+        }
+
         if ((mesh ? _meshPipeline == null : _pipeline == null) || _state == null || !_viewport || !_scissor || !_blend || !_stencil)
         {
             throw new InvalidOperationException("Set a program, draw state and all dynamic state before drawing.");
@@ -377,15 +396,30 @@ internal sealed unsafe class Direct3D12RenderEncoder(Direct3D12CommandBuffer own
         }
 
         table?.ThrowIfDisposed();
-        IShaderReference[]? registrations = table?.SnapshotRegistrations();
-
-        if (indexed)
+        if (_prepared is { } prepared)
         {
-            if (_indexFormat == null)
+            Direct3D12CommandBuffer.NativePreparation matched = owner.FindPreparation(prepared.Identity, prepared.ArgumentType, SelectedProgram!, _state, _formats, _depthFormat, indexed ? _indexFormat : null, _table);
+            if (!ReferenceEquals(matched, prepared))
             {
-                throw new InvalidOperationException("Set an index buffer before indexed execution.");
+                throw new InvalidOperationException("Prepared selection changed.");
             }
+
+            ValidateProgramAlive(SelectedProgram!);
+            owner.Owner.Check(NativeMethods.Pipeline(owner.Native, prepared.Pipeline, 0));
+            if (!mesh)
+            {
+                NativeMethods.Topology(owner.Native, (uint)_state!.Desc.Topology + 1);
+            }
+
+            if (prepared.Binding != null)
+            {
+                NativeMethods.Binding(owner.Native, prepared.Binding.Native, 0);
+            }
+
+            return;
         }
+
+        IShaderReference[]? registrations = table?.SnapshotRegistrations();
 
         ValidateProgramAlive(SelectedProgram!);
 

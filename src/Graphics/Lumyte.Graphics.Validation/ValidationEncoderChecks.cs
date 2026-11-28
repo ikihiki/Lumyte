@@ -209,6 +209,25 @@ internal sealed class ValidationEncoderChecks(ValidationCommandBuffer owner, obj
         selected(empty, admit);
     }
 
+    internal Action<IReadOnlyCollection<IShaderReference>>? ValidatePrepared(IShaderReferenceMetadata metadata)
+    {
+        IArgumentTable? hint = RootHint(metadata);
+        Action<IReadOnlyCollection<IShaderReference>>? admit = _prepare?.Invoke(metadata);
+        Check(true);
+        owner.Device.UnwrapObject(_program!);
+        foreach (IShaderReference reference in metadata.References)
+        {
+            ((IValidationReference)reference).ValidateRegistration();
+        }
+
+        if (_table != null && hint != null && !ReferenceEquals(_table, hint))
+        {
+            throw new ArgumentException("Selected table differs from prepared root.");
+        }
+
+        return admit;
+    }
+
     internal void CommitRoot(IShaderReferenceMetadata metadata, Action<IReadOnlyCollection<IShaderReference>>? admit)
     {
         _root = metadata;

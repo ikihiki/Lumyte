@@ -140,6 +140,8 @@ internal sealed class VulkanArgumentTable(VulkanDevice owner, ArgumentTableDesc 
         _disposed = true;
     }
 
+    internal bool HasRegistrations(IShaderReference[] registrations) => ReferenceEquals(_registrations, registrations);
+
     internal IShaderReference[] SnapshotRegistrations()
     {
         ThrowIfDisposed();

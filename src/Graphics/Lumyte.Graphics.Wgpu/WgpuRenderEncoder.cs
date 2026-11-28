@@ -19,7 +19,9 @@ internal sealed unsafe class WgpuRenderEncoder(WgpuCommandBuffer owner, WGPURend
 
     private WgpuRootStorage? _arguments;
     private object? _argumentProgram;
+    private Type? _argumentsType;
     private bool _settingArguments;
+    private WgpuCommandBuffer.PreparedEntry? _preparedArguments;
     private WgpuArgumentTable? _table;
     private WgpuArgumentTable? _currentRootHint;
 
@@ -52,6 +54,17 @@ internal sealed unsafe class WgpuRenderEncoder(WgpuCommandBuffer owner, WGPURend
         ThrowIfSettingArguments();
         ValidateRootSelection();
         WgpuGraphicsPipeline program = _pipeline!;
+        if (value.NativePreparationIdentity is { } identity)
+        {
+            WgpuCommandBuffer.PreparedEntry prepared = owner.FindPrepared(identity, typeof(T), program, _table, _state?.Key, _formats, _depthFormat, _indexFormat);
+            _argumentsType = typeof(T);
+            _preparedArguments = prepared;
+            _arguments = prepared.Root;
+            _argumentProgram = program;
+            _currentRootHint = prepared.Root.ImplicitTable;
+            return;
+        }
+
         _settingArguments = true;
         try
         {
@@ -233,6 +246,11 @@ internal sealed unsafe class WgpuRenderEncoder(WgpuCommandBuffer owner, WGPURend
         where T : unmanaged
     {
         owner.ValidatePass(this);
+        if (_preparedArguments is { } prepared && !prepared.Matches(_argumentsType!, _pipeline!, _table, _state?.Key, _formats, _depthFormat, format))
+        {
+            throw new InvalidOperationException("Selected index format differs from native preparation.");
+        }
+
         WgpuBuffer<T> buffer = owner.Buffer(indices, BufferUsage.Index);
         WGPU.wgpuRenderPassEncoderSetIndexBuffer(handle, buffer.Native.Handle, format == IndexFormat.Uint16 ? WGPUIndexFormat.Uint16 : WGPUIndexFormat.Uint32, indices.OffsetInBytes, indices.SizeInBytes);
         _indexFormat = format;
@@ -302,6 +320,7 @@ internal sealed unsafe class WgpuRenderEncoder(WgpuCommandBuffer owner, WGPURend
             throw;
         }
 
+        _preparedArguments = null;
         _currentRootHint = root.ImplicitTable;
         _arguments = root;
         _argumentProgram = program;
@@ -310,6 +329,11 @@ internal sealed unsafe class WgpuRenderEncoder(WgpuCommandBuffer owner, WGPURend
     private void PrepareDraw(bool indexed)
     {
         owner.ValidatePass(this);
+        if (indexed && _indexFormat == null)
+        {
+            throw new InvalidOperationException("Set an index buffer before indexed execution.");
+        }
+
         if (_pipeline == null || _state == null || !_viewport || !_scissor || !_blend || !_stencil)
         {
             throw new InvalidOperationException("Set a program, draw state and all dynamic state before drawing.");
@@ -330,6 +354,24 @@ internal sealed unsafe class WgpuRenderEncoder(WgpuCommandBuffer owner, WGPURend
             throw new ArgumentException("Selected table differs from root references.");
         }
 
+        if (_preparedArguments is { } prepared)
+        {
+            _pipeline.ValidateAlive();
+            if (!prepared.Matches(_argumentsType!, _pipeline, _table, _state.Key, _formats, _depthFormat, indexed ? _indexFormat : null))
+            {
+                throw new InvalidOperationException("Selected execution state differs from native preparation.");
+            }
+
+            prepared.Validate();
+            WGPU.wgpuRenderPassEncoderSetPipeline(handle, prepared.Render);
+            if (prepared.Binding != null)
+            {
+                WGPU.wgpuRenderPassEncoderSetBindGroup(handle, 0, prepared.Binding.Native, 0, null);
+            }
+
+            return;
+        }
+
         WgpuArgumentTable? selectedTable = _table ?? _currentRootHint;
         selectedTable?.ThrowIfDisposed();
         IReadOnlyCollection<IShaderReference> registrations = selectedTable?.SnapshotRegistrations() ?? Array.Empty<IShaderReference>();
@@ -337,14 +379,6 @@ internal sealed unsafe class WgpuRenderEncoder(WgpuCommandBuffer owner, WGPURend
         if (_pipeline.RequiresArguments || selectedTable != null)
         {
             bindingData = new(registrations, _pipeline.RequiresArguments ? ShaderDataLayout.RootTarget(_pipeline.VertexData, _pipeline.FragmentData, _arguments!.Arguments.RootParameter) : _pipeline.VertexData, owner.Owner.Caps);
-        }
-
-        if (indexed)
-        {
-            if (_indexFormat == null)
-            {
-                throw new InvalidOperationException("Set an index buffer before indexed execution.");
-            }
         }
 
         _pipeline.ValidateAlive();

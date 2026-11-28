@@ -7,6 +7,35 @@ public interface IGraphicsCommandBuffer : IDisposable
     /// <summary>Gets the recording and execution state.</summary>
     CommandBufferState State { get; }
 
+    /// <summary>Materializes a command-local render variant and immutable arguments before recording.</summary>
+    /// <typeparam name="T">The immutable shader argument type.</typeparam>
+    /// <param name="pass">The render attachments.</param>
+    /// <param name="pipeline">The graphics program.</param>
+    /// <param name="state">The immutable render state.</param>
+    /// <param name="table">The argument table, if any.</param>
+    /// <param name="arguments">Arguments with a stable non-null preparation identity.</param>
+    /// <param name="indexFormat">The index format, or null for nonindexed execution.</param>
+    void PrepareRender<T>(RenderPassDesc pass, IGraphicsPipeline pipeline, GraphicsRenderStateDesc state, IArgumentTable? table, in T arguments, IndexFormat? indexFormat = null)
+        where T : struct, IShaderArguments => throw new NotSupportedException("Native preparation is not implemented.");
+
+    /// <summary>Materializes a command-local compute variant and immutable arguments before recording.</summary>
+    /// <typeparam name="T">The immutable shader argument type.</typeparam>
+    /// <param name="pipeline">The compute program.</param>
+    /// <param name="table">The argument table, if any.</param>
+    /// <param name="arguments">Arguments with a stable non-null preparation identity.</param>
+    void PrepareCompute<T>(IGraphicsComputePipeline pipeline, IArgumentTable? table, in T arguments)
+        where T : struct, IShaderArguments => throw new NotSupportedException("Native preparation is not implemented.");
+
+    /// <summary>Materializes a command-local mesh variant and immutable arguments before recording.</summary>
+    /// <typeparam name="T">The immutable shader argument type.</typeparam>
+    /// <param name="pass">The render attachments.</param>
+    /// <param name="pipeline">The mesh program.</param>
+    /// <param name="state">The immutable render state.</param>
+    /// <param name="table">The argument table, if any.</param>
+    /// <param name="arguments">Arguments with a stable non-null preparation identity.</param>
+    void PrepareMesh<T>(RenderPassDesc pass, IMeshPipeline pipeline, GraphicsRenderStateDesc state, IArgumentTable? table, in T arguments)
+        where T : struct, IShaderArguments => throw new NotSupportedException("Native preparation is not implemented.");
+
     /// <summary>Records a raw GPU buffer copy without CPU access or submission.</summary>
     /// <typeparam name="TSource">The source storage element type.</typeparam>
     /// <typeparam name="TDestination">The destination storage element type.</typeparam>

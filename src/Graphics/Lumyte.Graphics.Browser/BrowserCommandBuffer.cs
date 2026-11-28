@@ -133,6 +133,102 @@ internal sealed partial class BrowserCommandBuffer : IGraphicsCommandBuffer
     public IRenderEncoder BeginRenderPass(RenderPassDesc desc)
     {
         RequireRecording();
+        RenderColorAttachmentDesc[] attachments = ValidateRenderPass(desc);
+        RenderDepthStencilAttachmentDesc? depth = desc.DepthStencilAttachment;
+        IRenderEncoder pass = BeginRenderNative(attachments, depth);
+        _active = pass;
+        return pass;
+    }
+
+    public IComputeEncoder BeginComputePass(ComputePassDesc desc)
+    {
+        RequireRecording();
+        ArgumentNullException.ThrowIfNull(desc);
+        IComputeEncoder pass = BeginComputeNative();
+        _active = pass;
+        return pass;
+    }
+
+    public void Finish()
+    {
+        RequireRecording();
+        FinishNative();
+        State = CommandBufferState.Executable;
+    }
+
+    public void Dispose()
+    {
+        if (State == CommandBufferState.Disposed)
+        {
+            return;
+        }
+
+        if (_active != null && _owner.Status == GraphicsDeviceStatus.Ready)
+        {
+            throw new InvalidOperationException("End the pass before disposal.");
+        }
+
+        _active = null;
+
+        DisposeNative();
+        foreach (IDisposable binding in _bindings)
+        {
+            binding.Dispose();
+        }
+
+        _bindings.Clear();
+        _prepared.Clear();
+        State = CommandBufferState.Disposed;
+    }
+
+    internal void ValidateSubmit()
+    {
+        if (State != CommandBufferState.Executable)
+        {
+            throw new InvalidOperationException("Only executable, never-submitted commands may be submitted.");
+        }
+    }
+
+    internal void MarkSubmitted() => State = CommandBufferState.Submitted;
+
+    internal void Complete(bool success)
+    {
+        if (State != CommandBufferState.Disposed)
+        {
+            State = success ? CommandBufferState.Completed : CommandBufferState.Faulted;
+        }
+    }
+
+    internal void KeepBinding(IDisposable binding)
+    {
+        try
+        {
+            _bindings.Add(binding);
+        }
+        catch
+        {
+            binding.Dispose();
+            throw;
+        }
+    }
+
+    internal void ValidatePass(object pass) => ValidateEnd(pass);
+
+    internal BrowserBuffer<T> Buffer<T>(BufferSlice<T> slice, BufferUsage usage)
+        where T : unmanaged
+    {
+        if (slice.Buffer is not BrowserBuffer<T> buffer || !ReferenceEquals(buffer.Owner, _owner) || (buffer.Usage & usage) != usage)
+        {
+            throw new ArgumentException("Buffer belongs to another device or lacks required usage.");
+        }
+
+        buffer.ValidateByteRange(slice.OffsetInBytes, slice.SizeInBytes);
+        _ = buffer.Native;
+        return buffer;
+    }
+
+    private RenderColorAttachmentDesc[] ValidateRenderPass(RenderPassDesc desc)
+    {
         ArgumentNullException.ThrowIfNull(desc);
         ArgumentNullException.ThrowIfNull(desc.ColorAttachments);
         RenderColorAttachmentDesc[] attachments = desc.ColorAttachments.ToArray();
@@ -187,93 +283,18 @@ internal sealed partial class BrowserCommandBuffer : IGraphicsCommandBuffer
             }
         }
 
-        IRenderEncoder pass = BeginRenderNative(attachments, depth);
-        _active = pass;
-        return pass;
-    }
-
-    public IComputeEncoder BeginComputePass(ComputePassDesc desc)
-    {
-        RequireRecording();
-        ArgumentNullException.ThrowIfNull(desc);
-        IComputeEncoder pass = BeginComputeNative();
-        _active = pass;
-        return pass;
-    }
-
-    public void Finish()
-    {
-        RequireRecording();
-        FinishNative();
-        State = CommandBufferState.Executable;
-    }
-
-    public void Dispose()
-    {
-        if (State == CommandBufferState.Disposed)
-        {
-            return;
-        }
-
-        if (_active != null && _owner.Status == GraphicsDeviceStatus.Ready)
-        {
-            throw new InvalidOperationException("End the pass before disposal.");
-        }
-
-        _active = null;
-
-        DisposeNative();
-        foreach (IDisposable binding in _bindings)
-        {
-            binding.Dispose();
-        }
-
-        _bindings.Clear();
-        State = CommandBufferState.Disposed;
-    }
-
-    internal void ValidateSubmit()
-    {
-        if (State != CommandBufferState.Executable)
-        {
-            throw new InvalidOperationException("Only executable, never-submitted commands may be submitted.");
-        }
-    }
-
-    internal void MarkSubmitted() => State = CommandBufferState.Submitted;
-
-    internal void Complete(bool success)
-    {
-        if (State != CommandBufferState.Disposed)
-        {
-            State = success ? CommandBufferState.Completed : CommandBufferState.Faulted;
-        }
-    }
-
-    internal void KeepBinding(IDisposable binding) => _bindings.Add(binding);
-
-    internal void ValidatePass(object pass) => ValidateEnd(pass);
-
-    internal BrowserBuffer<T> Buffer<T>(BufferSlice<T> slice, BufferUsage usage)
-        where T : unmanaged
-    {
-        if (slice.Buffer is not BrowserBuffer<T> buffer || !ReferenceEquals(buffer.Owner, _owner) || (buffer.Usage & usage) != usage)
-        {
-            throw new ArgumentException("Buffer belongs to another device or lacks required usage.");
-        }
-
-        buffer.ValidateByteRange(slice.OffsetInBytes, slice.SizeInBytes);
-        _ = buffer.Native;
-        return buffer;
+        return attachments;
     }
 
     private void RequireRecording()
     {
         ObjectDisposedException.ThrowIf(State == CommandBufferState.Disposed, this);
-        if (State != CommandBufferState.Recording || _active != null)
+        if (State != CommandBufferState.Recording || _active != null || _preparing)
         {
             throw new InvalidOperationException("Commands require Recording state outside a pass.");
         }
+
+        _recordingStarted = true;
     }
 
     private BrowserTexture OwnTexture(IGraphicsTexture resource)

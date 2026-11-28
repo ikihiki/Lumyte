@@ -7,6 +7,7 @@ internal sealed unsafe partial class Direct3D12CommandBuffer : IGraphicsCommandB
     private readonly List<IDisposable> _bindings = [];
     private readonly Direct3D12Device _owner;
     private object? _active;
+    private bool _recordingStarted;
 
     internal Direct3D12CommandBuffer(Direct3D12Device owner)
     {
@@ -141,6 +142,101 @@ internal sealed unsafe partial class Direct3D12CommandBuffer : IGraphicsCommandB
     public IRenderEncoder BeginRenderPass(RenderPassDesc desc)
     {
         RequireRecording();
+        (RenderColorAttachmentDesc[] attachments, RenderDepthStencilAttachmentDesc? depth) = ValidateRenderPass(desc);
+        IRenderEncoder pass = BeginRenderNative(attachments, depth);
+        _active = pass;
+        return pass;
+    }
+
+    public IComputeEncoder BeginComputePass(ComputePassDesc desc)
+    {
+        RequireRecording();
+        ArgumentNullException.ThrowIfNull(desc);
+        IComputeEncoder pass = BeginComputeNative();
+        _active = pass;
+        return pass;
+    }
+
+    public void Finish()
+    {
+        RequireRecording();
+        FinishNative();
+        State = CommandBufferState.Executable;
+    }
+
+    public void Dispose()
+    {
+        if (State == CommandBufferState.Disposed)
+        {
+            return;
+        }
+
+        if (_active != null && _owner.Status == GraphicsDeviceStatus.Ready)
+        {
+            throw new InvalidOperationException("End the pass before disposal.");
+        }
+
+        _active = null;
+
+        DisposeNative();
+        foreach (IDisposable binding in _bindings)
+        {
+            binding.Dispose();
+        }
+
+        _bindings.Clear();
+        _preparations.Clear();
+        State = CommandBufferState.Disposed;
+    }
+
+    internal void ValidateSubmit()
+    {
+        if (State != CommandBufferState.Executable)
+        {
+            throw new InvalidOperationException("Only executable, never-submitted commands may be submitted.");
+        }
+    }
+
+    internal void MarkSubmitted() => State = CommandBufferState.Submitted;
+
+    internal void Complete(bool success)
+    {
+        if (State != CommandBufferState.Disposed)
+        {
+            State = success ? CommandBufferState.Completed : CommandBufferState.Faulted;
+        }
+    }
+
+    internal void KeepBinding(IDisposable binding)
+    {
+        try
+        {
+            _bindings.Add(binding);
+        }
+        catch
+        {
+            binding.Dispose();
+            throw;
+        }
+    }
+
+    internal void ValidatePass(object pass) => ValidateEnd(pass);
+
+    internal Direct3D12Buffer<T> Buffer<T>(BufferSlice<T> slice, BufferUsage usage)
+        where T : unmanaged
+    {
+        if (slice.Buffer is not Direct3D12Buffer<T> buffer || !ReferenceEquals(buffer.Owner, _owner) || (buffer.Usage & usage) != usage)
+        {
+            throw new ArgumentException("Buffer belongs to another device or lacks required usage.");
+        }
+
+        buffer.ValidateByteRange(slice.OffsetInBytes, slice.SizeInBytes);
+        _ = buffer.Native;
+        return buffer;
+    }
+
+    private (RenderColorAttachmentDesc[] Attachments, RenderDepthStencilAttachmentDesc? Depth) ValidateRenderPass(RenderPassDesc desc)
+    {
         ArgumentNullException.ThrowIfNull(desc);
         ArgumentNullException.ThrowIfNull(desc.ColorAttachments);
         RenderColorAttachmentDesc[] attachments = desc.ColorAttachments.ToArray();
@@ -195,88 +291,21 @@ internal sealed unsafe partial class Direct3D12CommandBuffer : IGraphicsCommandB
             }
         }
 
-        IRenderEncoder pass = BeginRenderNative(attachments, depth);
-        _active = pass;
-        return pass;
+        return (attachments, depth);
     }
 
-    public IComputeEncoder BeginComputePass(ComputePassDesc desc)
+    private void RequireRecording(bool preparing = false)
     {
-        RequireRecording();
-        ArgumentNullException.ThrowIfNull(desc);
-        IComputeEncoder pass = BeginComputeNative();
-        _active = pass;
-        return pass;
-    }
-
-    public void Finish()
-    {
-        RequireRecording();
-        FinishNative();
-        State = CommandBufferState.Executable;
-    }
-
-    public void Dispose()
-    {
-        if (State == CommandBufferState.Disposed)
+        if (!preparing)
         {
-            return;
+            _recordingStarted = true;
         }
 
-        if (_active != null && _owner.Status == GraphicsDeviceStatus.Ready)
+        if (_preparing && !preparing)
         {
-            throw new InvalidOperationException("End the pass before disposal.");
+            throw new InvalidOperationException("Preparation is active.");
         }
 
-        _active = null;
-
-        DisposeNative();
-        foreach (IDisposable binding in _bindings)
-        {
-            binding.Dispose();
-        }
-
-        _bindings.Clear();
-        State = CommandBufferState.Disposed;
-    }
-
-    internal void ValidateSubmit()
-    {
-        if (State != CommandBufferState.Executable)
-        {
-            throw new InvalidOperationException("Only executable, never-submitted commands may be submitted.");
-        }
-    }
-
-    internal void MarkSubmitted() => State = CommandBufferState.Submitted;
-
-    internal void Complete(bool success)
-    {
-        if (State != CommandBufferState.Disposed)
-        {
-            State = success ? CommandBufferState.Completed : CommandBufferState.Faulted;
-        }
-    }
-
-    internal void KeepBinding(IDisposable binding) => _bindings.Add(binding);
-
-    internal void ValidatePass(object pass) => ValidateEnd(pass);
-
-    internal Direct3D12Buffer<T> Buffer<T>(BufferSlice<T> slice, BufferUsage usage)
-        where T : unmanaged
-    {
-        if (slice.Buffer is not Direct3D12Buffer<T> buffer || !ReferenceEquals(buffer.Owner, _owner) || (buffer.Usage & usage) != usage)
-        {
-            throw new ArgumentException("Buffer belongs to another device or lacks required usage.");
-        }
-
-        buffer.ValidateByteRange(slice.OffsetInBytes, slice.SizeInBytes);
-        _ = buffer.Native;
-        return buffer;
-    }
-
-    private void RequireRecording()
-    {
         _owner.RequireReady();
         ObjectDisposedException.ThrowIf(State == CommandBufferState.Disposed, this);
         if (State != CommandBufferState.Recording || _active != null)
