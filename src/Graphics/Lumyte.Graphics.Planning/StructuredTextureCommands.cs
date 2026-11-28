@@ -27,10 +27,8 @@ public static class StructuredTextureCommands
     public static void CopyTexture(this PlanPass pass, PlanTexture source, PlanTextureRegion sourceRegion, PlanTexture destination, PlanTextureRegion destinationRegion)
     {
         pass.Owner.Mutable();
-        pass.Require(source, sourceRegion.Range(source), false);
-        pass.Require(destination, destinationRegion.Range(destination), true);
-        RequireState(pass, source, TextureState.CopySource);
-        RequireState(pass, destination, TextureState.CopyDestination);
+        pass.RequireCopy(source, sourceRegion.Range(source), false, TextureState.CopySource);
+        pass.RequireCopy(destination, destinationRegion.Range(destination), true, TextureState.CopyDestination);
         if (sourceRegion.Width != destinationRegion.Width || sourceRegion.Height != destinationRegion.Height || sourceRegion.ArrayLayerCount != destinationRegion.ArrayLayerCount)
         {
             throw new ArgumentException("Copy extents differ.");
@@ -51,9 +49,8 @@ public static class StructuredTextureCommands
     public static void CopyBufferToTexture(this PlanPass pass, PlanBuffer<byte> source, PlanRange range, uint bytesPerRow, uint rowsPerImage, PlanTexture destination, PlanTextureRegion region)
     {
         pass.Owner.Mutable();
-        pass.Require(source, range, false);
-        pass.Require(destination, region.Range(destination), true);
-        RequireState(pass, destination, TextureState.CopyDestination);
+        pass.RequireCopy(source, range, false);
+        pass.RequireCopy(destination, region.Range(destination), true, TextureState.CopyDestination);
         pass.Owner.ReserveCommand();
         pass.Commands.Add(new BufferTextureCommand(source, range, bytesPerRow, rowsPerImage, destination, region, true));
     }
@@ -69,9 +66,8 @@ public static class StructuredTextureCommands
     public static void CopyTextureToBuffer(this PlanPass pass, PlanTexture source, PlanTextureRegion region, PlanBuffer<byte> destination, PlanRange range, uint bytesPerRow, uint rowsPerImage)
     {
         pass.Owner.Mutable();
-        pass.Require(source, region.Range(source), false);
-        pass.Require(destination, range, true);
-        RequireState(pass, source, TextureState.CopySource);
+        pass.RequireCopy(source, region.Range(source), false, TextureState.CopySource);
+        pass.RequireCopy(destination, range, true);
         pass.Owner.ReserveCommand();
         pass.Commands.Add(new BufferTextureCommand(destination, range, bytesPerRow, rowsPerImage, source, region, false));
     }

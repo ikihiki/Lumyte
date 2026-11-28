@@ -296,6 +296,14 @@ public sealed partial class GraphicsPlanBuilder
         return texture;
     }
 
+    internal static void ValidateNotOverwritten(PlanResource resource, PlanRange range, IReadOnlySet<PlanPass> live)
+    {
+        if (live.SelectMany(p => p.UseList).Any(u => u.Resource.Identity == resource.Identity && u.Resource.Version > resource.Version && u.Access != PlanAccess.Read && u.Range.Overlaps(range)))
+        {
+            throw new NotSupportedException("Exporting overwritten old contents requires an explicit preservation copy.");
+        }
+    }
+
     internal void ReserveResourceUse()
     {
         Mutable();
@@ -480,10 +488,7 @@ public sealed partial class GraphicsPlanBuilder
         foreach (PlanResource exported in _exports)
         {
             exported.ValidateExport(live);
-            if (live.SelectMany(p => p.UseList).Any(u => u.Resource.Identity == exported.Identity && u.Resource.Version > exported.Version && u.Access != PlanAccess.Read))
-            {
-                throw new NotSupportedException("Exporting overwritten old contents requires an explicit preservation copy.");
-            }
+            ValidateNotOverwritten(exported, exported.Range, live);
         }
 
         var ordered = new List<PlanPass>();

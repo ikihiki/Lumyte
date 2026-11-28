@@ -16,8 +16,8 @@ public static class StructuredPlanCommands
         where T : unmanaged
     {
         pass.Owner.Mutable();
-        pass.Require(source, sourceRange, false);
-        pass.Require(destination, destinationRange, true);
+        pass.RequireCopy(source, sourceRange, false);
+        pass.RequireCopy(destination, destinationRange, true);
         if (source.Identity == destination.Identity)
         {
             throw new NotSupportedException("Native buffer copies require distinct allocations; use an explicit intermediate resource.");

@@ -53,8 +53,8 @@ public static class ShaderDataPlanCommands
         where T : struct, IShaderArguments
     {
         pass.Owner.Mutable();
-        pass.Require(source, sourceRange, write: false);
-        pass.Require(destination, destinationRange, write: true);
+        pass.RequireCopy(source, sourceRange, write: false);
+        pass.RequireCopy(destination, destinationRange, write: true);
         if (source.Identity == destination.Identity || sourceRange.Count != destinationRange.Count || destination.Memory != MemoryPreference.Automatic)
         {
             throw new ArgumentException("Shader-data copies require distinct allocations, equal ranges and a device destination.");

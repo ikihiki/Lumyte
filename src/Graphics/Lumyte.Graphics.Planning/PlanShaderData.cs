@@ -40,6 +40,8 @@ public sealed class PlanShaderData<T> : PlanResource
             {
                 throw new InvalidOperationException("An exported shader-data read target must be initialized by an explicitly live producer; declare KeepAlive/export rather than reviving it from physical exposure.");
             }
+
+            GraphicsPlanBuilder.ValidateNotOverwritten(use.Resource, use.Range, live);
         }
     }
 

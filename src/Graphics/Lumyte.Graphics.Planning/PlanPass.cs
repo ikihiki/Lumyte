@@ -157,6 +157,15 @@ public sealed class PlanPass
         }
     }
 
+    internal void RequireCopy(PlanResource resource, PlanRange range, bool write, TextureState? state = null)
+    {
+        ResourceAccess access = write ? ResourceAccess.CopyWrite : ResourceAccess.CopyRead;
+        if (!UseList.Any(u => u.Resource.SameVersion(resource) && u.Range.Contains(range) && (write ? u.Access != PlanAccess.Read : u.Access != PlanAccess.Write) && (u.Scope.Stages & PipelineStage.Copy) != 0 && (u.Scope.Access & access) != 0 && (state is null || u.TextureState == state)))
+        {
+            throw new InvalidOperationException("Copy requires a matching predeclared range, copy stage, access and texture state.");
+        }
+    }
+
     internal void Require(PlanResource resource, PlanRange range, bool write)
     {
         if (!UseList.Any(u => u.Resource.SameVersion(resource) && u.Range.Contains(range) && (write ? u.Access != PlanAccess.Read : u.Access != PlanAccess.Write)))
