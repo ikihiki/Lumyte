@@ -8,14 +8,33 @@ public sealed record PipelineBudget
     /// <param name="maxHostBytes">The nonnegative peak host byte limit.</param>
     /// <param name="maxInFlight">The positive retained run limit.</param>
     public PipelineBudget(int maxNodes, long maxHostBytes, int maxInFlight)
+        : this(maxNodes, maxHostBytes, maxInFlight, null)
+    {
+    }
+
+    /// <summary>Initializes a new instance of the <see cref="PipelineBudget"/> class with an application input extent ceiling.</summary>
+    /// <param name="maxNodes">The positive declaration node limit.</param>
+    /// <param name="maxHostBytes">The nonnegative peak host byte limit.</param>
+    /// <param name="maxInFlight">The positive retained run limit.</param>
+    /// <param name="maxInputElements">The optional nonnegative application input element ceiling, required for schema-free immutable input metadata.</param>
+    public PipelineBudget(int maxNodes, long maxHostBytes, int maxInFlight, long? maxInputElements)
     {
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(maxNodes);
         ArgumentOutOfRangeException.ThrowIfNegative(maxHostBytes);
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(maxInFlight);
+        if (maxInputElements is < 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(maxInputElements));
+        }
+
+        MaxInputElements = maxInputElements;
         MaxNodes = maxNodes;
         MaxHostBytes = maxHostBytes;
         MaxInFlight = maxInFlight;
     }
+
+    /// <summary>Gets the optional schema-free application input element ceiling, checked before stage invocation.</summary>
+    public long? MaxInputElements { get; }
 
     /// <summary>Gets the maximum number of nodes.</summary>
     public int MaxNodes { get; }

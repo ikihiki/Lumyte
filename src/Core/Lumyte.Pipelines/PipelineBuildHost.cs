@@ -43,7 +43,7 @@ public sealed class PipelineBuildHost : IDisposable
         long bytes = 0;
         for (int i = 0; i < requirements.Length; i++)
         {
-            requirements[i] = definition.Nodes[i].Factory.Describe(InputDescriptions.Build<TInput>(definition.Nodes[i], definition.Nodes, requirements, _budget.MaxHostBytes));
+            requirements[i] = definition.Nodes[i].Factory.Describe(InputDescriptions.Build<TInput>(definition.Nodes[i], definition.Nodes, requirements, _budget));
             ArgumentNullException.ThrowIfNull(requirements[i]);
             if (_backend is null && requirements[i].Extensions.Count != 0)
             {

@@ -242,7 +242,7 @@ public sealed class CompiledSegmentTests
         Pump(runtime, runtime.StartAsync().AsTask());
         var graph = new PipelineGraph<DynamicInput>();
         var stage = new DynamicStage();
-        using var host = new PipelineBuildHost(runtime, new PipelineBudget(8, 4096, 2));
+        using var host = new PipelineBuildHost(runtime, new PipelineBudget(8, 4096, 2, maxInputElements: 101));
         using IPipeline<DynamicInput, int> pipeline = host.Build(graph.Complete(graph.Input.Then(stage)));
         foreach (int elements in new[] { 3, 7 })
         {

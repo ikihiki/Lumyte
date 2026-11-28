@@ -11,13 +11,25 @@ internal static class InputDescriptions
         return new StageInputDescriptions(extents, maxHostBytes);
     }
 
-    internal static StageInputDescriptions Build<TInput>(Node node, Node[] nodes, StageRequirements[] requirements, long inputByteBudget)
+    internal static StageInputDescriptions Build<TInput>(Node node, Node[] nodes, StageRequirements[] requirements, PipelineBudget budget)
     {
+        long inputByteBudget = budget.MaxHostBytes;
         IEnumerable<SchemaExtent> extents = node.Inputs.Select(index =>
         {
             SchemaDescriptor? schema = index == 0 ? SchemaMetadata.For<TInput>() : nodes[index - 1].HostSchema;
             long bytes = index == 0 ? inputByteBudget : requirements[index - 1].MaxHostBytes;
-            return new SchemaExtent(index != 0 && requirements[index - 1].OutputMaxElements is { } elements ? elements : schema is null ? 1 : bytes / schema.ElementStride, new Dictionary<string, object> { ["UpperBound"] = true });
+            Type type = index == 0 ? typeof(TInput) : nodes[index - 1].OutputType;
+            bool applicationMetadata = schema is null && typeof(IImmutablePipelineInput).IsAssignableFrom(type);
+            long? applicationElements = applicationMetadata
+                ? index == 0 ? budget.MaxInputElements : requirements[index - 1].OutputMaxElements
+                : null;
+            if (applicationMetadata && applicationElements is null)
+            {
+                throw new InvalidOperationException("Schema-free immutable input metadata requires MaxInputElements at the application boundary or OutputMaxElements on its producer.");
+            }
+
+            long count = index != 0 && requirements[index - 1].OutputMaxElements is { } elements ? elements : applicationElements ?? (schema is null ? 1 : bytes / schema.ElementStride);
+            return new SchemaExtent(count, new Dictionary<string, object> { ["UpperBound"] = true });
         });
         return new StageInputDescriptions(extents, inputByteBudget);
     }

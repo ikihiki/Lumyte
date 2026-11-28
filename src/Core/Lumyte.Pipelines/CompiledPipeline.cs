@@ -121,7 +121,13 @@ internal sealed class CompiledPipeline<TInput, TOutput> : IPipeline<TInput, TOut
 
             var context = new RunContext(this, input, runIdentity, cancellationToken, owner.Values);
             _definition.ValidateInput(0, context.Input);
-            InputDescriptions.Actual([context.Input], _budget.MaxHostBytes);
+            StageInputDescriptions inputDescription = InputDescriptions.Actual([context.Input], _budget.MaxHostBytes);
+            if (input is IImmutablePipelineInput && SchemaMetadata.For<TInput>() is null
+                && (_budget.MaxInputElements is not { } limit || inputDescription.Extents[0].ElementCount > limit))
+            {
+                throw new InvalidOperationException("The application input exceeds its declared finite element ceiling.");
+            }
+
             if (_jobs is not null)
             {
                 JobGraph<RunContext> jobs = PipelineJobBridge.IsCooperative(_execution) ? _cooperativeJobs! : _jobs;
@@ -288,6 +294,7 @@ internal sealed class CompiledPipeline<TInput, TOutput> : IPipeline<TInput, TOut
 
                 values[index + 1] = operation.Result;
                 _pipeline._definition.ValidateInput(index + 1, values[index + 1]);
+                ValidateOutputExtent(index, values[index + 1]);
                 context.ConfirmOutput();
             }
             catch (Exception primary)
@@ -312,12 +319,22 @@ internal sealed class CompiledPipeline<TInput, TOutput> : IPipeline<TInput, TOut
             }
         }
 
+        private void ValidateOutputExtent(int index, object output)
+        {
+            if (_pipeline._requirements[index].OutputMaxElements is { } limit
+                && ((IValueLeaseMetadata)output).PlacementExtent is { } extent && extent.ElementCount > limit)
+            {
+                throw new InvalidOperationException("The stage output exceeds its compiled finite element ceiling.");
+            }
+        }
+
         private async ValueTask<Unit> AwaitOutputAsync(ValueTask<object> operation, StagePreparationContext context, int index)
         {
             try
             {
                 Values[index + 1] = await operation;
                 _pipeline._definition.ValidateInput(index + 1, Values[index + 1]);
+                ValidateOutputExtent(index, Values[index + 1]);
                 context.ConfirmOutput();
             }
             catch (Exception primary)

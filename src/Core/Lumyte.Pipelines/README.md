@@ -65,6 +65,14 @@ Failed-run cleanup is retained by the pipeline and retried by its Dispose.
 
 ## Finite budgets
 
+Schema-free `IImmutablePipelineInput` values require an explicit finite application
+element ceiling, for example `new PipelineBudget(64, 4096, 1, maxInputElements: 10)`.
+Build uses that ceiling rather than inventing a one-element extent; run admission
+rejects larger inputs before invoking any processor. A dynamic metadata value
+produced by another stage requires its producer to declare `OutputMaxElements`,
+and synchronous and asynchronous publication both validate that output ceiling.
+The original three-argument constructor remains available for scalar/schema inputs.
+
 PipelineBudget limits declared nodes, retained runs, and per-run declared host
 bytes. At most six incoming edges per node bounds total graph work. ExecutionRuntime
 separately reserves graph queue/work metadata. Its MaxGraphNodes counts physical
