@@ -12,8 +12,11 @@ public static class StructuredTextureCommands
     public static void Clear(this PlanPass pass, PlanTexture target, ClearColor color)
     {
         pass.Owner.Mutable();
-        pass.Require(target, target.Range, true);
-        RequireState(pass, target, TextureState.ColorAttachment);
+        if (!pass.Uses.Any(u => u.Resource.SameVersion(target) && u.Range.Contains(target.Range) && u.Access != PlanAccess.Read && (u.Scope.Stages & PipelineStage.ColorOutput) != 0 && (u.Scope.Access & ResourceAccess.ColorWrite) != 0 && u.TextureState == TextureState.ColorAttachment))
+        {
+            throw new InvalidOperationException("Clear requires a matching predeclared target range, color-output stage, color-write access and attachment state.");
+        }
+
         pass.Owner.ReserveCommand();
         pass.Commands.Add(new ClearTextureCommand(target, color));
     }
